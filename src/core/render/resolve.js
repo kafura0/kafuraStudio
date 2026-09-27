@@ -1,0 +1,98 @@
+/**
+ * Rig resolution: turn a character definition plus a pose, an expression and a
+ * keyframe sample into a flat, sorted draw list.
+ *
+ * The three override layers compose as `rest <- pose <- expression <- keyframe`.
+ * Poses change the body, expressions change the face, and because a pose and an
+ * expression are the same mechanism (`Record<slot, SlotOverride>`) they are applied
+ * in one pass and a slot touched by both resolves to the expression's value.
+ */
+import { composeTransform } from '../geometry';
+import { IDENTITY_TRANSFORM } from '../types';
+/** Resolve a colour key against a palette, treating it as a literal if unknown. */
+export function resolveColor(colorKey, palette) {
+    return palette[colorKey] ?? colorKey;
+}
+/**
+ * Fold one slot override into a transform.
+ *
+ * Translation and rotation offsets are additive; scale and alpha are multiplicative.
+ * Additive rotation is what makes a pose's `armL: 0.4` mean "raise the arm 0.4 rad
+ * from rest" rather than "pin the arm at 0.4 rad", which is how a rig stays
+ * readable as more poses are authored.
+ */
+function applyOverride(base, override) {
+    if (!override)
+        return base;
+    return {
+        x: base.x + (override.x ?? 0),
+        y: base.y + (override.y ?? 0),
+        rotation: base.rotation + (override.rotation ?? 0),
+        scaleX: base.scaleX * (override.scaleX ?? 1),
+        scaleY: base.scaleY * (override.scaleY ?? 1),
+        alpha: base.alpha * (override.alpha ?? 1),
+    };
+}
+export function resolveRig(parts, palette, options) {
+    // Draw order is `z` ascending. A parent part is always authored with a lower `z`
+    // than its children, so sorting guarantees a parent is resolved before its child
+    // and the transform stack stays valid in a single pass.
+    const ordered = [...parts].sort((a, b) => a.z - b.z);
+    const indexById = new Map();
+    ordered.forEach((part, index) => indexById.set(part.id, index));
+    const out = [];
+    // World transform per part, indexed by its position in `ordered`.
+    const stack = new Array(ordered.length);
+    ordered.forEach((part, index) => {
+        const poseOverride = options.pose?.slots[part.slot];
+        const expressionOverride = options.expression?.slots[part.slot];
+        // Composition: rest, then pose, then expression wins on a shared slot.
+        let local = applyOverride(part.rest, poseOverride);
+        if (expressionOverride)
+            local = applyOverride(local, expressionOverride);
+        const visible = part.visible && (expressionOverride?.visible ?? poseOverride?.visible ?? true);
+        if (!visible)
+            return;
+        const parentIndex = part.parent === null ? -1 : (indexById.get(part.parent) ?? -1);
+        const parent = parentIndex >= 0 ? stack[parentIndex] : undefined;
+        const world = composeTransform(parent ?? IDENTITY_TRANSFORM, local, 
+        // A fresh object per part: the stack must retain each part's world transform,
+        // so these cannot share the scratch instance.
+        { ...IDENTITY_TRANSFORM });
+        // A root part has no parent, so place it into the world here.
+        if (parentIndex < 0) {
+            world.x += options.origin.x;
+            world.y += options.origin.y;
+        }
+        const shape = expressionOverride?.shape ?? poseOverride?.shape ?? part.shape;
+        const colorKey = expressionOverride?.colorKey ?? poseOverride?.colorKey ?? part.colorKey;
+        stack[index] = world;
+        // The talk pulse widens the mouth on the Y axis only, so it reads as an open
+        // jaw rather than a shrunken head.
+        const mouthBoost = part.slot === 'mouth' ? (options.mouthScale ?? 1) : 1;
+        const uniformScale = options.scale * world.scaleX;
+        out.push({
+            id: part.id,
+            slot: part.slot,
+            z: part.z,
+            shape,
+            color: resolveColor(colorKey, palette),
+            alpha: clamp01(world.alpha * options.alpha),
+            x: world.x,
+            y: world.y,
+            rotation: world.rotation + options.rotation,
+            scaleX: (options.flipX ? -1 : 1) * uniformScale,
+            scaleY: options.scale * world.scaleY * mouthBoost,
+        });
+    });
+    return out;
+}
+function clamp01(value) {
+    return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+export function resolveCharacter(character, options) {
+    return resolveRig(character.rig, character.palette, options);
+}
+export function resolveProp(prop, options) {
+    return resolveRig(prop.parts, {}, options);
+}
