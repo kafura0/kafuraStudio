@@ -7,6 +7,15 @@ coverage
 .vite
 src/**/*.tsbuildinfo
 *.tsbuildinfo
+# Belt and braces: tsc must never emit beside the sources. `npm run typecheck`
+# keeps noEmit on; these rules guarantee an accidental emit can never be committed.
+src/**/*.js
+src/**/*.d.ts
+vite.config.js
+vite.config.d.ts
+vitest.config.js
+vitest.config.d.ts
+eslint.config.js
 .env
 .env.*
 !.env.example
