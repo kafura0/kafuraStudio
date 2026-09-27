@@ -1,9 +1,13 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 13 — POLISH (in progress)**
+> **Current phase: Phase 7 — TIMELINE**
 
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
+
+Status is reported honestly (RULE 9). A phase is `complete` only when its gate is
+demonstrably met — a control that renders but does nothing is `partial`, not
+complete.
 
 ---
 
@@ -18,30 +22,52 @@ Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 | 4 | Environment system | **complete** | Layered env + staging anchors + parallax |
 | 5 | Character system | **complete** | Rig, pose/expression override, palette theming |
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
-| 7 | Timeline | **complete** | Tracks, clips, keyframes, transport, scrubbing, snapping |
-| 8 | Dialogue / audio | **complete** | Dialogue lines, subtitles, audio clips, Web Audio playback |
-| 9 | Camera | **complete** | Rest camera, keyframed moves, shot presets |
-| 10 | Animation | **complete** | Keyframes, interpolation, talk pulse |
-| 11 | Preview | **complete** | rAF playback loop, episode sequential playback |
-| 12 | Export | **complete** | PNG still, WebM video, project JSON |
-| 13 | Polish | **in progress** | Lint/typecheck/test/build green, MVP acceptance gate passed |
+| 7 | Timeline | **in progress** | Track/clip/keyframe ops + sampling are done and tested. The timeline UI is not built: there is no track list, clip lane, playhead ruler, drag or trim. |
+| 8 | Dialogue / audio | **partial** | Lines, timing clips, subtitles and audio assets are modelled and render. There is no Web Audio playback and no dialogue editing UI. |
+| 9 | Camera | **partial** | Rest camera and keyframed moves resolve and render. No shot presets, no camera UI. |
+| 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
+| 11 | Preview | **partial** | The stage loops one scene via rAF. No episode-sequential playback, no transport UI beyond play/pause. |
+| 12 | Export | **planned** | Nothing written. Not started. |
+| 13 | Polish | **planned** | Not started. |
+
+### What exists today
+
+Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
+53 tests green, all four gates clean.
+
+- Pure core: types, geometry, keyframe sampling, document operations, invariants,
+  versioned serialization, and a deterministic Canvas 2D renderer.
+- Persistence: `ProjectRepository` + IndexedDB, re-validating on read.
+- Content: shared rig builder, 4 characters, 3 environments, poses, expressions,
+  props, declared audio slots, and the EP001 seed project — which validates with
+  zero invariant issues and renders every one of its five scenes.
+- Editor: Zustand store with snapshot undo/redo through a single `commit()` path,
+  debounced autosave, and a canvas stage that redraws without re-rendering React.
+- UI is a shell: scene list, read-only asset library, transport bar, issue panel.
+
+### What is deliberately not built
+
+The timeline UI, all editing controls, audio playback, episode playback, and
+export. These are the phases above, not gaps in the ones below.
 
 ---
 
-## PHASE 13 — POLISH (current)
+## PHASE 7 — TIMELINE (current)
 
 The final phase of the MVP. Success is the acceptance gate in `docs/MVP.md` §4,
-not new features.
+not new features. Nothing here has been done yet.
 
-- [x] `npm run lint` clean
-- [x] `npm run typecheck` clean
-- [x] `npm run test` green — unit + integration
-- [x] `npm run build` succeeds
-- [x] Undo/redo covers every mutation path in the UI
-- [x] Autosave survives a hard reload
-- [x] Export verified end-to-end in Chromium
-- [x] A fifth synthetic character is placeable with zero `core/` changes (RULE 3 test)
-- [x] Docs match the implementation
+- [ ] `npm run lint` clean — **done**
+- [ ] `npm run typecheck` clean — **done**
+- [ ] `npm run test` green — **done** (53 tests)
+- [ ] `npm run build` succeeds — **done**
+- [ ] Undo/redo covers every mutation path in the UI — store enforces one `commit()`
+      path, but the timeline does not exist yet to exercise it
+- [ ] Autosave survives a hard reload — implemented, not yet verified in a browser
+- [ ] Export verified end-to-end in Chromium — not built
+- [ ] A fifth synthetic character is placeable with zero `core/` changes (RULE 3
+      test) — **done**, automated in `src/data/rule3.test.ts`
+- [ ] Docs match the implementation — **done**
 
 ---
 
@@ -107,4 +133,4 @@ the document is the shared asset.
 
 | Date | Change |
 |---|---|
-| 2026-09-27 | Phases 0-13 implemented. MVP acceptance gate passed. Phase 14 next. |
+| 2026-09-27 | Phases 0-6 and 10 complete; 7, 8, 9, 11 partial. Status table corrected — it previously claimed all thirteen phases were done, which was false. |

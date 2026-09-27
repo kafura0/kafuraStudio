@@ -26,27 +26,34 @@ file**, the system works. Everything else is expansion.
 
 ## 2. REQUIRED CAPABILITIES
 
-| # | Capability | Status |
-|---|---|---|
-| 1 | Create / open a project | implemented |
-| 2 | Create an episode | implemented |
-| 3 | Create / open a scene | implemented |
-| 4 | Load a reusable environment | implemented |
-| 5 | Load reusable characters | implemented |
-| 6 | Place characters in a scene | implemented |
-| 7 | Move and scale characters | implemented |
-| 8 | Change character pose | implemented |
-| 9 | Change character expression | implemented |
-| 10 | Add dialogue lines | implemented |
-| 11 | Place dialogue on the timeline | implemented |
-| 12 | Basic timeline playback | implemented |
-| 13 | Basic camera controls | implemented |
-| 14 | Basic animation keyframes | implemented |
-| 15 | Save project | implemented (IndexedDB + `.zanza.json` import/export) |
-| 16 | Load project | implemented |
-| 17 | Undo / redo | implemented |
-| 18 | Preview scene | implemented |
-| 19 | Export a basic scene result | implemented (WebM via MediaRecorder, PNG still) |
+Status is reported honestly (AGENTS.md RULE 9). **model** = the document model,
+operations and renderer support it and it is tested. **UI** = a control exists the
+user can actually operate. A capability is only `implemented` when both are true.
+
+| # | Capability | Model | UI | Notes |
+|---|---|---|---|---|
+| 1 | Create / open a project | done | done | Seed project opens on first run |
+| 2 | Create an episode | done | partial | `addEpisode` exists; no UI to create one |
+| 3 | Create / open a scene | done | partial | Ops exist; UI only switches between existing scenes |
+| 4 | Load a reusable environment | done | done | 3 environments render |
+| 5 | Load reusable characters | done | done | 4 characters, all placeable |
+| 6 | Place characters in a scene | done | done | Via seed; no drag-to-place yet |
+| 7 | Move and scale characters | done | none | `setActorTransform` / anchor binding exist |
+| 8 | Change character pose | done | none | `setActorPose` exists |
+| 9 | Change character expression | done | none | `setActorExpression` exists |
+| 10 | Add dialogue lines | done | none | `addDialogueLineWithCue` exists |
+| 11 | Place dialogue on the timeline | done | none | Timing lives on the clip, by design |
+| 12 | Basic timeline playback | done | partial | Stage loops one scene; no timeline UI |
+| 13 | Basic camera controls | done | none | Keyframed moves render; no presets, no UI |
+| 14 | Basic animation keyframes | done | none | Sampler is tested; no keyframe UI |
+| 15 | Save project | done | partial | IndexedDB persists; `.zanza.json` import/export not built |
+| 16 | Load project | done | done | Hydrates on start, re-validates on read |
+| 17 | Undo / redo | done | partial | Store enforces one `commit()` path; no timeline to exercise it |
+| 18 | Preview scene | done | partial | Play/pause and a scrubber; no episode playback |
+| 19 | Export a basic scene result | none | none | **Not started.** No PNG still, no WebM |
+
+The MVP gate is not met. Items 1-19 with a `none` in the UI column are Phase 7 and
+Phase 12 work; see `docs/ROADMAP.md`.
 
 ---
 
@@ -96,6 +103,14 @@ npm run build      # succeeds
 
 Check 10 is the load-bearing one. If adding a character requires a code change, the
 architecture has failed, regardless of whether the other nine pass.
+
+**Current status: not met.** The four build gates pass. Of the ten manual checks,
+1 and 2 are expected to pass but have not been verified in a browser. Checks 3-10
+depend on the timeline UI and the exporter, neither of which exists. Check 10 is
+the one the design is built for, and it is now automated in
+`src/data/rule3.test.ts`: an unknown character is added to the production project,
+staged, keyed, posed, expressioned, and rendered, with `validateProject` clean
+throughout and no `core/` file touched.
 
 ---
 
