@@ -16,11 +16,28 @@ export interface GradientLike {
   addColorStop(offset: number, color: string): void;
 }
 
-/** A decoded bitmap. The real `HTMLImageElement` satisfies this. */
-export interface ImageLike {
-  readonly width: number;
-  readonly height: number;
-}
+/**
+ * A canvas pattern (a repeating image fill).
+ *
+ * The real `CanvasPattern` is an opaque native object with no members, so it cannot
+ * be described structurally. `unknown` is the honest type: the renderer only ever
+ * assigns a pattern straight back to `fillStyle`, and never inspects it. The test
+ * stub records whatever it is given by value, which keeps a pattern comparable in
+ * a recorded call log.
+ */
+export type PatternLike = unknown;
+
+/**
+ * A decoded bitmap.
+ *
+ * `HTMLImageElement`, `ImageBitmap` and `HTMLCanvasElement` all satisfy this, and
+ * all three are accepted by the real `drawImage`. Declaring the parameter as
+ * `unknown` (rather than `ImageLike`) is what lets a real `CanvasRenderingContext2D`
+ * satisfy this interface: `drawImage` is an overloaded method, and overload sets
+ * are checked bivariantly under `strictFunctionTypes`, so a narrower declaration
+ * here would reject the real context.
+ */
+export type ImageLike = unknown;
 
 export interface TextMetricsLike {
   width: number;
@@ -30,8 +47,8 @@ export interface Canvas2DLike {
   // State
   globalAlpha: number;
   globalCompositeOperation: string;
-  fillStyle: string | GradientLike;
-  strokeStyle: string | GradientLike;
+  fillStyle: string | GradientLike | PatternLike;
+  strokeStyle: string | GradientLike | PatternLike;
   lineWidth: number;
   lineCap: string;
   lineJoin: string;
@@ -91,5 +108,6 @@ export interface Canvas2DLike {
     y1: number,
     r1: number,
   ): GradientLike;
+  createPattern?(image: ImageLike, repetition: string): PatternLike | null;
   setLineDash(segments: number[]): void;
 }

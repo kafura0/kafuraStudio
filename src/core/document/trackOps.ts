@@ -105,6 +105,10 @@ export function addClip(
   }));
 }
 
+/**
+ * Add a clip, creating its track if one does not already exist for this target.
+ * Returns the ids needed to keep editing the clip.
+ */
 export function addSimpleClip(
   project: Project,
   sceneId: Id,
@@ -114,10 +118,11 @@ export function addSimpleClip(
   start: number,
   duration: number,
   extras: { audioId?: string | null; dialogueLineId?: string | null; gain?: number } = {},
-): Project {
-  return mapScene(project, sceneId, (scene) => {
+): { project: Project; trackId: Id; clipId: Id } {
+  const clip = createClip(start, duration, extras);
+
+  const next = mapScene(project, sceneId, (scene) => {
     const { scene: withTrack, track } = findOrCreateTrack(scene, kind, targetId, name);
-    const clip = createClip(start, duration, extras);
     return {
       ...withTrack,
       tracks: withTrack.tracks.map((t) =>
@@ -125,6 +130,24 @@ export function addSimpleClip(
       ),
     };
   });
+
+  const trackId = trackIdFor(next, sceneId, kind, targetId);
+  return { project: next, trackId, clipId: clip.id };
+}
+
+/** The id of the track driving a target, or '' if it does not exist. */
+function trackIdFor(project: Project, sceneId: Id, kind: TrackKind, targetId: Id): Id {
+  const track = mapSceneLookup(project, sceneId, (scene) =>
+    scene.tracks.find((t) => t.kind === kind && t.targetId === targetId),
+  );
+  return track?.id ?? '';
+}
+
+function mapSceneLookup<T>(project: Project, sceneId: Id, fn: (scene: Scene) => T | undefined): T | undefined {
+  for (const scene of project.scenes) {
+    if (scene.id === sceneId) return fn(scene);
+  }
+  return undefined;
 }
 
 export function removeClip(project: Project, sceneId: Id, trackId: Id, clipId: Id): Project {

@@ -152,12 +152,15 @@ export interface StagingAnchor {
 }
 
 export interface EnvPart {
-  id: Id;
+  id?: Id;
   shape: ShapeDef;
   colorKey: string;
   pivot: Vec2;
   transform: Transform2D;
 }
+
+/** An environment part as authored in seed content: the id is assigned on load. */
+export type AnchoredEnvPart = EnvPart;
 
 export interface EnvLayer {
   id: Id;

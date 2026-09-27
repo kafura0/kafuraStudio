@@ -171,7 +171,7 @@ export function placeAudioOnTimeline(
   start: number,
   duration?: number,
 ): Project {
-  return addSimpleClip(
+  const { project: next } = addSimpleClip(
     project,
     sceneId,
     'audio',
@@ -181,6 +181,7 @@ export function placeAudioOnTimeline(
     duration ?? audio.duration,
     { audioId: audio.id },
   );
+  return next;
 }
 
 /* ------------------------------------------------------------------ */

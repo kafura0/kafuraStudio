@@ -6,10 +6,30 @@
  */
 
 import { lerp } from '../geometry';
-import type { Clip, EaseType, Keyframe, KeyframeTarget, Transform2D } from '../types';
+import type {
+  Clip,
+  EaseType,
+  Id,
+  Keyframe,
+  KeyframeTarget,
+  Scene,
+  TrackKind,
+  Transform2D,
+} from '../types';
 
 /** Channels that must never be interpolated — an expression holds, it does not smear. */
 const NUMERIC_CHANNELS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'alpha'] as const;
+
+/**
+ * The length of a scene, in seconds.
+ *
+ * The timeline ruler, the playhead loop and the exporter all need this number, and
+ * they must agree: it is the authored `duration`, never the extent of the clips.
+ * A clip that overhangs the scene is a validation error, not a longer scene.
+ */
+export function sceneDuration(scene: Scene): number {
+  return scene.duration;
+}
 
 function applyEase(ease: EaseType, t: number): number {
   switch (ease) {
@@ -35,21 +55,24 @@ function applyEase(ease: EaseType, t: number): number {
  * - After the last keyframe: hold the last keyframe's values.
  * - Discrete channels (pose, expression, visibility, flip) always hold the start of
  *   the segment and switch at the next keyframe, regardless of easing.
- * - A channel present only on the *later* keyframe is absent until that keyframe is
- *   reached, so the underlying rest value applies up to that point.
+ * - A numeric channel is resolved per channel, not per segment: if a later keyframe
+ *   does not mention a channel, that channel holds its most recent keyed value
+ *   rather than reverting. A channel is only absent before it is first keyed, so the
+ *   underlying rest value applies until then.
  */
 export function sampleKeyframes(keyframes: Keyframe[], time: number): KeyframeTarget {
   const first = keyframes[0];
   if (!first) return {};
-  if (keyframes.length === 1 || time <= first.time) return { ...first.props };
+  if (keyframes.length === 1 || time <= first.time) return withHeldChannels(keyframes, first, 0);
 
-  const last = keyframes[keyframes.length - 1];
-  if (!last) return { ...first.props };
-  if (time >= last.time) return { ...last.props };
+  const lastIndex = keyframes.length - 1;
+  const last = keyframes[lastIndex];
+  if (!last) return {};
+  if (time >= last.time) return withHeldChannels(keyframes, last, lastIndex);
 
   // Binary search for the segment [a, b) containing `time`.
   let low = 0;
-  let high = keyframes.length - 1;
+  let high = lastIndex;
   while (low < high - 1) {
     const mid = (low + high) >> 1;
     const kf = keyframes[mid];
@@ -70,11 +93,52 @@ export function sampleKeyframes(keyframes: Keyframe[], time: number): KeyframeTa
     const to = b.props[channel];
     if (typeof from === 'number' && typeof to === 'number') {
       out[channel] = lerp(from, to, t);
+    } else if (typeof to !== 'number') {
+      // `b` is silent about this channel, so it holds whatever was last keyed.
+      // Without this, dropping a single keyframe mid-track would silently reset
+      // that channel to its rest value for the rest of the scene.
+      const held = lastKeyedNumberBefore(keyframes, high, channel);
+      if (held !== undefined) out[channel] = held;
+      else delete out[channel];
     }
   }
   // Discrete channels are carried by the `{ ...a.props }` spread above and are never
   // touched here, so they hold for the whole segment and switch at `b`.
   return out;
+}
+
+/**
+ * A keyframe's value set, with any numeric channel the keyframe is silent about
+ * filled in from the most recent earlier keyframe that did key it.
+ *
+ * Used when a keyframe is being *held* rather than interpolated — before the track
+ * starts, or at/after its end — so the hold behaves the same on every path.
+ */
+function withHeldChannels(keyframes: Keyframe[], at: Keyframe, index: number): KeyframeTarget {
+  const out: KeyframeTarget = { ...at.props };
+  for (const channel of NUMERIC_CHANNELS) {
+    if (typeof out[channel] === 'number') continue;
+    const held = lastKeyedNumberBefore(keyframes, index, channel);
+    if (held !== undefined) out[channel] = held;
+  }
+  return out;
+}
+
+/**
+ * The most recent keyed value for a channel at or before index `upTo`, or undefined
+ * if the channel has never been keyed. Walks backwards, which is fine because
+ * sparse keyframe lists are short and this only runs for channels `b` omits.
+ */
+function lastKeyedNumberBefore(
+  keyframes: Keyframe[],
+  upTo: number,
+  channel: (typeof NUMERIC_CHANNELS)[number],
+): number | undefined {
+  for (let i = Math.min(upTo, keyframes.length - 1); i >= 0; i -= 1) {
+    const value = keyframes[i]?.props[channel];
+    if (typeof value === 'number') return value;
+  }
+  return undefined;
 }
 
 /** Sample one clip at an absolute time. Out-of-range clips contribute nothing. */
@@ -98,6 +162,27 @@ export function sampleTarget(clips: Clip[], time: number): KeyframeTarget {
     out = { ...out, ...sampleClip(clip, time) };
   }
   return out;
+}
+
+/**
+ * Scene-level convenience: sample every track driving one target.
+ *
+ * The renderer and the editor both need "what is this actor doing right now",
+ * expressed against a Scene rather than a hand-assembled clip list, so that lookup
+ * lives here instead of being repeated (and getting subtly different) at each site.
+ */
+export function sampleSceneTarget(
+  scene: Scene,
+  kind: TrackKind,
+  targetId: Id,
+  time: number,
+): KeyframeTarget {
+  const clips: Clip[] = [];
+  for (const track of scene.tracks) {
+    if (track.kind !== kind || track.targetId !== targetId) continue;
+    clips.push(...track.clips);
+  }
+  return sampleTarget(clips, time);
 }
 
 /* ------------------------------------------------------------------ */
