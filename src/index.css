@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+/*
+ * ZANZA STUDIO — dark creative workspace.
+ *
+ * Design tokens live here as CSS variables so the whole shell can be re-themed
+ * without touching component classes. The stage itself is drawn on a canvas, so
+ * these tokens exist for chrome only.
+ */
+
+@theme {
+  --color-ink-950: #0a0b0f;
+  --color-ink-900: #0f1116;
+  --color-ink-850: #14161d;
+  --color-ink-800: #1a1d25;
+  --color-ink-700: #242833;
+  --color-ink-600: #333846;
+  --color-ink-500: #4a5060;
+  --color-ink-400: #6b7284;
+  --color-ink-300: #9aa1b2;
+  --color-ink-200: #c7ccd8;
+  --color-ink-100: #e8ebf2;
+
+  --color-zanza-500: #ff6b35;
+  --color-zanza-400: #ff8a5c;
+  --color-zanza-600: #e04f1c;
+
+  --color-accent-500: #5b8cff;
+  --color-accent-400: #7ba3ff;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family:
+      'Inter',
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* A production tool should feel like an instrument: no accidental text
+     selection while dragging, and a consistent focus ring for keyboard users. */
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
+}
