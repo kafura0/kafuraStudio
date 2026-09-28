@@ -5,6 +5,9 @@
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
 
+Phase *definitions and gates* are here. Sequencing, reasoning, and the review
+discipline are in [`PLAN.md`](PLAN.md).
+
 Status is reported honestly (RULE 9). A phase is `complete` only when its gate is
 demonstrably met — a control that renders but does nothing is `partial`, not
 complete.

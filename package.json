@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "ZANZA STUDIO — a 2D animation production tool for the ZANZA animated-comedy universe",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
