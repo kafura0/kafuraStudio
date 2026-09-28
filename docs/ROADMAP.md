@@ -25,7 +25,7 @@ complete.
 | 4 | Environment system | **complete** | Layered env + staging anchors + parallax |
 | 5 | Character system | **complete** | Rig, pose/expression override, palette theming |
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
-| 7 | Timeline | **in progress** | Track/clip/keyframe ops + sampling are done and tested. The timeline UI is not built: there is no track list, clip lane, playhead ruler, drag or trim. |
+| 7 | Timeline | **in progress** | Track/clip/keyframe ops + sampling done and tested. The timeline UI now has lanes, a ruler, a rAF playhead, zoom, and clip move/trim with one undo step per drag. Missing: keyframe editing, track add/remove/reorder, clip add/remove, and drag-to-another-track. |
 | 8 | Dialogue / audio | **partial** | Lines, timing clips, subtitles and audio assets are modelled and render. There is no Web Audio playback and no dialogue editing UI. |
 | 9 | Camera | **partial** | Rest camera and keyframed moves resolve and render. No shot presets, no camera UI. |
 | 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
@@ -50,7 +50,7 @@ Verified by `npm run lint && npm run typecheck && npm run test && npm run build`
 
 ### What is deliberately not built
 
-The timeline UI, all editing controls, audio playback, episode playback, and
+Keyframe and track editing, asset editing, audio playback, episode playback, and
 export. These are the phases above, not gaps in the ones below.
 
 ---
@@ -58,19 +58,26 @@ export. These are the phases above, not gaps in the ones below.
 ## PHASE 7 — TIMELINE (current)
 
 The final phase of the MVP. Success is the acceptance gate in `docs/MVP.md` §4,
-not new features. Nothing here has been done yet.
+not new features.
 
-- [ ] `npm run lint` clean — **done**
-- [ ] `npm run typecheck` clean — **done**
-- [ ] `npm run test` green — **done** (71 tests)
-- [ ] `npm run build` succeeds — **done**
-- [ ] Undo/redo covers every mutation path in the UI — store enforces one `commit()`
-      path, but the timeline does not exist yet to exercise it
+- [x] `npm run lint` clean — **done**
+- [x] `npm run typecheck` clean — **done**
+- [x] `npm run test` green — **done** (146 tests)
+- [x] `npm run build` succeeds — **done**
+- [x] One store-owned clock drives the stage, the transport, and the timeline
+      playhead — **done**
+- [x] Timeline geometry is pure and DOM-free — **done**, `src/core/timeline/`
+- [x] Lanes, ruler, playhead, zoom, clip move and trim — **done**
+- [x] A drag is one undo step, not one per frame — **done**, asserted in
+      `Timeline.test.tsx`
+- [x] Undo/redo covers every mutation path in the UI — **done**; one `commit()`
+      path, exercised by the timeline
+- [ ] Keyframe editing, track add/remove/reorder, clip add/remove — open
 - [ ] Autosave survives a hard reload — implemented, not yet verified in a browser
 - [ ] Export verified end-to-end in Chromium — not built
-- [ ] A fifth synthetic character is placeable with zero `core/` changes (RULE 3
+- [x] A fifth synthetic character is placeable with zero `core/` changes (RULE 3
       test) — **done**, automated in `src/data/rule3.test.ts`
-- [ ] Docs match the implementation — **done**
+- [x] Docs match the implementation — **done**
 
 ---
 

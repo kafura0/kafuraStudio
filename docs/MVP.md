@@ -43,12 +43,12 @@ user can actually operate. A capability is only `implemented` when both are true
 | 9 | Change character expression | done | none | `setActorExpression` exists |
 | 10 | Add dialogue lines | done | none | `addDialogueLineWithCue` exists |
 | 11 | Place dialogue on the timeline | done | none | Timing lives on the clip, by design |
-| 12 | Basic timeline playback | done | partial | Stage loops one scene; no timeline UI |
+| 12 | Basic timeline playback | done | none | One store clock drives stage, transport, and timeline playhead |
 | 13 | Basic camera controls | done | none | Keyframed moves render; no presets, no UI |
 | 14 | Basic animation keyframes | done | none | Sampler is tested; no keyframe UI |
 | 15 | Save project | done | partial | IndexedDB persists; `.zanza.json` import/export not built |
 | 16 | Load project | done | done | Hydrates on start, re-validates on read |
-| 17 | Undo / redo | done | partial | Store enforces one `commit()` path; no timeline to exercise it |
+| 17 | Undo / redo | done | none | Timeline drag/trim exercises the single `commit()` path; one step per drag |
 | 18 | Preview scene | done | partial | Play/pause and a scrubber; no episode playback |
 | 19 | Export a basic scene result | none | none | **Not started.** No PNG still, no WebM |
 
@@ -106,7 +106,7 @@ architecture has failed, regardless of whether the other nine pass.
 
 **Current status: not met.** The four build gates pass. Of the ten manual checks,
 1 and 2 are expected to pass but have not been verified in a browser. Checks 3-10
-depend on the timeline UI and the exporter, neither of which exists. Check 10 is
+depend on the exporter, which does not exist. Check 10 is
 the one the design is built for, and it is now automated in
 `src/data/rule3.test.ts`: an unknown character is added to the production project,
 staged, keyed, posed, expressioned, and rendered, with `validateProject` clean

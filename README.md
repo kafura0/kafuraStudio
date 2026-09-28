@@ -27,15 +27,16 @@ that is not implemented and tested. The full phase table is in
 | | |
 |---|---|
 | Build gates | `lint`, `typecheck`, `test`, `build` all green |
-| Tests | 76 passing, no browser required |
-| Works | Document model, renderer, seed content, persistence, read-only stage, transport |
-| Present but unreachable | Undo/redo and autosave. `commit()` exists and is enforced, but **no editing control calls it yet**, so there is nothing to undo |
-| Missing | Timeline UI, all editing controls, audio playback, episode playback, **export** |
+| Tests | 146 passing, no browser required |
+| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim and live undo |
+| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, keyframe editing, track management |
+| Missing | Audio playback, episode playback, **export** |
 
-Concretely: the engine works and the content exists, but **there is no timeline and
-there is no export.** The application is a shell around a working core, not a
-finished editor. Do not judge this repository by its screenshots; judge it by the
-gates.
+Concretely: the engine works, the content exists, and you can now open a scene and
+retime it on a timeline with undo. **There is still no export and no audio**, so
+nothing can leave the browser. The application is a working editor around a
+finished core, not a finished production tool. Do not judge this repository by its
+screenshots; judge it by the gates.
 
 Using it, including the defects you will hit: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 Hosting a built copy: [`docs/DEPLOY.md`](docs/DEPLOY.md).
@@ -163,9 +164,9 @@ new one. No in-place mutation, no component-local copies of scene state.
 
 **3. Undo is not optional.** It works by snapshotting immutable documents, and every
 user-visible mutation routes through a single `commit()` in the store. A mutation
-path that bypasses `commit()` is a bug, not a shortcut. The mechanism is built and
-enforced, but it is **currently unreachable from the UI** because no editing control
-exists yet — so undo/redo are honest dead buttons today, not broken ones.
+path that bypasses `commit()` is a bug, not a shortcut. The mechanism is enforced
+and **reachable from the UI**: dragging a clip on the timeline writes the document
+once when the drag ends, not once per frame, so one drag is one undo step.
 
 **4. Assets are data.** Characters, sets, props, poses, expressions, and audio are
 data structures. Creative content lives in `src/data/`, never in `src/core/` or

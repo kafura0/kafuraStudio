@@ -20,13 +20,14 @@ The engine is finished. The application is not.
 
 | Working | Not built |
 |---|---|
-| Document model, all operations, invariants | Timeline UI |
-| Deterministic renderer | Any editing control |
+| Document model, all operations, invariants | Keyframe editing |
+| Deterministic renderer | Track add/remove/reorder, clip add/remove |
 | Keyframe sampling, camera, talk pulse | Audio playback |
 | Seed content: 4 characters, 3 sets, 5 scenes | Episode-sequential playback |
 | IndexedDB persistence, re-validating on read | **Export** |
 | Undo/redo through one `commit()` | Preset cameras |
 | Stage with a 60fps rAF loop | `.zanza.json` import/export |
+| Timeline: lanes, ruler, playhead, zoom, move/trim | Asset editing |
 
 71 tests, four gates green. The useful consequence of the layering rule is that the
 core can be tested to exhaustion without a browser, so the remaining work is almost
@@ -52,31 +53,39 @@ gates. See [Review discipline](#review-discipline).
 
 ## PHASE 7 — TIMELINE (current)
 
-The single largest missing piece, and the one the whole editor is shaped around. The
-data model is done and tested; none of it is visible or manipulable.
+**Done:** lanes, ruler, playhead, zoom, clip selection, clip move, clip trim, and
+live undo. The clock question below was decided and implemented. **Open:** keyframe
+editing and track management.
 
-**Build:**
+**Built:**
 
-1. Track list, grouped by kind, showing mute/solo and the target's name.
-2. Clip lanes with a time ruler and a draggable playhead.
-3. Drag a clip to move it in time; drag its edges to trim.
-4. Select a clip; add, move, and delete keyframes on it.
-5. Scrub and play, with the store playhead as the single source of truth.
+1. [x] Track list, grouped by kind, showing the target's name.
+2. [x] Clip lanes with a time ruler and a draggable playhead.
+3. [x] Drag a clip to move it in time; drag its edges to trim.
+4. [~] Select a clip — done. Add, move, and delete keyframes — open.
+5. [x] Scrub and play, with the store playhead as the single source of truth.
+6. [ ] Mute and solo on a track — operations exist, no control calls them.
 
-**The first decision is architectural, not visual.** `Stage` currently advances a
-private clock inside `requestAnimationFrame` and reads state through a ref. That is
-correct for 60fps redraw with zero React renders, and it is **wrong** for a
-timeline, because the playhead in the store will not move while the stage plays. The
-two clocks have to be reconciled: the stage should remain the high-frequency driver
-and the store should receive throttled playhead updates, or the store should own
-time and the stage should sample from it. Pick one deliberately and record why.
+**The clock question, decided.** `Stage` advanced a private clock inside
+`requestAnimationFrame` while the store's playhead sat still, so the two could not
+agree. The store now owns time and the stage samples from it: `advancePlayback(dt)`
+is the only thing that moves the playhead, and the stage, the transport, and the
+timeline all read the same value. The store is a subscriber, so a component that
+re-renders on the playhead is a 60fps React render — which is why the timeline's
+playhead marker is a `requestAnimationFrame` loop writing `transform3d` directly
+rather than state.
+
+**Still worth knowing:** a drag holds the clip in local state and commits once on
+release, so one drag is one undo step instead of sixty.
 
 **Gate:** a user can drag a dialogue clip 1s later, play, and watch the subtitle
 change cue. Undo restores the original position. All four build gates green.
+**Met** — the subtitle offset is sampled from the clip at the playhead, and the
+one-step undo is asserted in `src/ui/panels/Timeline.test.tsx`.
 
-**Also fix here, because they are the same code:** `TransportBar` derives duration
-from `project.scenes[0]` rather than the active scene, so the scrubber is wrong for
-every scene except the first.
+**Fixed along the way:** `TransportBar` derived duration from `project.scenes[0]`
+rather than the active scene, so the scrubber was wrong for every scene except the
+first.
 
 ---
 
@@ -114,8 +123,8 @@ covered by `sample.test.ts`, `sparse.test.ts`, and `parts.test.ts`.
 
 Selection and keyframe editing are **not** a separate phase. They are part of the
 Phase 7 timeline UI, because a timeline whose clips cannot be selected is a readout
-rather than an editor. Nothing in this phase remains to be built, and no work should
-be scheduled here.
+rather than an editor. Selection is done; keyframe editing is not, and it is the
+main thing left in this phase.
 
 ---
 
@@ -216,7 +225,7 @@ check that the assertions were the right ones. An independent pass can.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Timeline playhead and stage clock disagree | Playback is unusable, and the bug is intermittent | Resolve the ownership question in Phase 7, before building lanes |
+| Timeline playhead and stage clock disagree | Playback is unusable, and the bug is intermittent | **Resolved** — the store owns time; both read it |
 | `MediaRecorder` cannot render faster than real time | Export is unreliable or drops frames | Decide the approach during Phase 12 design, with the 3s scene as the test case |
 | Audio assets have no recordings | Playback is silent in the demo | Report missing recordings honestly; content is a production task, not a code task |
 | UI is built on core that hides defects | Defects surface late, when they are expensive | Review pass at every gate, as above |

@@ -1,10 +1,11 @@
 # ZANZA STUDIO — USER GUIDE
 
 > **Scope warning.** This guide documents the application **as it exists today**,
-> which is a working engine behind a shell. There is no timeline, no editing
-> controls, and no export. Sections marked **Not available** name what is planned
-> and where it is planned. Nothing in this guide describes a feature that is
-> mocked, and no disabled control pretends to work.
+> which is a working engine with a live timeline behind a shell. There is no
+> export, no audio playback, and no way to add or remove content. Sections marked
+> **Not available** name what is planned and where it is planned. Nothing in this
+> guide describes a feature that is mocked, and no disabled control pretends to
+> work.
 
 If you are evaluating whether this is finished: it is not. See
 [`../README.md`](../README.md) § STATUS and [`PLAN.md`](PLAN.md).
@@ -23,10 +24,12 @@ If you are evaluating whether this is finished: it is not. See
 |  SC03    |              (what the scene looks like)         |
 |  SC04    |                                                   |
 |  SC05    |                                                   |
-|----------+                                                   |
+|----------|                                                   |
 | Assets   |                                                   |
-|  (read-  |                                                   |
-|   only)  +---------------------------------------------------+
+|  (read-  +---------------------------------------------------+
+|   only)  | 0  1  2  3  4  5  6  7  8  9  10s       <- ruler |
+|          | [======]        [=========]     [=========]      |
+|          | [D][D]  [A][A][A]  [E][E][E]                     |  <- lanes
 |          |  Validation issues (empty when healthy)            |
 +----------+---------------------------------------------------+
 ```
@@ -37,6 +40,7 @@ If you are evaluating whether this is finished: it is not. See
 | **Scene list** (left, top) | The five EP001 scenes. Click to open one. |
 | **Asset panel** (left, bottom) | The project's asset library. **Read-only today.** |
 | **Stage** (centre) | A live render of the current scene at the current playhead |
+| **Timeline** (below the stage) | Lanes, ruler, playhead, and clip move/trim. See § 4b. |
 | **Issue panel** (bottom) | Validation problems. Empty means the document is sound. |
 
 ---
@@ -85,16 +89,42 @@ It is not yet responsive to window size.
 | **Scrubber** | Moves the playhead. The stage redraws to match |
 | **Timecode** | Current playhead and scene duration, in seconds |
 
-### Known transport defects
+The scrubber range and the duration in the timecode both come from the scene you
+have open, not the first scene in the list.
 
-These are real and unfixed, so you are not misled:
+Playback runs on one clock, held in the store. The stage advances it, the transport
+reads it, and the timeline playhead reads it, so they cannot drift apart. The stage
+and the timecode update on every frame, but the timeline playhead does not
+re-render React to do it — it moves via `requestAnimationFrame` and a direct
+`transform3d`, so scrubbing playback does not re-render the panel sixty times a
+second.
 
-- The scrubber range and timecode are taken from the **first** scene, not the
-  scene you have open. All five EP001 scenes are 10 s, so it looks correct until it
-  does not. Tracked in [`PLAN.md`](PLAN.md) § Phase 7.
-- While playing, the on-screen timecode does not advance. The stage runs on its own
-  internal clock so that playback does not re-render React sixty times a second;
-  the two clocks are not yet reconciled.
+---
+
+## 4b. THE TIMELINE
+
+Below the stage. One lane per track, clips laid out by their start time and
+duration, diamond markers for keyframes.
+
+| Control | Effect |
+|---|---|
+| **Ruler** | Click to move the playhead. Drag to scrub |
+| **Zoom** | `-` / `+`, or the zoom buttons. 15–360 px per second |
+| **Clip** | Click to select. Drag the body to move it, drag either end to trim it |
+| **Keyframe** | Diamond markers. Not yet editable |
+| **Playhead** | The red line. Matches the stage and the timecode exactly |
+
+A drag is a single undo step, not one per frame: the clip follows the pointer
+while you drag, and the document is written once when you let go.
+
+Snapping applies to the start of a moved clip and to a trimmed start, against clip
+edges, the playhead, and whole seconds. Hold `Alt` to turn it off.
+
+The timeline is live. It shows the scene you have open, and edits a clip in place —
+there is no separate "edit mode" and no second representation of the same data.
+
+**Not available:** reordering tracks, adding or removing tracks or clips, editing
+keyframes, and dragging a clip to another track.
 
 ---
 
@@ -169,13 +199,14 @@ one.
 
 Undo and redo work by snapshotting the whole document, capped at 100 steps.
 
-### Undo and redo currently do nothing
+Undo and redo are now live. Moving or trimming a clip in the timeline is the first
+control to change the document, and each completed drag is one step. The buttons
+enable themselves as soon as there is something to undo, and the keyboard
+shortcuts work whether or not the buttons are enabled.
 
-**The Undo and Redo buttons are permanently disabled, and this is not a bug in the
-history code.** Undo records a step when the document changes through `commit()`,
-and *no editing control exists yet* that changes the document. There is nothing to
-undo because there is nothing to edit. The store enforces a single mutation path and
-nothing bypasses it; Phase 7 introduces the first control that calls it.
+If undo appears disabled it is because the history is genuinely empty — nothing has
+changed the document yet in this session. Every mutation goes through `commit()`;
+there is no second path that edits the document behind the history's back.
 
 Ctrl+S does work: it writes the current project to IndexedDB.
 
