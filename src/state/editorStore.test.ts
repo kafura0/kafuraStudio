@@ -15,13 +15,30 @@
  *    with the timeline.
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
-import { useEditor } from './editorStore';
-import { SEED_PROJECT } from '../data/seed';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { createScene, createProject } from '../core/document/factories';
 import { setSceneDuration } from '../core/document/projectOps';
-import { createProject } from '../core/document/factories';
+import { SEED_PROJECT } from '../data/seed';
+import { useEditor } from './editorStore';
+
+// jsdom has no IndexedDB, so the repository is stubbed. `vi.mock` is hoisted above
+// the imports by vitest, which is what lets the store pick this up when it constructs
+// its repository at module scope.
+const repository = vi.hoisted(() => ({
+  save: vi.fn(async (_project: unknown) => {}),
+  loadMostRecent: vi.fn(async (): Promise<unknown> => null),
+  load: vi.fn(async (_id: string): Promise<unknown> => null),
+}));
+
+vi.mock('../core/persistence/indexedDb.browser', () => ({
+  isIndexedDbAvailable: () => true,
+  IndexedDbProjectRepository: vi.fn(() => repository),
+}));
 
 const reset = (): void => {
+  repository.save.mockClear();
+  repository.loadMostRecent.mockReset();
+  repository.loadMostRecent.mockResolvedValue(null);
   useEditor.setState({
     project: SEED_PROJECT,
     past: [],
@@ -182,5 +199,108 @@ describe('editorStore history', () => {
 
     useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 12), 'b');
     expect(useEditor.getState().future).toHaveLength(0);
+  });
+});
+
+describe('editorStore persistence races', () => {
+  beforeEach(reset);
+
+  // `save` awaits IndexedDB, so the store is free to accept an edit while the write
+  // is in flight. Folding the saved document back into the store unconditionally
+  // discarded that edit with no error and no undo step: silent data loss.
+  //
+  // jsdom has no IndexedDB, so the repository is stubbed and `save` is made to yield
+  // at a controllable point. An edit landing in that gap is the whole scenario.
+
+  it('does not let a save discard an edit committed while it was writing', async () => {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'edited');
+
+    const saving = useEditor.getState().save();
+    // The user's next edit lands while the write is still in flight.
+    useEditor.getState().commit(
+      setSceneDuration(useEditor.getState().project, first.id, 42),
+      'edited during save',
+    );
+    await saving;
+
+    expect(useEditor.getState().project.scenes[0]?.duration).toBe(42);
+    // Still dirty: this document has never reached the database.
+    expect(useEditor.getState().dirty).toBe(true);
+    // The write itself did happen, so the timestamp is real.
+    expect(repository.save).toHaveBeenCalled();
+  });
+
+  it('keeps the saved document when nothing else changed', async () => {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'edited');
+    await useEditor.getState().save();
+
+    expect(useEditor.getState().project.scenes[0]?.duration).toBe(25);
+    expect(useEditor.getState().dirty).toBe(false);
+    expect(useEditor.getState().lastSavedAt).not.toBeNull();
+  });
+
+  it('stores the document that was current, not the one that started the write', async () => {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'edited');
+    const saving = useEditor.getState().save();
+    useEditor.getState().commit(
+      setSceneDuration(useEditor.getState().project, first.id, 42),
+      'later',
+    );
+    await saving;
+
+    // The in-flight write holds 25. It must not clobber the store, which holds 42,
+    // and the 42 document is still awaiting its own autosave.
+    const written = repository.save.mock.calls.at(-1)?.[0] as { scenes: { duration: number }[] };
+    expect(written.scenes[0]?.duration).toBe(25);
+    expect(useEditor.getState().project.scenes[0]?.duration).toBe(42);  });
+
+  it('orders concurrent writes rather than letting them race to the database', async () => {
+    // Back-to-back saves must not resolve out of order, or the older document wins
+    // in the repository even though it is not what the user last edited.
+    const order: number[] = [];
+    repository.save.mockImplementation(async () => {
+      await Promise.resolve();
+    });
+
+    const a = useEditor.getState().save().then(() => order.push(1));
+    const b = useEditor.getState().save().then(() => order.push(2));
+    await Promise.all([a, b]);
+
+    expect(order).toEqual([1, 2]);
+  });
+
+  it('clears history and selection when a different project is hydrated', async () => {
+    useEditor.getState().commit(
+      setSceneDuration(SEED_PROJECT, SEED_PROJECT.scenes[0]?.id ?? '', 25),
+      'edited',
+    );
+    useEditor.getState().select('actor', 'nia');
+    useEditor.getState().setPlayhead(3);
+    useEditor.getState().play();
+
+    repository.loadMostRecent.mockResolvedValue({
+      ...createProject('Other'),
+      scenes: [{ ...createScene('Loaded', 'env_missing', { duration: 8 }) }],
+    });
+
+    await useEditor.getState().hydrate();
+
+    // Undo must not restore a document from the project that was open before the
+    // load, and nothing may stay selected from it.
+    expect(useEditor.getState().past).toHaveLength(0);
+    expect(useEditor.getState().future).toHaveLength(0);
+    expect(useEditor.getState().selection).toEqual({ kind: null, id: null });
+    expect(useEditor.getState().playhead).toBe(0);
+    expect(useEditor.getState().playing).toBe(false);
+    expect(useEditor.getState().project.name).toBe('Other');
   });
 });

@@ -71,6 +71,15 @@ export interface EditorState {
 
 const repository = new IndexedDbProjectRepository();
 
+/**
+ * Serialises writes to the repository.
+ *
+ * `save` awaits IndexedDB, and two overlapping saves can otherwise land out of order,
+ * so the older document wins in the database even though the newer one is what the
+ * user last edited.
+ */
+let pendingSave: Promise<void> = Promise.resolve();
+
 export const useEditor = create<EditorState>((set, get) => {
   const autosave = createAutosave(() => {
     void get().save();
@@ -180,10 +189,18 @@ export const useEditor = create<EditorState>((set, get) => {
         if (!saved) return;
         // The open scene must belong to the project we just loaded, or the stage
         // would be pointing at an id that no longer exists.
+        //
+        // History is cleared because it belongs to the document that was open before
+        // the load. Left in place, Ctrl+Z would restore a whole different project, and
+        // a selection could name an actor that this project does not contain.
         set({
           project: saved,
           sceneId: saved.scenes[0]?.id ?? '',
           playhead: 0,
+          playing: false,
+          past: [],
+          future: [],
+          selection: { kind: null, id: null },
           dirty: false,
           lastSavedAt: saved.updatedAt,
         });
@@ -194,12 +211,33 @@ export const useEditor = create<EditorState>((set, get) => {
       }
     },
 
+    /**
+     * Write the current document.
+     *
+     * Two things here are deliberate and were both bugs.
+     *
+     * The `await` yields, and the user can edit during it. The document that comes
+     * back from this function is therefore possibly older than what is in the store.
+     * Writing it back unconditionally would silently destroy whatever was committed
+     * while the write was in flight, so the result is only adopted if the store still
+     * holds the document that was actually saved. If it does not, the newer edit stays
+     * dirty and its own autosave will persist it.
+     *
+     * Writes are chained. Two overlapping saves could otherwise reach IndexedDB out of
+     * order, and the older one would win.
+     */
     save: async () => {
-      const state = get();
-      const stamped = touch(state.project);
+      const project = get().project;
       if (!isIndexedDbAvailable()) return;
-      await repository.save(stamped);
-      set({ project: stamped, dirty: false, lastSavedAt: stamped.updatedAt });
+
+      const stamped = touch(project);
+      const written = repository.save(stamped);
+      pendingSave = pendingSave.then(() => written, () => written);
+      await pendingSave;
+
+      if (get().project === project) {
+        set({ project: stamped, dirty: false, lastSavedAt: stamped.updatedAt });
+      }
     },
   };
 });
