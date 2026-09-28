@@ -153,9 +153,13 @@ function mapSceneLookup<T>(project: Project, sceneId: Id, fn: (scene: Scene) => 
 export function removeClip(project: Project, sceneId: Id, trackId: Id, clipId: Id): Project {
   return mapScene(project, sceneId, (scene) => ({
     ...scene,
-    tracks: scene.tracks.map((track) =>
-      track.id === trackId ? { ...track, clips: track.clips.filter((c) => c.id !== clipId) } : track,
-    ),
+    // A track emptied of clips disappears with the clip, the same rule `removeDialogueLine`
+    // already follows: an empty lane is noise the user cannot act on anyway.
+    tracks: scene.tracks.flatMap((track) => {
+      if (track.id !== trackId) return [track];
+      const clips = track.clips.filter((c) => c.id !== clipId);
+      return clips.length > 0 ? [{ ...track, clips }] : [];
+    }),
   }));
 }
 
@@ -196,7 +200,20 @@ export function moveClip(
           ? {
               ...t,
               clips: sortClips(
-                t.clips.map((c) => (c.id === clipId ? { ...c, start: clamped } : c)),
+                t.clips.map((c) => {
+                  if (c.id !== clipId) return c;
+                  // The clip's keyframes are piece of its content, exactly as an
+                  // animation sits inside the clip and not on the wall behind it. A
+                  // start-trim already shifts them; a move must not strand them at the
+                  // old absolute times, or sliding the clip silently drops every frame
+                  // of movement it was carrying.
+                  const shift = clamped - clip.start;
+                  return {
+                    ...c,
+                    start: clamped,
+                    keyframes: c.keyframes.map((kf) => ({ ...kf, time: kf.time + shift })),
+                  };
+                }),
               ),
             }
           : t,
@@ -229,7 +246,15 @@ export function trimClip(
       };
     }
     const nextEnd = Math.max(clip.start + MIN_CLIP_DURATION, time);
-    return { ...clip, duration: nextEnd - clip.start };
+    return {
+      ...clip,
+      duration: nextEnd - clip.start,
+      // A start trim slides keyframes with the content; an end trim cuts content,
+      // so a keyframe past the cut no longer animates anything and must go with it.
+      // Leaving it in the document would make the clip's invisible edge eager to
+      // surprise someone later: it would come back the moment the clip is stretched.
+      keyframes: clip.keyframes.filter((kf) => kf.time <= nextEnd),
+    };
   });
 }
 
