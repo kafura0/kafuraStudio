@@ -40,6 +40,21 @@ export interface EditorState {
   setPlayhead: (time: number) => void;
   play: () => void;
   pause: () => void;
+  /**
+   * Advance the playhead by `dt` seconds, wrapping at the end of the active scene.
+   * A no-op unless playing.
+   *
+   * This is the clock. The Stage's animation frame calls it, and everything else
+   * reads `playhead` — the transport readout, the timeline playhead, the stage
+   * itself. There is deliberately only one of them: a second clock held privately by
+   * the stage would be correct on screen and frozen everywhere else, so the scrubber
+   * and the playhead marker would sit still during playback.
+   *
+   * Not a commit: the playhead is transient view state and must never enter history.
+   */
+  advancePlayback: (dt: number) => void;
+  /** Duration of the active scene in seconds; 0 when the project has no scenes. */
+  activeDuration: () => number;
   select: (kind: SelectionKind, id: Id | null) => void;
 
   /* --- history --- */
@@ -76,6 +91,23 @@ export const useEditor = create<EditorState>((set, get) => {
     setPlayhead: (time) => set({ playhead: Math.max(0, time) }),
     play: () => set({ playing: true }),
     pause: () => set({ playing: false }),
+
+    activeDuration: () => {
+      const { project, sceneId } = get();
+      return project.scenes.find((s) => s.id === sceneId)?.duration ?? 0;
+    },
+
+    advancePlayback: (dt) => {
+      const state = get();
+      if (!state.playing || dt <= 0) return;
+      const duration = state.activeDuration();
+      if (duration <= 0) return;
+      // Wrap rather than clamp: the stage loops its scene, and stopping dead at the
+      // end would leave the playhead pinned while the transport still reads "Play".
+      const next = (state.playhead + dt) % duration;
+      set({ playhead: next < 0 ? 0 : next });
+    },
+
     select: (kind, id) => set({ selection: { kind, id } }),
 
     /**

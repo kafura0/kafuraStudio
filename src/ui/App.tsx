@@ -18,8 +18,6 @@ export function App(): React.JSX.Element {
   const project = useEditor((s) => s.project);
   const sceneId = useEditor((s) => s.sceneId);
   const setScene = useEditor((s) => s.setScene);
-  const playhead = useEditor((s) => s.playhead);
-  const playing = useEditor((s) => s.playing);
   const hydrate = useEditor((s) => s.hydrate);
   const save = useEditor((s) => s.save);
   const undo = useEditor((s) => s.undo);
@@ -70,7 +68,9 @@ export function App(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
       <TransportBar
-        project={project}
+        scene={scene}
+        projectName={project.name}
+        fps={project.settings.fps}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
@@ -90,13 +90,7 @@ export function App(): React.JSX.Element {
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
-            <Stage
-              scene={scene}
-              project={project}
-              time={playhead}
-              playing={playing}
-              width={stageWidth}
-            />
+            <Stage width={stageWidth} />
           </div>
           <IssuePanel />
         </main>

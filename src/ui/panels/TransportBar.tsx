@@ -1,8 +1,10 @@
 import { useEditor } from '../../state/editorStore';
-import type { Project } from '../../core/types';
+import type { Scene } from '../../core/types';
 
 export interface TransportBarProps {
-  project: Project;
+  scene: Scene;
+  projectName: string;
+  fps: number;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -11,7 +13,9 @@ export interface TransportBarProps {
 }
 
 export function TransportBar({
-  project,
+  scene,
+  projectName,
+  fps,
   canUndo,
   canRedo,
   onUndo,
@@ -25,13 +29,16 @@ export function TransportBar({
   const play = useEditor((s) => s.play);
   const pause = useEditor((s) => s.pause);
 
-  const scene = project.scenes[0];
-  const duration = scene?.duration ?? 0;
+  // The duration of the scene actually open. Reading the project's first scene here
+  // is what made the scrubber range and the timecode disagree with the scene being
+  // edited — invisible while every scene happens to be the same length, wrong the
+  // moment one is not.
+  const duration = scene.duration;
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-ink-800 bg-ink-900 px-3">
       <span className="text-sm font-semibold tracking-tight text-zanza-500">ZANZA</span>
-      <span className="truncate text-xs text-ink-400">{project.name}</span>
+      <span className="truncate text-xs text-ink-400">{projectName}</span>
 
       <div className="mx-2 h-5 w-px bg-ink-700" />
 
@@ -73,7 +80,7 @@ export function TransportBar({
         type="range"
         min={0}
         max={Math.max(duration, 0.001)}
-        step={1 / project.settings.fps}
+        step={1 / fps}
         value={Math.min(playhead, duration)}
         onChange={(event) => setPlayhead(Number(event.target.value))}
         aria-label="Playhead"
