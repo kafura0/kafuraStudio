@@ -16,7 +16,7 @@
  * for every x. Everything else - snapping, clamping, dragging - is built on that.
  */
 
-import type { Clip, Track } from '../types';
+import type { Clip, Keyframe, Track } from '../types';
 
 export interface TimelineMetrics {
   /** CSS pixels per second. */
@@ -231,4 +231,105 @@ export function snapCandidates(
     times.push(rect.clip.start, rect.clip.start + rect.clip.duration);
   }
   return times;
+}
+
+/* ------------------------------------------------------------------ */
+/* Keyframes                                                           */
+/* ------------------------------------------------------------------ */
+
+export interface KeyframeHit {
+  keyframe: Keyframe;
+  /** Centre of the marker, in lane space. */
+  x: number;
+  y: number;
+}
+
+/** Half-diagonal of a keyframe diamond, in CSS pixels. */
+export const KEYFRAME_PX = 4.5;
+
+/** Where a clip's keyframe row sits within a lane: the lower half, so keyframes do not
+ *  cover the clip's own label. */
+export function keyframeRowY(laneTop: number, laneHeight: number): number {
+  return laneTop + laneHeight / 2 + KEYFRAME_PX;
+}
+
+/**
+ * The keyframe under a pointer, if any.
+ *
+ * Hit testing is by the *time axis first*, not a drawn marker: a marker is only a few
+ * pixels wide, and at low zoom two keyframes a frame apart are less than a pixel
+ * apart. Taking the nearest keyframe in x within a small radius keeps a dense run of
+ * keyframes reachable, which a strict visual test does not.
+ *
+ * The last keyframe wins a tie, so dragging into a cluster grabs the one the pointer
+ * is moving towards.
+ */
+export function hitTestKeyframe(
+  keyframes: readonly Keyframe[],
+  pixelsPerSecond: number,
+  laneTop: number,
+  laneHeight: number,
+  x: number,
+  y: number,
+  radius = KEYFRAME_PX * 2,
+): KeyframeHit | null {
+  if (y < laneTop || y > laneTop + laneHeight) return null;
+  const rowY = keyframeRowY(laneTop, laneHeight);
+  if (Math.abs(y - rowY) > radius) return null;
+  let best: KeyframeHit | null = null;
+  for (const kf of keyframes) {
+    const cx = timeToX(kf.time, pixelsPerSecond);
+    if (Math.abs(x - cx) > radius) continue;
+    best = { keyframe: kf, x: cx, y: rowY };
+  }
+  return best;
+}
+
+/** Keyframes on a clip that the clip's own extent actually covers, in time order. */
+export function keyframeMarkers(
+  clip: Clip,
+  pixelsPerSecond: number,
+  laneTop: number,
+  laneHeight: number,
+): KeyframeHit[] {
+  const end = clip.start + clip.duration;
+  const y = keyframeRowY(laneTop, laneHeight);
+  return clip.keyframes
+    .filter((kf) => kf.time >= clip.start && kf.time <= end)
+    .map((kf) => ({ keyframe: kf, x: timeToX(kf.time, pixelsPerSecond), y }))
+    .sort((a, b) => a.keyframe.time - b.keyframe.time);
+}
+
+/** The keyframe at a time, or the nearest one. Used to pick a default value. */
+export function keyframeAt(
+  keyframes: readonly Keyframe[],
+  time: number,
+  epsilon = 1e-6,
+): Keyframe | null {
+  let best: Keyframe | null = null;
+  for (const kf of keyframes) {
+    if (Math.abs(kf.time - time) <= epsilon) return kf;
+    if (!best || Math.abs(kf.time - time) < Math.abs(best.time - time)) best = kf;
+  }
+  return best;
+}
+
+/** The part of a clip keyframe placement depends on: nothing more is needed. */
+export interface ClipWindow {
+  start: number;
+  duration: number;
+}
+
+/** Where a keyframe lands if dropped at a time: inside the clip window, quantised to a frame. */
+export function keyframeTime(
+  clip: ClipWindow,
+  time: number,
+  fps: number,
+): { time: number; changed: boolean } {
+  const start = clip.start;
+  const end = clip.start + clip.duration;
+  const clamped = Math.max(start, Math.min(time, end));
+  const snapped = snapToFrame(clamped, fps);
+  const bounded = Math.max(start, Math.min(snapped, end));
+  return { time: bounded, changed: Math.abs(bounded - time) > 1e-6 };
 }

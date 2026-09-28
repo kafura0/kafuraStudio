@@ -18,6 +18,11 @@ import {
   clipRect,
   frameTicks,
   hitTestClip,
+  hitTestKeyframe,
+  keyframeAt,
+  keyframeMarkers,
+  keyframeRowY,
+  keyframeTime,
   laneIndexAt,
   laneHeightTotal,
   layoutTracks,
@@ -29,7 +34,7 @@ import {
   xToTime,
 } from './geometry';
 import { createClip, createTrack } from '../document/factories';
-import type { Track } from '../types';
+import type { Clip, Keyframe, Track } from '../types';
 
 const SCALE = 100; // 100px per second keeps the arithmetic obvious.
 
@@ -286,6 +291,170 @@ describe('laneIndexAt', () => {
 
   it('returns -1 when there are no lanes', () => {
     expect(laneIndexAt(10, 0, DEFAULT_METRICS)).toBe(-1);
+  });
+});
+
+/** A clip with the given keyframes, spanning `duration` from `start`. */
+function clipWithKeys(keyframes: Keyframe[], start = 1, duration = 2): Clip {
+  return { ...createClip(start, duration), id: 'clip_k', keyframes };
+}
+
+describe('keyframe geometry', () => {
+  it('puts the keyframe row in the lower half of the lane, clear of the clip label', () => {
+    const y = keyframeRowY(0, DEFAULT_METRICS.laneHeight);
+    expect(y).toBeGreaterThan(DEFAULT_METRICS.laneHeight / 2);
+    expect(y).toBeLessThan(DEFAULT_METRICS.laneHeight);
+  });
+
+  it('offsets the keyframe row by the lane top, so every lane has its own row', () => {
+    const h = DEFAULT_METRICS.laneHeight;
+    expect(keyframeRowY(h, h) - keyframeRowY(0, h)).toBe(h);
+  });
+
+  it('marks every keyframe the clip covers, in time order', () => {
+    const clip = clipWithKeys(
+      [
+        { id: 'late', time: 2.5, ease: 'linear', props: {} },
+        { id: 'early', time: 1.5, ease: 'linear', props: {} },
+      ],
+      1,
+      2,
+    );
+    const markers = keyframeMarkers(clip, SCALE, 0, DEFAULT_METRICS.laneHeight);
+    expect(markers.map((m) => m.keyframe.id)).toEqual(['early', 'late']);
+    expect(markers[0]?.x).toBe(150);
+  });
+
+  it('does not mark a keyframe the clip no longer covers, since it animates nothing visible', () => {
+    // A clip running 1.0 to 2.0 has a keyframe at 2.5 beyond its end. Drawing it would
+    // offer an edit target that has no effect on the render.
+    const clip = clipWithKeys(
+      [
+        { id: 'inside', time: 1.5, ease: 'linear', props: {} },
+        { id: 'outside', time: 2.5, ease: 'linear', props: {} },
+      ],
+      1,
+      1,
+    );
+    const markers = keyframeMarkers(clip, SCALE, 0, DEFAULT_METRICS.laneHeight);
+    expect(markers.map((m) => m.keyframe.id)).toEqual(['inside']);
+  });
+
+  it('excludes a keyframe exactly one frame past the clip end', () => {
+    // Trimmed to exactly 2.0, a keyframe at 2.0 is the boundary, not outside it.
+    const clip = clipWithKeys([{ id: 'edge', time: 2, ease: 'linear', props: {} }], 1, 1);
+    const markers = keyframeMarkers(clip, SCALE, 0, DEFAULT_METRICS.laneHeight);
+    expect(markers.map((m) => m.keyframe.id)).toEqual(['edge']);
+  });
+
+  it('places markers inside the clip rect horizontally', () => {
+    const clip = clipWithKeys([{ id: 'k', time: 1, ease: 'linear', props: {} }], 1, 2);
+    const rect = clipRect(clip, SCALE);
+    const marker = keyframeMarkers(clip, SCALE, 0, DEFAULT_METRICS.laneHeight)[0];
+    if (!marker) throw new Error('expected a marker');
+    expect(marker.x).toBeGreaterThanOrEqual(rect.x);
+    expect(marker.x).toBeLessThanOrEqual(rect.x + rect.width);
+  });
+
+  it('hits a keyframe pressed on its row', () => {
+    const kfs = [{ id: 'k1', time: 1, ease: 'linear' as const, props: {} }];
+    const hit = hitTestKeyframe(
+      kfs,
+      SCALE,
+      0,
+      DEFAULT_METRICS.laneHeight,
+      102,
+      keyframeRowY(0, DEFAULT_METRICS.laneHeight),
+    );
+    expect(hit?.keyframe.id).toBe('k1');
+  });
+
+  it('does not hit a keyframe when the pointer is in a different lane', () => {
+    const h = DEFAULT_METRICS.laneHeight;
+    const kfs = [{ id: 'k1', time: 1, ease: 'linear' as const, props: {} }];
+    expect(hitTestKeyframe(kfs, SCALE, 0, h, 100, keyframeRowY(h, h))).toBeNull();
+  });
+
+  it('does not hit a keyframe when the pointer is on the clip body, above the row', () => {
+    const kfs = [{ id: 'k1', time: 1, ease: 'linear' as const, props: {} }];
+    expect(hitTestKeyframe(kfs, SCALE, 0, DEFAULT_METRICS.laneHeight, 100, 3)).toBeNull();
+  });
+
+  it('does not hit when the pointer is far from every keyframe in time', () => {
+    const kfs = [{ id: 'k1', time: 1, ease: 'linear' as const, props: {} }];
+    const y = keyframeRowY(0, DEFAULT_METRICS.laneHeight);
+    expect(hitTestKeyframe(kfs, SCALE, 0, DEFAULT_METRICS.laneHeight, 600, y)).toBeNull();
+  });
+
+  it('reaches a keyframe in a cluster too dense to separate by eye', () => {
+    // Two keyframes one frame apart, zoomed far out: 0.04s at 4px/s is 0.17px. A
+    // strict visual hit test cannot tell them apart, so nearest in time wins.
+    const a = { id: 'a', time: 1, ease: 'linear' as const, props: {} };
+    const b = { id: 'b', time: 1 + 1 / 24, ease: 'linear' as const, props: {} };
+    const hit = hitTestKeyframe(
+      [a, b],
+      MIN_PIXELS_PER_SECOND,
+      0,
+      DEFAULT_METRICS.laneHeight,
+      timeToX(1 + 1 / 24, MIN_PIXELS_PER_SECOND),
+      keyframeRowY(0, DEFAULT_METRICS.laneHeight),
+    );
+    expect(hit?.keyframe.id).toBe('b');
+  });
+
+  it('takes the later of two keyframes at the same x, so a drag grabs the one it heads for', () => {
+    const kfs = [
+      { id: 'first', time: 1, ease: 'linear' as const, props: {} },
+      { id: 'second', time: 1, ease: 'linear' as const, props: {} },
+    ];
+    const hit = hitTestKeyframe(
+      kfs,
+      SCALE,
+      0,
+      DEFAULT_METRICS.laneHeight,
+      100,
+      keyframeRowY(0, DEFAULT_METRICS.laneHeight),
+    );
+    expect(hit?.keyframe.id).toBe('second');
+  });
+
+  it('clamps a dropped keyframe into the clip', () => {
+    const clip = { start: 1, duration: 2 };
+    expect(keyframeTime(clip, 1.5, 24).time).toBeCloseTo(1.5, 5);
+    expect(keyframeTime(clip, 99, 24).time).toBe(3);
+    expect(keyframeTime(clip, -5, 24).time).toBe(1);
+  });
+
+  it('quantises a dropped keyframe to a frame', () => {
+    const { time } = keyframeTime({ start: 0, duration: 4 }, 1.517, 24);
+    expect(time).toBeCloseTo(1.5, 5);
+  });
+
+  it('reports whether a dropped keyframe actually moved', () => {
+    const clip = { start: 1, duration: 2 };
+    expect(keyframeTime(clip, 1.5, 24).changed).toBe(false);
+    expect(keyframeTime(clip, 1.6, 24).changed).toBe(true);
+    expect(keyframeTime(clip, 99, 24).changed).toBe(true);
+  });
+
+  it('finds the exact keyframe at a time before settling for the nearest', () => {
+    const kfs = [
+      { id: 'k1', time: 1, ease: 'linear' as const, props: {} },
+      { id: 'k2', time: 2, ease: 'linear' as const, props: {} },
+    ];
+    expect(keyframeAt(kfs, 2)?.id).toBe('k2');
+  });
+
+  it('falls back to the nearest keyframe when none sits exactly on the time', () => {
+    const kfs = [
+      { id: 'k1', time: 1, ease: 'linear' as const, props: {} },
+      { id: 'k2', time: 2, ease: 'linear' as const, props: {} },
+    ];
+    expect(keyframeAt(kfs, 1.6)?.id).toBe('k2');
+  });
+
+  it('returns null for a clip with no keyframes', () => {
+    expect(keyframeAt([], 1)).toBeNull();
   });
 });
 
