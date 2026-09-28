@@ -33,7 +33,7 @@ complete.
 ### What exists today
 
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
-53 tests green, all four gates clean.
+71 tests green, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
@@ -59,7 +59,7 @@ not new features. Nothing here has been done yet.
 
 - [ ] `npm run lint` clean — **done**
 - [ ] `npm run typecheck` clean — **done**
-- [ ] `npm run test` green — **done** (53 tests)
+- [ ] `npm run test` green — **done** (71 tests)
 - [ ] `npm run build` succeeds — **done**
 - [ ] Undo/redo covers every mutation path in the UI — store enforces one `commit()`
       path, but the timeline does not exist yet to exercise it
