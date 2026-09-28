@@ -41,6 +41,15 @@ export interface RenderOptions {
    * caller so `core` never loads anything itself.
    */
   images?: Record<string, ImageLike>;
+  /**
+   * Device pixel ratio of the target surface, as a plain number. `core` cannot read
+   * `window.devicePixelRatio`, so the caller supplies it.
+   *
+   * `renderScene` establishes its own transform from this value rather than
+   * inheriting the caller's, so the same call renders identically at any ratio and
+   * nothing ambient can leak in. Defaults to 1.
+   */
+  pixelRatio?: number;
   /** Draw the subtitle bar. On by default. */
   subtitles?: boolean;
   /** Draw the environment frame boundary. An editor aid; off by default. */
@@ -68,11 +77,16 @@ export function renderScene(
   const width = options.width ?? project.settings.width;
   const height = options.height ?? project.settings.height;
   const images = options.images ?? {};
+  const pixelRatio = options.pixelRatio ?? 1;
 
   const environment = project.assets.environments.find((e) => e.id === scene.environmentId);
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Establish the base transform explicitly. Deriving it from `pixelRatio` rather
+  // than inheriting the caller's is what makes a 2x surface render the same image at
+  // twice the resolution instead of at half size in one corner: the caller sizes the
+  // backing store, this function decides how to fill it.
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   ctx.imageSmoothingEnabled = true;

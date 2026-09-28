@@ -57,7 +57,9 @@ export function Stage({ scene, project, time, playing, width }: StageProps): Rea
 
       const height = (state.width * state.project.settings.height) / state.project.settings.width;
 
-      // Match the backing store to the device pixel ratio so 1920p is crisp.
+      // Match the backing store to the device pixel ratio so 1920p is crisp. The
+      // transform itself is `renderScene`'s job, given `pixelRatio` below — setting
+      // it here as well is how the two drifted apart and drew into one corner.
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const targetWidth = Math.round(state.width * dpr);
       const targetHeight = Math.round(height * dpr);
@@ -68,8 +70,11 @@ export function Stage({ scene, project, time, playing, width }: StageProps): Rea
       canvas.style.width = `${state.width}px`;
       canvas.style.height = `${height}px`;
 
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      renderScene(ctx, state.project, state.scene, clock, { width: state.width, height });
+      renderScene(ctx, state.project, state.scene, clock, {
+        width: state.width,
+        height,
+        pixelRatio: dpr,
+      });
 
       frame = requestAnimationFrame(draw);
     };
