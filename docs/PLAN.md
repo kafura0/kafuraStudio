@@ -106,6 +106,19 @@ resolve and render; nothing exposes them.
 
 ---
 
+## PHASE 10 — ANIMATION (complete)
+
+**Done.** Keyframes, linear and step interpolation, per-channel holds, and the talk
+pulse live in `src/core/animation/` and `src/core/render/`, are pure, and are
+covered by `sample.test.ts`, `sparse.test.ts`, and `parts.test.ts`.
+
+Selection and keyframe editing are **not** a separate phase. They are part of the
+Phase 7 timeline UI, because a timeline whose clips cannot be selected is a readout
+rather than an editor. Nothing in this phase remains to be built, and no work should
+be scheduled here.
+
+---
+
 ## PHASE 11 — PREVIEW
 
 **Build:** episode-sequential playback across all five scenes, with correct scene
@@ -146,6 +159,17 @@ ten manual checks at 1440p and 1920p.
 ---
 
 ## SEQUENCING AND WHY
+
+**The path to deployment is Phases 7 to 12, in order.** Phase 7 makes the document
+manipulable, 8 and 9 add the content lanes, 11 adds playback, and 12 adds export.
+Polishing before 12 ships means polishing an editor that cannot produce the thing it
+exists to produce, so 13 is deliberately last.
+
+Note that "deployed" and "usable" are different milestones. The app is deployable
+today — it is a static bundle with no backend, and [`DEPLOY.md`](DEPLOY.md) covers
+building and hosting it. A deployed build at the end of Phase 12 is the first one
+that can actually export an episode, which is the real deliverable. Do not describe
+a Phase 7 build as a finished product, because it is not one.
 
 **Why Phase 7 is first.** Everything the user does next flows through the timeline.
 Audio timing, camera authoring, episode playback, and export all read from tracks
