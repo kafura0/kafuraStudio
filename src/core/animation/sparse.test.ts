@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { sampleKeyframes } from './sample';
-import type { Keyframe } from '../core/types';
+import type { Keyframe } from '../types';
 
 function kf(time: number, props: Keyframe['props']): Keyframe {
   return { id: `kf${time}`, time, ease: 'linear', props };
