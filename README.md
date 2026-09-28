@@ -27,16 +27,16 @@ that is not implemented and tested. The full phase table is in
 | | |
 |---|---|
 | Build gates | `lint`, `typecheck`, `test`, `build` all green |
-| Tests | 146 passing, no browser required |
-| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim and live undo |
-| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, keyframe editing, track management |
+| Tests | 186 passing, no browser required |
+| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim, keyframe editing, per-lane mute, live undo |
+| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, track management (add/remove/reorder), drag-to-another-track |
 | Missing | Audio playback, episode playback, **export** |
 
 Concretely: the engine works, the content exists, and you can now open a scene and
-retime it on a timeline with undo. **There is still no export and no audio**, so
-nothing can leave the browser. The application is a working editor around a
-finished core, not a finished production tool. Do not judge this repository by its
-screenshots; judge it by the gates.
+retime it, add and move keyframes, and mute tracks on a timeline with undo.
+**There is still no export and no audio**, so nothing can leave the browser. The
+application is a working editor around a finished core, not a finished production
+tool. Do not judge this repository by its screenshots; judge it by the gates.
 
 Using it, including the defects you will hit: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 Hosting a built copy: [`docs/DEPLOY.md`](docs/DEPLOY.md).
@@ -165,8 +165,9 @@ new one. No in-place mutation, no component-local copies of scene state.
 **3. Undo is not optional.** It works by snapshotting immutable documents, and every
 user-visible mutation routes through a single `commit()` in the store. A mutation
 path that bypasses `commit()` is a bug, not a shortcut. The mechanism is enforced
-and **reachable from the UI**: dragging a clip on the timeline writes the document
-once when the drag ends, not once per frame, so one drag is one undo step.
+and **reachable from the UI**: dragging a clip or keyframe on the timeline writes
+the document once when the gesture ends, not once per frame, so one drag is one
+undo step.
 
 **4. Assets are data.** Characters, sets, props, poses, expressions, and audio are
 data structures. Creative content lives in `src/data/`, never in `src/core/` or

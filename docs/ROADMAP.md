@@ -25,7 +25,7 @@ complete.
 | 4 | Environment system | **complete** | Layered env + staging anchors + parallax |
 | 5 | Character system | **complete** | Rig, pose/expression override, palette theming |
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
-| 7 | Timeline | **in progress** | Track/clip/keyframe ops + sampling done and tested. The timeline UI now has lanes, a ruler, a rAF playhead, zoom, and clip move/trim with one undo step per drag. Missing: keyframe editing, track add/remove/reorder, clip add/remove, and drag-to-another-track. |
+| 7 | Timeline | **partial** | Keyframe editing done (double-click to add, drag on the frame grid, Delete/Backspace), clip move/trim, per-lane mute, one undo step per gesture. Missing: track add/remove/reorder, clip add/remove, drag-to-another-track. |
 | 8 | Dialogue / audio | **partial** | Lines, timing clips, subtitles and audio assets are modelled and render. There is no Web Audio playback and no dialogue editing UI. |
 | 9 | Camera | **partial** | Rest camera and keyframed moves resolve and render. No shot presets, no camera UI. |
 | 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
@@ -36,7 +36,7 @@ complete.
 ### What exists today
 
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
-71 tests green, all four gates clean.
+186 tests green, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
@@ -62,7 +62,7 @@ not new features.
 
 - [x] `npm run lint` clean — **done**
 - [x] `npm run typecheck` clean — **done**
-- [x] `npm run test` green — **done** (146 tests)
+- [x] `npm run test` green — **done** (186 tests)
 - [x] `npm run build` succeeds — **done**
 - [x] One store-owned clock drives the stage, the transport, and the timeline
       playhead — **done**
@@ -72,7 +72,10 @@ not new features.
       `Timeline.test.tsx`
 - [x] Undo/redo covers every mutation path in the UI — **done**; one `commit()`
       path, exercised by the timeline
-- [ ] Keyframe editing, track add/remove/reorder, clip add/remove — open
+- [x] Keyframe editing — **done**: double-click a clip to pin the pose there, drag
+      the diamond on the frame grid, Delete/Backspace to remove. Moved or start-trimmed
+      clips carry their keyframes; an end trim cuts the keyframes it cuts away.
+- [ ] Track add/remove/reorder, clip add/remove, drag-to-another-track — open
 - [ ] Autosave survives a hard reload — implemented, not yet verified in a browser
 - [ ] Export verified end-to-end in Chromium — not built
 - [x] A fifth synthetic character is placeable with zero `core/` changes (RULE 3
@@ -144,3 +147,4 @@ the document is the shared asset.
 | Date | Change |
 |---|---|
 | 2026-09-27 | Phases 0-6 and 10 complete; 7, 8, 9, 11 partial. Status table corrected — it previously claimed all thirteen phases were done, which was false. |
+| 2026-09-28 | Phase 7 keyframe editing: core semantics (clips shift their keyframes; an end trim cuts them), drag-anchored preview fix, double-click to add a keyframe, frame-grid drag, Delete/Backspace, per-lane mute. 186 tests green. |

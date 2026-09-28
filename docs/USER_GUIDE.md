@@ -109,22 +109,28 @@ duration, diamond markers for keyframes.
 | Control | Effect |
 |---|---|
 | **Ruler** | Click to move the playhead. Drag to scrub |
-| **Zoom** | `-` / `+`, or the zoom buttons. 15–360 px per second |
-| **Clip** | Click to select. Drag the body to move it, drag either end to trim it |
-| **Keyframe** | Diamond markers. Not yet editable |
+| **Zoom** | `-` / `+`, or the zoom buttons. 4–480 px per second |
+| **Clip** | Click to select. Drag the body to move it, drag either end to trim it. **Delete / Backspace** removes it |
+| **Keyframe** | **Double-click a clip** to pin the pose it draws at that moment; the diamond lands on the frame grid. **Drag a diamond** to move it in time — it snaps to frames. **Delete / Backspace** removes the selected keyframe |
+| **Mute** | The **M** control on a track's name silences every clip on it for playback |
 | **Playhead** | The red line. Matches the stage and the timecode exactly |
 
-A drag is a single undo step, not one per frame: the clip follows the pointer
-while you drag, and the document is written once when you let go.
+A drag is a single undo step, not one per frame: the clip (or keyframe) follows the
+pointer while you drag, and the document is written once when you let go.
 
 Snapping applies to the start of a moved clip and to a trimmed start, against clip
-edges, the playhead, and whole seconds. Hold `Alt` to turn it off.
+edges and whole seconds. Hold `Alt` while dragging to turn it off. Keyframes snap
+to the frame grid (at the project's frame rate).
+
+When a clip moves or its start edge trims, its keyframes travel with it — the
+animation is content, not wallpaper. Trimming the *end* edge off a clip cuts the
+keyframes that the cut reveals as well.
 
 The timeline is live. It shows the scene you have open, and edits a clip in place —
 there is no separate "edit mode" and no second representation of the same data.
 
-**Not available:** reordering tracks, adding or removing tracks or clips, editing
-keyframes, and dragging a clip to another track.
+**Not available:** reordering tracks, adding or removing tracks or clips from the
+timeline, and dragging a clip to another track.
 
 ---
 

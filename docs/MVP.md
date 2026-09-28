@@ -45,10 +45,10 @@ user can actually operate. A capability is only `implemented` when both are true
 | 11 | Place dialogue on the timeline | done | none | Timing lives on the clip, by design |
 | 12 | Basic timeline playback | done | none | One store clock drives stage, transport, and timeline playhead |
 | 13 | Basic camera controls | done | none | Keyframed moves render; no presets, no UI |
-| 14 | Basic animation keyframes | done | none | Sampler is tested; no keyframe UI |
+| 14 | Basic animation keyframes | done | partial | Sampler tested; timeline can add/move/delete keyframes on clips |
 | 15 | Save project | done | partial | IndexedDB persists; `.zanza.json` import/export not built |
 | 16 | Load project | done | done | Hydrates on start, re-validates on read |
-| 17 | Undo / redo | done | none | Timeline drag/trim exercises the single `commit()` path; one step per drag |
+| 17 | Undo / redo | done | partial | One `commit()` path; one step per drag/gesture; not yet wired to keyboard shortcuts |
 | 18 | Preview scene | done | partial | Play/pause and a scrubber; no episode playback |
 | 19 | Export a basic scene result | none | none | **Not started.** No PNG still, no WebM |
 

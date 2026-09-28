@@ -20,22 +20,24 @@ The engine is finished. The application is not.
 
 | Working | Not built |
 |---|---|
-| Document model, all operations, invariants | Keyframe editing |
-| Deterministic renderer | Track add/remove/reorder, clip add/remove |
-| Keyframe sampling, camera, talk pulse | Audio playback |
-| Seed content: 4 characters, 3 sets, 5 scenes | Episode-sequential playback |
-| IndexedDB persistence, re-validating on read | **Export** |
-| Undo/redo through one `commit()` | Preset cameras |
-| Stage with a 60fps rAF loop | `.zanza.json` import/export |
-| Timeline: lanes, ruler, playhead, zoom, move/trim | Asset editing |
+| Document model, all operations, invariants | Track add/remove/reorder, clip add/remove |
+| Deterministic renderer | Audio playback |
+| Keyframe sampling, camera, talk pulse | Episode-sequential playback |
+| Seed content: 4 characters, 3 sets, 5 scenes | **Export** |
+| IndexedDB persistence, re-validating on read | Preset cameras |
+| Undo/redo through one `commit()` | `.zanza.json` import/export |
+| Stage with a 60fps rAF loop | Asset editing |
+| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute | Drag-to-another-track |
 
-71 tests, four gates green. The useful consequence of the layering rule is that the
+186 tests, four gates green. The useful consequence of the layering rule is that the
 core can be tested to exhaustion without a browser, so the remaining work is almost
 entirely UI and a serialisation-to-media pipeline.
 
 ### The defect class that shaped this plan
 
-Three bugs recently passed all 71 tests *and* a clean typecheck:
+Three bugs recently passed all 71 tests *and* a clean typecheck — the same class of
+bug later found again in the timeline (see Phase 7, where the drag preview fed on
+itself and still passed every gate):
 
 - back hair rendered at the frame origin instead of on the head
 - `drawParts` discarded `PartDef.pivot`, so every rotated limb turned about its own
@@ -53,18 +55,22 @@ gates. See [Review discipline](#review-discipline).
 
 ## PHASE 7 — TIMELINE (current)
 
-**Done:** lanes, ruler, playhead, zoom, clip selection, clip move, clip trim, and
-live undo. The clock question below was decided and implemented. **Open:** keyframe
-editing and track management.
+**Done:** lanes, ruler, playhead, zoom, clip selection, clip move, clip trim,
+keyframe editing, per-lane mute, and live undo. The clock question below was decided
+and implemented. **Open:** track management (add/remove/reorder) and
+drag-to-another-track.
 
 **Built:**
 
 1. [x] Track list, grouped by kind, showing the target's name.
 2. [x] Clip lanes with a time ruler and a draggable playhead.
 3. [x] Drag a clip to move it in time; drag its edges to trim.
-4. [~] Select a clip — done. Add, move, and delete keyframes — open.
+4. [x] Select a clip. Add a keyframe by double-clicking a clip; drag the diamond to
+      move it on the frame grid; Delete/Backspace removes the selection. A moved or
+      start-trimmed clip carries its keyframes; an end trim cuts the keyframes past
+      the cut (asserted in `trackOps.test.ts`).
 5. [x] Scrub and play, with the store playhead as the single source of truth.
-6. [ ] Mute and solo on a track — operations exist, no control calls them.
+6. [~] Mute — done, per-lane **M** control. Solo — operation does not exist.
 
 **The clock question, decided.** `Stage` advanced a private clock inside
 `requestAnimationFrame` while the store's playhead sat still, so the two could not
@@ -75,8 +81,10 @@ re-renders on the playhead is a 60fps React render — which is why the timeline
 playhead marker is a `requestAnimationFrame` loop writing `transform3d` directly
 rather than state.
 
-**Still worth knowing:** a drag holds the clip in local state and commits once on
-release, so one drag is one undo step instead of sixty.
+**Still worth knowing:** a drag holds the clip (or keyframe) in local state and
+commits once on release, so one drag is one undo step instead of sixty. The preview
+is always derived from the drag-start values, never from the previous preview —
+a self-referential preview drifts a few pixels per pointermove.
 
 **Gate:** a user can drag a dialogue clip 1s later, play, and watch the subtitle
 change cue. Undo restores the original position. All four build gates green.
@@ -85,7 +93,12 @@ one-step undo is asserted in `src/ui/panels/Timeline.test.tsx`.
 
 **Fixed along the way:** `TransportBar` derived duration from `project.scenes[0]`
 rather than the active scene, so the scrubber was wrong for every scene except the
-first.
+first. The drag preview accumulated across pointer moves (a second `pointermove`
+measured from the first preview instead of the gesture origin), so a two-move drag
+overshot; regression test moves twice to the same spot and asserts the clip lands
+where the pointer is. A keyframe drag commonly grabbed from the wrong anchor too:
+the preview measured from the clip start rather than the keyframe, so a keyframe
+sitting mid-clip jumped.
 
 ---
 
