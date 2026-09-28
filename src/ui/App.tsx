@@ -13,6 +13,7 @@ import { SceneList } from './panels/SceneList';
 import { AssetPanel } from './panels/AssetPanel';
 import { TransportBar } from './panels/TransportBar';
 import { IssuePanel } from './panels/IssuePanel';
+import { Timeline } from './panels/Timeline';
 
 export function App(): React.JSX.Element {
   const project = useEditor((s) => s.project);
@@ -93,6 +94,7 @@ export function App(): React.JSX.Element {
             <Stage width={stageWidth} />
           </div>
           <IssuePanel />
+          <Timeline />
         </main>
       </div>
     </div>
