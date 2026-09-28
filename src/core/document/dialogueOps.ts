@@ -58,13 +58,14 @@ export function addDialogueLineWithCue(
   const next = mapScene(project, sceneId, (scene) => {
     const withLine: Scene = { ...scene, dialogue: [...scene.dialogue, line] };
     const trackName = input.trackName ?? `Dialogue — ${input.speaker}`;
-    const { scene: withTrack } = findOrCreateTrack(withLine, 'dialogue', line.id, trackName);
+    const { scene: withTrack, track } = findOrCreateTrack(withLine, 'dialogue', line.id, trackName);
+    // Append to the track that was just resolved, and to no other. Each line owns a
+    // track keyed by its own id, so broadcasting the clip put every line's cue on
+    // every other line's track and the scene rendered each subtitle once per track.
     return {
       ...withTrack,
-      tracks: withTrack.tracks.map((track) =>
-        track.clips.some((c) => c.dialogueLineId === line.id)
-          ? track
-          : { ...track, clips: sortClips([...track.clips, clip]) },
+      tracks: withTrack.tracks.map((t) =>
+        t.id === track.id ? { ...t, clips: sortClips([...t.clips, clip]) } : t,
       ),
     };
   });
@@ -84,20 +85,27 @@ export function updateDialogueLine(
   }));
 }
 
+/**
+ * Delete a line, its timing clip, and the track that existed only to hold that clip.
+ *
+ * `addDialogueLineWithCue` keys each line's track by the line id, so a scene has one
+ * dialogue track per line. Cleaning only the first dialogue track would orphan the
+ * clip and leave an empty track behind, which `validateProject` reports as an error.
+ */
 export function removeDialogueLine(project: Project, sceneId: Id, lineId: Id): Project {
   return mapScene(project, sceneId, (scene) => {
-    const track = scene.tracks.find((t) => t.kind === 'dialogue');
-    const withoutLine = {
-      ...scene,
-      dialogue: scene.dialogue.filter((line) => line.id !== lineId),
-    };
-    if (!track) return withoutLine;
-    return {
-      ...withoutLine,
-      tracks: withoutLine.tracks.map((t) =>
-        t.id === track.id ? { ...t, clips: t.clips.filter((c) => c.dialogueLineId !== lineId) } : t,
-      ),
-    };
+    const remaining = scene.dialogue.filter((line) => line.id !== lineId);
+    const withoutLine: Scene = { ...scene, dialogue: remaining };
+
+    const tracks = withoutLine.tracks
+      .map((track) =>
+        track.kind === 'dialogue'
+          ? { ...track, clips: track.clips.filter((c) => c.dialogueLineId !== lineId) }
+          : track,
+      )
+      .filter((track) => !(track.kind === 'dialogue' && track.clips.length === 0));
+
+    return { ...withoutLine, tracks };
   });
 }
 

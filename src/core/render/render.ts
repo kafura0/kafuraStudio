@@ -323,7 +323,7 @@ export function drawParts(
     ctx.translate(part.x, part.y);
     ctx.rotate(part.rotation);
     ctx.scale(part.scaleX, part.scaleY);
-    drawShapeAtPivot(ctx, part.shape, part.color, { x: 0.5, y: 0.5 }, images[part.id]);
+    drawShapeAtPivot(ctx, part.shape, part.color, part.pivot, images[part.id]);
     ctx.restore();
   }
 }

@@ -34,6 +34,13 @@ export interface ResolvedPart {
   rotation: number;
   scaleX: number;
   scaleY: number;
+  /**
+   * Normalised 0..1 pivot within the shape, copied from the `PartDef`.
+   *
+   * The renderer must translate by `-pivot * size` or a limb rotates about its
+   * middle instead of its joint, so this cannot be defaulted at draw time.
+   */
+  pivot: Vec2;
 }
 
 /** Resolve a colour key against a palette, treating it as a literal if unknown. */
@@ -74,15 +81,52 @@ export interface ResolveRigOptions {
   expression?: ExpressionDef | null;
 }
 
+/**
+ * Order the parts so every parent is resolved before any of its children.
+ *
+ * This is deliberately *not* the draw order. A part's `z` says where it paints, and
+ * nothing about where it sits in the hierarchy: back hair is a child of the head but
+ * paints behind the whole body. Resolving in z order therefore read the head's world
+ * transform before the head had been resolved, and drew the hair at the rig origin
+ * instead of on the head.
+ *
+ * Depth-first by hierarchy, tie-broken by `z` so the result is stable.
+ */
+function resolutionOrder(parts: PartDef[]): PartDef[] {
+  const byId = new Map(parts.map((p) => [p.id, p]));
+  const depthOfPart = new Map<string, number>();
+  const inProgress = new Set<string>();
+
+  const depthOf = (part: PartDef): number => {
+    const cached = depthOfPart.get(part.id);
+    if (cached !== undefined) return cached;
+    // A cycle is a data error, not something to hang on. Treat the offender as a
+    // root so resolution still terminates and the validator can report it.
+    if (inProgress.has(part.id)) return 0;
+    const parent = part.parent === null ? undefined : byId.get(part.parent);
+    if (!parent) {
+      depthOfPart.set(part.id, 0);
+      return 0;
+    }
+    inProgress.add(part.id);
+    const depth = depthOf(parent) + 1;
+    inProgress.delete(part.id);
+    depthOfPart.set(part.id, depth);
+    return depth;
+  };
+
+  return [...parts]
+    .map((part) => ({ part, depth: depthOf(part) }))
+    .sort((a, b) => a.depth - b.depth || a.part.z - b.part.z)
+    .map((entry) => entry.part);
+}
+
 export function resolveRig(
   parts: PartDef[],
   palette: Record<string, string>,
   options: ResolveRigOptions,
 ): ResolvedPart[] {
-  // Draw order is `z` ascending. A parent part is always authored with a lower `z`
-  // than its children, so sorting guarantees a parent is resolved before its child
-  // and the transform stack stays valid in a single pass.
-  const ordered = [...parts].sort((a, b) => a.z - b.z);
+  const ordered = resolutionOrder(parts);
   const indexById = new Map<string, number>();
   ordered.forEach((part, index) => indexById.set(part.id, index));
 
@@ -120,7 +164,6 @@ export function resolveRig(
 
     const shape = expressionOverride?.shape ?? poseOverride?.shape ?? part.shape;
     const colorKey = expressionOverride?.colorKey ?? poseOverride?.colorKey ?? part.colorKey;
-
     stack[index] = world;
 
     // The talk pulse widens the mouth on the Y axis only, so it reads as an open
@@ -140,9 +183,12 @@ export function resolveRig(
       rotation: world.rotation + options.rotation,
       scaleX: (options.flipX ? -1 : 1) * uniformScale,
       scaleY: options.scale * world.scaleY * mouthBoost,
+      pivot: part.pivot,
     });
   });
 
+  // Paint in the authored `z` order, which is unrelated to the order above.
+  out.sort((a, b) => a.z - b.z);
   return out;
 }
 

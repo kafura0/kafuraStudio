@@ -46,12 +46,17 @@ export function placeCharacter(
   character: CharacterDef,
   placement: Partial<Transform2D> & { poseId?: string; expressionId?: string } = {},
 ): { project: Project; actorId: Id } {
+  // Pick the transform fields explicitly. `placement` also carries poseId and
+  // expressionId, and passing it straight through would splatter them into
+  // `SceneActor.transform` — a blind spread erases the type error but not the keys,
+  // and the stray ids would be serialized into the document.
+  const { poseId, expressionId, ...placementTransform } = placement;
   const actor = createActor(
     character.id,
     character.name,
-    placement.poseId ?? character.defaultPoseId,
-    placement.expressionId ?? character.defaultExpressionId,
-    placement,
+    poseId ?? character.defaultPoseId,
+    expressionId ?? character.defaultExpressionId,
+    placementTransform,
   );
   const next = addActorToScene(project, sceneId, actor);
   return { project: next, actorId: actor.id };
