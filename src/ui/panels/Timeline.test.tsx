@@ -264,6 +264,229 @@ describe('Timeline', () => {
     fireEvent.pointerDown(ruler, { clientX: 180, clientY: 10 });
     expect(useEditor.getState().playhead).toBeCloseTo(3, 6);
   });
+
+  it('a move drag is anchored to where the drag started, not the last preview', async () => {
+    // Two pointer moves arriving at the same spot must not stack: the clip lands
+    // where the pointer is, not where a drift-prone preview accumulated to.
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = pressableClip();
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(
+      new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`),
+    );
+
+    const before = useEditor.getState().past.length;
+    const at = clipPosition(trackIndex, clip);
+    fireEvent.pointerDown(button, at);
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: at.clientX + 120, clientY: at.clientY });
+    });
+    // The pointer has not moved since; the preview must stay put.
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: at.clientX + 120, clientY: at.clientY });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window);
+    });
+
+    const moved = useEditor
+      .getState()
+      .project.scenes.find((s) => s.id === scene.id)
+      ?.tracks.find((t) => t.id === track.id)
+      ?.clips.find((c) => c.id === clip.id);
+    // 120px is 2s at the default 60px/s scale. A preview that fed on itself would
+    // have landed at +4s; this is the anchored +2s.
+    expect(moved?.start).toBeGreaterThan(clip.start + 1.9);
+    expect(moved?.start).toBeLessThan(clip.start + 2.1);
+    expect(useEditor.getState().past.length).toBe(before + 1);
+  });
+});
+
+/** A wide clip with no keyframes yet, so keyframe tests start from a blank slate. */
+function keyframeableClip(): { trackIndex: number; track: Track; clip: Clip } {
+  if (!scene) throw new Error('seed scene missing');
+  let best: { trackIndex: number; track: Track; clip: Clip } | null = null;
+  for (const [trackIndex, track] of scene.tracks.entries()) {
+    for (const clip of track.clips) {
+      if (clip.keyframes.length > 0) continue;
+      if (!best || clip.duration > best.clip.duration) best = { trackIndex, track, clip };
+    }
+  }
+  if (!best) throw new Error('seed scene has no keyframe-free clip');
+  return best;
+}
+
+/** A position on the frame grid inside a clip, at the quarter point of its body. */
+function quarterTime(clip: { start: number; duration: number }): number {
+  return Math.round((clip.start + clip.duration * 0.25) * 24) / 24;
+}
+
+describe('Timeline keyframe editing', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    resetStore();
+    stubRect();
+  });
+
+  it('double-clicking a clip plants a keyframe on the frame grid as one undo step', () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = keyframeableClip();
+    const planted = quarterTime(clip);
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`));
+    const before = useEditor.getState().past.length;
+
+    fireEvent.doubleClick(button, {
+      clientX: planted * SCALE,
+      clientY: trackIndex * LANE + LANE / 2 + RULER,
+    });
+
+    const state = useEditor.getState();
+    const edited = state.project.scenes
+      .find((s) => s.id === scene.id)
+      ?.tracks.find((t) => t.id === track.id)
+      ?.clips.find((c) => c.id === clip.id);
+    expect(edited?.keyframes).toHaveLength(1);
+    expect(edited?.keyframes[0]?.time).toBeCloseTo(planted, 5);
+    // The new keyframe becomes the selection, ready for a drag or Delete.
+    expect(state.selection.kind).toBe('keyframe');
+    expect(state.past.length).toBe(before + 1);
+  });
+
+  it('dragging a keyframe moves it, quantised to the frame grid, in one commit', async () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = keyframeableClip();
+    const planted = quarterTime(clip);
+    const deltaPx = 60; // one second at the default scale
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`));
+    fireEvent.doubleClick(button, {
+      clientX: planted * SCALE,
+      clientY: trackIndex * LANE + LANE / 2 + RULER,
+    });
+
+    const marker = screen.getByTitle(`keyframe @ ${planted.toFixed(2)}s`);
+    const before = useEditor.getState().past.length;
+    const at = { clientX: planted * SCALE, clientY: trackIndex * LANE + LANE / 2 + RULER };
+
+    fireEvent.pointerDown(marker, at);
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: at.clientX + deltaPx, clientY: at.clientY });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window);
+    });
+
+    const state = useEditor.getState();
+    const edited = state.project.scenes
+      .find((s) => s.id === scene.id)
+      ?.tracks.find((t) => t.id === track.id)
+      ?.clips.find((c) => c.id === clip.id);
+    expect(edited?.keyframes).toHaveLength(1);
+    expect(edited?.keyframes[0]?.time).toBeCloseTo(planted + 1, 5);
+    expect(state.past.length).toBe(before + 1);
+  });
+
+  it('a keyframe drag that snaps back to where it started commits nothing', async () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = keyframeableClip();
+    const planted = quarterTime(clip);
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`));
+    fireEvent.doubleClick(button, {
+      clientX: planted * SCALE,
+      clientY: trackIndex * LANE + LANE / 2 + RULER,
+    });
+
+    const marker = screen.getByTitle(`keyframe @ ${planted.toFixed(2)}s`);
+    const before = useEditor.getState().past.length;
+    // 0.004s is comfortably inside a frame, so the quantised keyframe does not move.
+    const wobble = (1 / 24) / 3; // under half a frame
+
+    fireEvent.pointerDown(marker, { clientX: planted * SCALE, clientY: trackIndex * LANE + LANE / 2 + RULER });
+    await act(async () => {
+      fireEvent.pointerMove(window, {
+        clientX: planted * SCALE + wobble * SCALE,
+        clientY: trackIndex * LANE + LANE / 2 + RULER,
+      });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window);
+    });
+
+    expect(useEditor.getState().past.length).toBe(before);
+  });
+
+  it('Delete removes the selected clip; Backspace removes the selected keyframe', () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = keyframeableClip();
+    const planted = quarterTime(clip);
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`));
+
+    // Backspace on a keyframe selection removes the keyframe, not the clip.
+    fireEvent.doubleClick(button, {
+      clientX: planted * SCALE,
+      clientY: trackIndex * LANE + LANE / 2 + RULER,
+    });
+    fireEvent.keyDown(window, { key: 'Backspace' });
+
+    let clipAfter =
+      useEditor
+        .getState()
+        .project.scenes.find((s) => s.id === scene.id)
+        ?.tracks.find((t) => t.id === track.id)?.clips ?? [];
+    const survivor = clipAfter.find((c) => c.id === clip.id);
+    expect(survivor).toBeDefined();
+    expect(survivor?.keyframes).toHaveLength(0);
+
+    // Delete on the clip selection removes the whole clip.
+    fireEvent.pointerDown(button, clipPosition(trackIndex, clip));
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    clipAfter =
+      useEditor
+        .getState()
+        .project.scenes.find((s) => s.id === scene.id)
+        ?.tracks.find((t) => t.id === track.id)?.clips ?? [];
+    expect(clipAfter.find((c) => c.id === clip.id)).toBeUndefined();
+  });
+
+  it('the M button mutes and unmutes its track through a commit', () => {
+    if (!scene) throw new Error('seed scene missing');
+    render(<Timeline />);
+    const beforeMuted = scene.tracks.filter((t) => t.muted).length;
+
+    const muteButtons = screen.getAllByLabelText(/^Mute /);
+    const firstMute = muteButtons[0];
+    if (!firstMute) throw new Error('no mute buttons');
+    fireEvent.click(firstMute);
+
+    let tracks =
+      useEditor
+        .getState()
+        .project.scenes.find((s) => s.id === scene.id)
+        ?.tracks.map((t) => ({ id: t.id, muted: t.muted })) ?? [];
+    expect(tracks.filter((t) => t.muted).length).toBe(beforeMuted + 1);
+
+    // Its label flipped, so the mute list no longer contains the same button.
+    const unmuteButtons = screen.getAllByLabelText(/^Unmute /);
+    const firstUnmute = unmuteButtons[0];
+    if (!firstUnmute) throw new Error('no unmute buttons');
+    fireEvent.click(firstUnmute);
+
+    tracks =
+      useEditor
+        .getState()
+        .project.scenes.find((s) => s.id === scene.id)
+        ?.tracks.map((t) => ({ id: t.id, muted: t.muted })) ?? [];
+    expect(tracks.filter((t) => t.muted).length).toBe(beforeMuted);
+  });
 });
 
 function escape(text: string): string {
