@@ -142,8 +142,10 @@ export function resolveRig(
     let local = applyOverride(part.rest, poseOverride);
     if (expressionOverride) local = applyOverride(local, expressionOverride);
 
-    const visible = part.visible && (expressionOverride?.visible ?? poseOverride?.visible ?? true);
-    if (!visible) return;
+    // A slot the expression hides is hidden even if the pose showed it, and the
+    // reverse: an explicit `visible: true` from either layer wins over a rest `false`.
+    const visible =
+      part.visible && (expressionOverride?.visible ?? poseOverride?.visible ?? true);
 
     const parentIndex = part.parent === null ? -1 : (indexById.get(part.parent) ?? -1);
     const parent = parentIndex >= 0 ? stack[parentIndex] : undefined;
@@ -162,9 +164,15 @@ export function resolveRig(
       world.y += options.origin.y;
     }
 
+    // The stack is written even for a part that is not drawn. A hidden part still has
+    // a world transform, and its children compose against it — skipping the write
+    // would leave the slot undefined and drop the whole subtree to the frame origin.
+    stack[index] = world;
+
+    if (!visible) return;
+
     const shape = expressionOverride?.shape ?? poseOverride?.shape ?? part.shape;
     const colorKey = expressionOverride?.colorKey ?? poseOverride?.colorKey ?? part.colorKey;
-    stack[index] = world;
 
     // The talk pulse widens the mouth on the Y axis only, so it reads as an open
     // jaw rather than a shrunken head.

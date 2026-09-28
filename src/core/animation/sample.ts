@@ -89,17 +89,29 @@ export function sampleKeyframes(keyframes: Keyframe[], time: number): KeyframeTa
 
   const out: KeyframeTarget = { ...a.props };
   for (const channel of NUMERIC_CHANNELS) {
-    const from = a.props[channel];
     const to = b.props[channel];
-    if (typeof from === 'number' && typeof to === 'number') {
+    // The value the channel held on entering this segment: either keyed at `a`, or the
+    // most recent *earlier* keyframe that keyed it. Resolving the `from` side this way
+    // is what lets a channel ramp through a keyframe that happens to be silent about
+    // it, instead of vanishing for that segment and snapping back at `b`.
+    //
+    // `high - 1`, not `high`: the search is inclusive of its upper bound, and `high`
+    // would be `b` itself, defeating the purpose.
+    const from =
+      typeof a.props[channel] === 'number'
+        ? (a.props[channel] as number)
+        : lastKeyedNumberBefore(keyframes, high - 1, channel);
+
+    if (from === undefined) {
+      // Never keyed before `b`, so the channel does not exist yet and the rest value
+      // applies. Keying only the destination is a deliberate "hold" at that value from
+      // `b` onward, not a ramp from zero.
+      delete out[channel];
+    } else if (typeof to === 'number') {
       out[channel] = lerp(from, to, t);
-    } else if (typeof to !== 'number') {
+    } else {
       // `b` is silent about this channel, so it holds whatever was last keyed.
-      // Without this, dropping a single keyframe mid-track would silently reset
-      // that channel to its rest value for the rest of the scene.
-      const held = lastKeyedNumberBefore(keyframes, high, channel);
-      if (held !== undefined) out[channel] = held;
-      else delete out[channel];
+      out[channel] = from;
     }
   }
   // Discrete channels are carried by the `{ ...a.props }` spread above and are never
