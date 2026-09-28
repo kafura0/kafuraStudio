@@ -20,12 +20,18 @@ import { createScene, createProject } from '../core/document/factories';
 import { setSceneDuration } from '../core/document/projectOps';
 import { SEED_PROJECT } from '../data/seed';
 import { useEditor } from './editorStore';
+import type { Project } from '../core/types';
 
 // jsdom has no IndexedDB, so the repository is stubbed. `vi.mock` is hoisted above
 // the imports by vitest, which is what lets the store pick this up when it constructs
 // its repository at module scope.
+//
+// The `unknown` in these signatures is loadMostRecent's, not save's: the store has to
+// treat whatever comes back out of the database as untrusted, so `save` is typed with
+// the real document and the queueing tests can read the scene duration off the
+// argument they were handed.
 const repository = vi.hoisted(() => ({
-  save: vi.fn(async (_project: unknown) => {}),
+  save: vi.fn(async (_project: Project) => {}),
   loadMostRecent: vi.fn(async (): Promise<unknown> => null),
   load: vi.fn(async (_id: string): Promise<unknown> => null),
 }));
@@ -263,19 +269,65 @@ describe('editorStore persistence races', () => {
     expect(written.scenes[0]?.duration).toBe(25);
     expect(useEditor.getState().project.scenes[0]?.duration).toBe(42);  });
 
-  it('orders concurrent writes rather than letting them race to the database', async () => {
-    // Back-to-back saves must not resolve out of order, or the older document wins
-    // in the repository even though it is not what the user last edited.
-    const order: number[] = [];
-    repository.save.mockImplementation(async () => {
-      await Promise.resolve();
+  it('does not start a second write until the first has finished', async () => {
+    // The point of the queue is that the repository is never asked to write two
+    // documents at once. Merely chaining the awaiting would still start both writes,
+    // and it is the order they *complete* in that decides which one ends up stored.
+    // So the first write is held open here and the second is checked to be untouched
+    // until it is released.
+    let releaseFirst: () => void = () => {};
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
     });
+    repository.save.mockImplementationOnce(() => firstWrite).mockImplementation(async () => {});
 
-    const a = useEditor.getState().save().then(() => order.push(1));
-    const b = useEditor.getState().save().then(() => order.push(2));
+    const a = useEditor.getState().save();
+    const b = useEditor.getState().save();
+    await Promise.resolve();
+
+    expect(repository.save).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
     await Promise.all([a, b]);
 
-    expect(order).toEqual([1, 2]);
+    expect(repository.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('stores the newer document last when two saves overlap', async () => {
+    // The failure this guards against is the older document winning the database. The
+    // first write is made slow and the second fast, so with concurrent writes the
+    // second would finish first and the stale document would be the one left stored.
+    const stored: number[] = [];
+    let call = 0;
+    repository.save.mockImplementation(async (project: Project) => {
+      const delay = call++ === 0 ? 20 : 0;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      stored.push(project.scenes[0]?.duration ?? -1);
+    });
+
+    const sceneId = SEED_PROJECT.scenes[0]?.id ?? '';
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, sceneId, 11), 'first');
+    // Issued before the second edit, so it captures the 11s document.
+    const a = useEditor.getState().save();
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, sceneId, 22), 'second');
+    const b = useEditor.getState().save();
+
+    await Promise.all([a, b]);
+
+    expect(stored).toEqual([11, 22]);
+    expect(useEditor.getState().project.scenes[0]?.duration).toBe(22);
+  });
+
+  it('keeps saving after a write fails', async () => {
+    // A rejected write must not reject the queue itself, or every later save fails
+    // without ever reaching the database and the project silently stops persisting.
+    repository.save.mockRejectedValueOnce(new Error('quota exceeded'));
+
+    await expect(useEditor.getState().save()).rejects.toThrow('quota exceeded');
+
+    repository.save.mockImplementation(async () => {});
+    await expect(useEditor.getState().save()).resolves.toBeUndefined();
+    expect(repository.save).toHaveBeenCalledTimes(2);
   });
 
   it('clears history and selection when a different project is hydrated', async () => {

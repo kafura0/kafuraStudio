@@ -77,8 +77,12 @@ const repository = new IndexedDbProjectRepository();
  * `save` awaits IndexedDB, and two overlapping saves can otherwise land out of order,
  * so the older document wins in the database even though the newer one is what the
  * user last edited.
+ *
+ * This holds the last queued *write*, and is awaited by the next save before it starts
+ * its own. A rejected write is absorbed here rather than in the queue, so one failure
+ * cannot poison every save that follows it.
  */
-let pendingSave: Promise<void> = Promise.resolve();
+let pendingSave: Promise<unknown> = Promise.resolve();
 
 export const useEditor = create<EditorState>((set, get) => {
   const autosave = createAutosave(() => {
@@ -231,9 +235,21 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!isIndexedDbAvailable()) return;
 
       const stamped = touch(project);
-      const written = repository.save(stamped);
-      pendingSave = pendingSave.then(() => written, () => written);
-      await pendingSave;
+      // The repository call itself is queued, not just the awaiting of it. Chaining
+      // `pendingSave` after starting the write would leave every save running
+      // concurrently with all the others, and it is the completion order - not the
+      // start order - that decides which document ends up in the database.
+      const write = pendingSave.then(
+        () => repository.save(stamped),
+        () => repository.save(stamped),
+      );
+      // The queue must survive a failed write, or one rejected save would reject every
+      // save after it and the project would silently stop persisting.
+      pendingSave = write.then(
+        () => undefined,
+        () => undefined,
+      );
+      await write;
 
       if (get().project === project) {
         set({ project: stamped, dirty: false, lastSavedAt: stamped.updatedAt });
