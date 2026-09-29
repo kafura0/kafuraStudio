@@ -46,7 +46,7 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       const state = useEditor.getState();
       state.advancePlayback(dt);
 
-      const { project, sceneId, playhead } = useEditor.getState();
+      const { project, sceneId, playhead, showSubtitles } = useEditor.getState();
       const scene = project.scenes.find((s) => s.id === sceneId) ?? null;
       const stageWidth = widthRef.current;
       const stageHeight =
@@ -70,6 +70,7 @@ export function Stage({ width }: StageProps): React.JSX.Element {
           width: stageWidth,
           height: stageHeight,
           pixelRatio: dpr,
+          subtitles: showSubtitles,
         });
       }
 

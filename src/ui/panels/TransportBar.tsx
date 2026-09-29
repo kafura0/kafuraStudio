@@ -25,9 +25,11 @@ export function TransportBar({
   const playhead = useEditor((s) => s.playhead);
   const playing = useEditor((s) => s.playing);
   const dirty = useEditor((s) => s.dirty);
+  const showSubtitles = useEditor((s) => s.showSubtitles);
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const play = useEditor((s) => s.play);
   const pause = useEditor((s) => s.pause);
+  const toggleSubtitles = useEditor((s) => s.toggleSubtitles);
 
   // The duration of the scene actually open. Reading the project's first scene here
   // is what made the scrubber range and the timecode disagree with the scene being
@@ -89,6 +91,21 @@ export function TransportBar({
       <span className="w-24 text-right font-mono text-[11px] text-ink-400">
         {playhead.toFixed(2)} / {duration.toFixed(2)}s
       </span>
+
+      <button
+        type="button"
+        onClick={toggleSubtitles}
+        aria-pressed={showSubtitles}
+        aria-label="Subtitles"
+        title={showSubtitles ? 'Hide subtitles' : 'Show subtitles'}
+        className={`rounded px-2 py-1 text-xs transition-colors ${
+          showSubtitles
+            ? 'bg-zanza-500/20 text-zanza-400 hover:bg-zanza-500/30'
+            : 'text-ink-500 hover:bg-ink-800 hover:text-ink-300'
+        }`}
+      >
+        CC
+      </button>
     </header>
   );
 }

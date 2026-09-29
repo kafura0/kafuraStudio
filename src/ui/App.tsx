@@ -14,6 +14,7 @@ import { AssetPanel } from './panels/AssetPanel';
 import { TransportBar } from './panels/TransportBar';
 import { IssuePanel } from './panels/IssuePanel';
 import { Timeline } from './panels/Timeline';
+import { DialoguePanel } from './panels/DialoguePanel';
 
 export function App(): React.JSX.Element {
   const project = useEditor((s) => s.project);
@@ -80,12 +81,16 @@ export function App(): React.JSX.Element {
       />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-64 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+        {/* The left column scrolls, so the dialogue editor and the asset library share
+            it. The stage is a fixed 960px and there is no room beside it at 1440p —
+            claiming a right-hand inspector would mean clipping the picture. */}
+        <aside className="w-72 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
           <SceneList
             scenes={project.scenes}
             activeSceneId={scene.id}
             onSelect={setScene}
           />
+          <DialoguePanel />
           <AssetPanel project={project} />
         </aside>
 

@@ -20,7 +20,7 @@ import { IndexedDbProjectRepository, isIndexedDbAvailable } from '../core/persis
 import { createAutosave } from './autosave';
 import { syncPlaybackAudio, stopPlaybackAudio } from './audioChannel';
 
-export type SelectionKind = 'actor' | 'prop' | 'clip' | 'keyframe' | 'anchor' | null;
+export type SelectionKind = 'actor' | 'prop' | 'clip' | 'keyframe' | 'anchor' | 'line' | null;
 
 export interface EditorState {
   project: Project;
@@ -30,6 +30,8 @@ export interface EditorState {
   // Transient: never recorded in history.
   playhead: number;
   playing: boolean;
+  /** Draw the subtitle bar. A view preference, not a document setting. */
+  showSubtitles: boolean;
   /** The scene the editor is showing. Always a member of `project.scenes`. */
   sceneId: Id;
   selection: { kind: SelectionKind; id: Id | null };
@@ -41,6 +43,7 @@ export interface EditorState {
   setPlayhead: (time: number) => void;
   play: () => void;
   pause: () => void;
+  toggleSubtitles: () => void;
   /**
    * Advance the playhead by `dt` seconds, wrapping at the end of the active scene.
    * A no-op unless playing.
@@ -96,6 +99,7 @@ export const useEditor = create<EditorState>((set, get) => {
     future: [],
     playhead: 0,
     playing: false,
+    showSubtitles: true,
     sceneId: SEED_PROJECT.scenes[0]?.id ?? '',
     selection: { kind: null, id: null },
     dirty: false,
@@ -111,6 +115,7 @@ export const useEditor = create<EditorState>((set, get) => {
       stopPlaybackAudio(get().project);
       set({ playing: false });
     },
+    toggleSubtitles: () => set((s) => ({ showSubtitles: !s.showSubtitles })),
 
     activeDuration: () => {
       const { project, sceneId } = get();
