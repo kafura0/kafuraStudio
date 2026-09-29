@@ -1,6 +1,6 @@
 # ZANZA STUDIO — DEVELOPMENT PLAN
 
-> **Current phase: Phase 7 — TIMELINE**
+> **Current phase: Phase 8 — DIALOGUE / AUDIO**
 > **Not started: Phase 12 — EXPORT**
 
 The plan of record for what gets built next, in what order, and what is
@@ -20,16 +20,16 @@ The engine is finished. The application is not.
 
 | Working | Not built |
 |---|---|
-| Document model, all operations, invariants | Track add/remove/reorder, clip add/remove |
-| Deterministic renderer | Audio playback |
-| Keyframe sampling, camera, talk pulse | Episode-sequential playback |
-| Seed content: 4 characters, 3 sets, 5 scenes | **Export** |
-| IndexedDB persistence, re-validating on read | Preset cameras |
-| Undo/redo through one `commit()` | `.zanza.json` import/export |
-| Stage with a 60fps rAF loop | Asset editing |
-| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute | Drag-to-another-track |
+| Document model, all operations, invariants | Audio playback |
+| Deterministic renderer | Episode-sequential playback |
+| Keyframe sampling, camera, talk pulse | **Export** |
+| Seed content: 4 characters, 3 sets, 5 scenes | Preset cameras |
+| IndexedDB persistence, re-validating on read | `.zanza.json` import/export |
+| Undo/redo through one `commit()` | Asset editing |
+| Stage with a 60fps rAF loop | Dialogue editing UI |
+| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute, track add/remove/reorder, drag-to-another-track | — |
 
-186 tests, four gates green. The useful consequence of the layering rule is that the
+196 tests, four gates green. The useful consequence of the layering rule is that the
 core can be tested to exhaustion without a browser, so the remaining work is almost
 entirely UI and a serialisation-to-media pipeline.
 

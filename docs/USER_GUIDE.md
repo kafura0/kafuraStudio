@@ -112,7 +112,8 @@ duration, diamond markers for keyframes.
 | **Zoom** | `-` / `+`, or the zoom buttons. 4–480 px per second |
 | **Clip** | Click to select. Drag the body to move it, drag either end to trim it. **Delete / Backspace** removes it |
 | **Keyframe** | **Double-click a clip** to pin the pose it draws at that moment; the diamond lands on the frame grid. **Drag a diamond** to move it in time — it snaps to frames. **Delete / Backspace** removes the selected keyframe |
-| **Mute** | The **M** control on a track's name silences every clip on it for playback |
+| **Track** | Each track's name row has controls: **`+`** drops a 1-second clip on that track at the playhead; **`×`** deletes the track (a dialogue track takes its line with it); **`↑` / `↓`** reorder; **M** silences every clip on it for playback |
+| **Between tracks** | Drag a clip onto a lane of the same kind to move it to that track; the target lane highlights while you are over it. A lane of a different kind ignores the drop |
 | **Playhead** | The red line. Matches the stage and the timecode exactly |
 
 A drag is a single undo step, not one per frame: the clip (or keyframe) follows the
@@ -128,9 +129,6 @@ keyframes that the cut reveals as well.
 
 The timeline is live. It shows the scene you have open, and edits a clip in place —
 there is no separate "edit mode" and no second representation of the same data.
-
-**Not available:** reordering tracks, adding or removing tracks or clips from the
-timeline, and dragging a clip to another track.
 
 ---
 
@@ -250,9 +248,8 @@ Everything below is planned and unscheduled, or scheduled. None of it works.
 
 | Feature | Where planned |
 |---|---|
-| Timeline, clip dragging, trimming, keyframe editing | [`PLAN.md`](PLAN.md) § Phase 7 — **current phase** |
 | Editing actors: move, scale, pose, expression, anchor binding | Phase 7 |
-| Dialogue and audio editing | Phase 8 |
+| Dialogue and audio editing | Phase 8 — **current phase** |
 | Camera presets and a camera panel | Phase 9 |
 | Episode-sequential playback | Phase 11 |
 | PNG still, project JSON import/export, video export | Phase 12 |

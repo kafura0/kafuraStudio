@@ -27,13 +27,14 @@ that is not implemented and tested. The full phase table is in
 | | |
 |---|---|
 | Build gates | `lint`, `typecheck`, `test`, `build` all green |
-| Tests | 186 passing, no browser required |
-| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim, keyframe editing, per-lane mute, live undo |
-| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, track management (add/remove/reorder), drag-to-another-track |
+| Tests | 196 passing, no browser required |
+| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, add-clip-at-playhead, drag clips between lanes, live undo |
+| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, dialogue/audio editing, picture-locked camera authoring |
 | Missing | Audio playback, episode playback, **export** |
 
 Concretely: the engine works, the content exists, and you can now open a scene and
-retime it, add and move keyframes, and mute tracks on a timeline with undo.
+retime it, add and move keyframes and clips, reorder or delete tracks, move clips
+between same-kind lanes, and mute tracks — every gesture one undoable step.
 **There is still no export and no audio**, so nothing can leave the browser. The
 application is a working editor around a finished core, not a finished production
 tool. Do not judge this repository by its screenshots; judge it by the gates.

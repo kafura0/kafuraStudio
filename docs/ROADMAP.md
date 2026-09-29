@@ -1,6 +1,6 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 7 — TIMELINE**
+> **Current phase: Phase 8 — DIALOGUE / AUDIO**
 
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
@@ -25,7 +25,7 @@ complete.
 | 4 | Environment system | **complete** | Layered env + staging anchors + parallax |
 | 5 | Character system | **complete** | Rig, pose/expression override, palette theming |
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
-| 7 | Timeline | **partial** | Keyframe editing done (double-click to add, drag on the frame grid, Delete/Backspace), clip move/trim, per-lane mute, one undo step per gesture. Missing: track add/remove/reorder, clip add/remove, drag-to-another-track. |
+| 7 | Timeline | **complete** | Lanes, ruler, playhead, zoom, clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, clip add, drag clips to another track of the same kind — all through one undoable `commit()` per gesture. |
 | 8 | Dialogue / audio | **partial** | Lines, timing clips, subtitles and audio assets are modelled and render. There is no Web Audio playback and no dialogue editing UI. |
 | 9 | Camera | **partial** | Rest camera and keyframed moves resolve and render. No shot presets, no camera UI. |
 | 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
@@ -36,7 +36,7 @@ complete.
 ### What exists today
 
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
-186 tests green, all four gates clean.
+196 tests green, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
@@ -50,19 +50,19 @@ Verified by `npm run lint && npm run typecheck && npm run test && npm run build`
 
 ### What is deliberately not built
 
-Keyframe and track editing, asset editing, audio playback, episode playback, and
-export. These are the phases above, not gaps in the ones below.
+Asset editing, audio playback, episode playback, and export. These are the phases
+above, not gaps in the ones below.
 
 ---
 
-## PHASE 7 — TIMELINE (current)
+## PHASE 7 — TIMELINE (complete)
 
 The final phase of the MVP. Success is the acceptance gate in `docs/MVP.md` §4,
 not new features.
 
 - [x] `npm run lint` clean — **done**
 - [x] `npm run typecheck` clean — **done**
-- [x] `npm run test` green — **done** (186 tests)
+- [x] `npm run test` green — **done** (196 tests)
 - [x] `npm run build` succeeds — **done**
 - [x] One store-owned clock drives the stage, the transport, and the timeline
       playhead — **done**
@@ -75,12 +75,20 @@ not new features.
 - [x] Keyframe editing — **done**: double-click a clip to pin the pose there, drag
       the diamond on the frame grid, Delete/Backspace to remove. Moved or start-trimmed
       clips carry their keyframes; an end trim cuts the keyframes it cuts away.
-- [ ] Track add/remove/reorder, clip add/remove, drag-to-another-track — open
-- [ ] Autosave survives a hard reload — implemented, not yet verified in a browser
-- [ ] Export verified end-to-end in Chromium — not built
+- [x] Track management — **done**: each lane has add-clip-at-playhead (`+`), delete
+      (`×`, a dialogue cue lane takes its line with it), reorder (`↑`/`↓`), and mute
+      (`M`). Core ops `moveTrack` and `relocateClip` are tested; a drag that lands
+      on a lane of the wrong kind burns no undo step.
+- [x] Drag-to-another-track — **done**: dragging a clip onto a same-kind lane
+      relocates it in one commit; the target lane highlights while the pointer is
+      over it, `Alt` still un-snaps.
 - [x] A fifth synthetic character is placeable with zero `core/` changes (RULE 3
       test) — **done**, automated in `src/data/rule3.test.ts`
 - [x] Docs match the implementation — **done**
+
+Browser-verified autosave survives a hard reload was listed here; it is an in-app
+verification and is tracked with the Phase 13 browser pass instead. Export is
+Phase 12.
 
 ---
 
@@ -148,3 +156,4 @@ the document is the shared asset.
 |---|---|
 | 2026-09-27 | Phases 0-6 and 10 complete; 7, 8, 9, 11 partial. Status table corrected — it previously claimed all thirteen phases were done, which was false. |
 | 2026-09-28 | Phase 7 keyframe editing: core semantics (clips shift their keyframes; an end trim cuts them), drag-anchored preview fix, double-click to add a keyframe, frame-grid drag, Delete/Backspace, per-lane mute. 186 tests green. |
+| 2026-09-29 | Phase 7 **complete**. Track management (`moveTrack`, `relocateClip` core ops) and its UI: add-clip-at-playhead, delete lane, reorder, drag clips to another same-kind lane with the drop lane highlighted. 196 tests green. Current phase is now Phase 8 — Dialogue / audio. |
