@@ -22,8 +22,11 @@ import { createProject, createScene } from './factories';
 import {
   addKeyframe,
   addSimpleClip,
+  addTrack,
   moveClip,
   moveKeyframe,
+  moveTrack,
+  relocateClip,
   removeClip,
   removeKeyframe,
   trimClip,
@@ -171,6 +174,60 @@ describe('moveKeyframe', () => {
     const times = clipOf(next, trackId, clipId)?.keyframes.map((k) => k.time) ?? [];
     expect(times[0]).toBe(2.8);
     expect(times[1]).toBeCloseTo(70 / 24, 5);
+  });
+});
+
+describe('moveTrack', () => {
+  it('moves a track to an earlier index', () => {
+    const { project, sceneId, trackId, clipId } = projectWith();
+    let p = addTrack(project, sceneId, 'audio', 'amb_1', 'Ambience A');
+    p = addTrack(p, sceneId, 'camera', 'camera', 'Camera');
+    const ids = (p.scenes[0]?.tracks ?? []).map((t) => t.id);
+    const next = moveTrack(p, sceneId, ids[1] ?? '', 0);
+    const order = (next.scenes[0]?.tracks ?? []).map((t) => t.id);
+    expect(order).toEqual([ids[1], ids[0], ids[2]]);
+    expect(clipOf(next, trackId, clipId)).toBeDefined();
+  });
+
+  it('clamps an out-of-range index to the end and is a no-op for an unknown track', () => {
+    const { project, sceneId } = projectWith();
+    const withA = addTrack(project, sceneId, 'audio', 'amb_1', 'Ambience A');
+    const ids = (withA.scenes[0]?.tracks ?? []).map((t) => t.id);
+    const afterClamp = moveTrack(withA, sceneId, ids[0] ?? '', 99);
+    const order = (afterClamp.scenes[0]?.tracks ?? []).map((t) => t.id);
+    expect(order[order.length - 1]).toBe(ids[0]);
+    // An unknown track must leave the document untouched, object identity and all —
+    // the UI depends on that to skip a no-op undo step.
+    expect(moveTrack(withA, sceneId, 'track_missing', 0)).toBe(withA);
+  });
+});
+
+describe('relocateClip', () => {
+  it('moves a clip onto another same-kind track and strips an emptied source', () => {
+    const { project, sceneId, trackId, clipId } = projectWith();
+    // A second dialogue line owns its own track (dialogue tracks are keyed by line
+    // id), so this one is a genuinely different track of the same kind.
+    const withOther = addSimpleClip(project, sceneId, 'dialogue', 'line_two', 'Other line', 5, 1);
+    expect(withOther.trackId).not.toBe(trackId);
+    const next = relocateClip(withOther.project, sceneId, trackId, withOther.trackId, clipId);
+    const target = next.scenes[0]?.tracks.find((t) => t.id === withOther.trackId);
+    // sortClips orders by start time, so the relocated 2s clip leads the 5s one.
+    expect(target?.clips.map((c) => c.id)).toEqual([clipId, withOther.clipId]);
+    expect(next.scenes[0]?.tracks.find((t) => t.id === trackId)).toBeUndefined();
+  });
+
+  it('refuses a cross-kind move', () => {
+    const { project, sceneId, trackId, clipId } = projectWith();
+    const withAudio = addTrack(project, sceneId, 'audio', 'sound', 'Ambience');
+    const audioTrack = withAudio.scenes[0]?.tracks.find((t) => t.kind === 'audio');
+    if (!audioTrack) throw new Error('no audio track');
+    const next = relocateClip(withAudio, sceneId, trackId, audioTrack.id, clipId);
+    expect(next).toBe(withAudio);
+  });
+
+  it('is a no-op when the tracks match', () => {
+    const { project, sceneId, trackId, clipId } = projectWith();
+    expect(relocateClip(project, sceneId, trackId, trackId, clipId)).toBe(project);
   });
 });
 

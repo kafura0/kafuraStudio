@@ -70,6 +70,22 @@ export function removeTrack(project: Project, sceneId: Id, trackId: Id): Project
   }));
 }
 
+/** Move a track to another position, keeping its order relative to the others. */
+export function moveTrack(project: Project, sceneId: Id, trackId: Id, toIndex: number): Project {
+  const from = mapSceneLookup(project, sceneId, (scene) =>
+    scene.tracks.findIndex((t) => t.id === trackId),
+  );
+  if (from === undefined || from < 0) return project;
+  return mapScene(project, sceneId, (scene) => {
+    const tracks = [...scene.tracks];
+    const [track] = tracks.splice(from, 1);
+    if (!track) return scene;
+    const target = Math.max(0, Math.min(toIndex, tracks.length));
+    tracks.splice(target, 0, track);
+    return { ...scene, tracks };
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* Clips                                                               */
 /* ------------------------------------------------------------------ */
@@ -161,6 +177,48 @@ export function removeClip(project: Project, sceneId: Id, trackId: Id, clipId: I
       return clips.length > 0 ? [{ ...track, clips }] : [];
     }),
   }));
+}
+
+/** Move a clip onto another track of the same kind (e.g. dialogue -> dialogue). */
+export function relocateClip(
+  project: Project,
+  sceneId: Id,
+  fromTrackId: Id,
+  toTrackId: Id,
+  clipId: Id,
+): Project {
+  if (fromTrackId === toTrackId) return project;
+  const kinds = mapSceneLookup(project, sceneId, (scene) => {
+    const from = scene.tracks.find((t) => t.id === fromTrackId);
+    const to = scene.tracks.find((t) => t.id === toTrackId);
+    if (!from || !to) return null;
+    return { fromKind: from.kind, toKind: to.kind };
+  });
+  // No-op and refusal branches keep the caller's object identity, so the drag that
+  // landed nowhere does not burn an undo step.
+  if (!kinds || kinds.fromKind !== kinds.toKind) return project;
+  return mapScene(project, sceneId, (scene) => {
+    const from = scene.tracks.find((t) => t.id === fromTrackId);
+    const to = scene.tracks.find((t) => t.id === toTrackId);
+    if (!from || !to) return scene;
+    const clip = from.clips.find((c) => c.id === clipId);
+    if (!clip) return scene;
+
+    const withoutClip = from.clips.filter((c) => c.id !== clipId);
+    return {
+      ...scene,
+      tracks: scene.tracks.flatMap((track) => {
+        if (track.id === fromTrackId) {
+          // Same rule as removeClip: a source emptied of clips disappears.
+          return withoutClip.length > 0 ? [{ ...track, clips: withoutClip }] : [];
+        }
+        if (track.id === toTrackId) {
+          return [{ ...track, clips: sortClips([...track.clips, clip]) }];
+        }
+        return [track];
+      }),
+    };
+  });
 }
 
 /** Move a clip in time, keeping its duration. Snaps to nearby clip edges. */
