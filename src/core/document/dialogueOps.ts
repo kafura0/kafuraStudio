@@ -10,7 +10,14 @@ import { createId, ID_PREFIX } from '../id';
 import type { AudioDef, Clip, DialogueLine, Id, Project, Scene } from '../types';
 import { createDialogueLine } from './factories';
 import { mapScene } from './projectOps';
-import { addSimpleClip, findOrCreateTrack, sortClips } from './trackOps';
+import {
+  MIN_CLIP_DURATION,
+  addSimpleClip,
+  findOrCreateTrack,
+  moveClip,
+  sortClips,
+  trimClip,
+} from './trackOps';
 
 /* ------------------------------------------------------------------ */
 /* Dialogue lines                                                      */
@@ -107,6 +114,56 @@ export function removeDialogueLine(project: Project, sceneId: Id, lineId: Id): P
 
     return { ...withoutLine, tracks };
   });
+}
+
+/**
+ * Re-time a line's cue, in one mutation, by line id.
+ *
+ * Timing lives on the clip, so re-timing a line means finding the clip that carries it.
+ * The editor knows the *line* — that is what gets selected — and making the panel
+ * search the tracks for the lane would put document structure in the UI. This resolves
+ * the cue here and routes through the same `moveClip` / `trimClip` the timeline drags
+ * use, so a number typed into the panel and a drag of that clip are the same edit.
+ *
+ * Snapping is off. `moveClip` snaps to neighbouring clip edges because a pointer drag
+ * wants that; a number the user typed is exact, and silently moving it 0.4s to a
+ * neighbour's edge would be a lie about what they asked for.
+ *
+ * A line with no cue, or a cue already sitting at the requested window, returns the
+ * same project object, so a no-op edit burns no undo step.
+ */
+export function setDialogueCue(
+  project: Project,
+  sceneId: Id,
+  lineId: Id,
+  cue: { start?: number; duration?: number },
+): Project {
+  const scene = project.scenes.find((s) => s.id === sceneId);
+  if (!scene) return project;
+
+  let trackId: Id | null = null;
+  let clip: Clip | null = null;
+  for (const track of scene.tracks) {
+    const found = track.clips.find((c) => c.dialogueLineId === lineId);
+    if (found) {
+      trackId = track.id;
+      clip = found;
+      break;
+    }
+  }
+  if (!trackId || !clip) return project;
+
+  const start = cue.start === undefined ? clip.start : Math.max(0, cue.start);
+  const duration = cue.duration === undefined ? clip.duration : Math.max(MIN_CLIP_DURATION, cue.duration);
+
+  let next = project;
+  if (Math.abs(start - clip.start) > 1e-6) {
+    next = moveClip(next, sceneId, trackId, clip.id, start, { snap: false });
+  }
+  if (Math.abs(duration - clip.duration) > 1e-6) {
+    next = trimClip(next, sceneId, trackId, clip.id, 'end', start + duration);
+  }
+  return next;
 }
 
 /** Attach or swap the voice asset for a line, in one mutation. */
