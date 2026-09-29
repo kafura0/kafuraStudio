@@ -20,16 +20,18 @@ The engine is finished. The application is not.
 
 | Working | Not built |
 |---|---|
-| Document model, all operations, invariants | Audio playback |
-| Deterministic renderer | Episode-sequential playback |
-| Keyframe sampling, camera, talk pulse | **Export** |
-| Seed content: 4 characters, 3 sets, 5 scenes | Preset cameras |
-| IndexedDB persistence, re-validating on read | `.zanza.json` import/export |
-| Undo/redo through one `commit()` | Asset editing |
-| Stage with a 60fps rAF loop | Dialogue editing UI |
-| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute, track add/remove/reorder, drag-to-another-track | — |
+| Document model, all operations, invariants | Episode-sequential playback |
+| Deterministic renderer | **Export** |
+| Keyframe sampling, camera, talk pulse | Preset cameras |
+| Seed content: 4 characters, 3 sets, 5 scenes | `.zanza.json` import/export |
+| IndexedDB persistence, re-validating on read | Asset editing |
+| Undo/redo through one `commit()` | Attaching a file to an audio slot |
+| Stage with a 60fps rAF loop | — |
+| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute, track add/remove/reorder, drag-to-another-track | |
+| Audio: pure plan + Web Audio playback on the store's clock, per-clip gain | |
+| Dialogue panel: text, speaker, actor, emotion, subtitle, cue timing, voice | |
 
-196 tests, four gates green. The useful consequence of the layering rule is that the
+243 tests, four gates green. The useful consequence of the layering rule is that the
 core can be tested to exhaustion without a browser, so the remaining work is almost
 entirely UI and a serialisation-to-media pipeline.
 
@@ -102,7 +104,7 @@ sitting mid-clip jumped.
 
 ---
 
-## PHASE 8 — DIALOGUE AND AUDIO
+## PHASE 8 — DIALOGUE AND AUDIO (current, partial)
 
 **Build:** Web Audio playback scheduled against scene time, mix controls per clip,
 subtitle rendering verified, and a dialogue editing panel — text, speaker, emotion,
@@ -116,6 +118,20 @@ feature (RULE 9).
 
 **Gate:** pressing play produces audio in time with the picture, and a missing
 recording is reported honestly.
+
+**Done:** the pure `audioPlan`; the Web Audio scheduler fed the store's own clock, so
+picture and sound cannot drift; the per-clip gain slider; the dialogue panel with
+speaker, actor, emotion, text, subtitle override, cue start and duration, voice and
+delete; `setDialogueCue`, so a typed number and a dragged clip are the same edit; the
+`CC` subtitle toggle; and honest "no recording" reporting from one predicate,
+`hasRecording`.
+
+**Not done, deliberately:** there is no UI for attaching a file to a slot, so the
+gate's first half cannot be demonstrated on the shipped content. The mechanism is
+tested against a fake `AudioPort` and stays silent until content exists. A file-attach
+flow is the next piece of this phase: the engine already resolves and decodes whatever
+`src` holds, so what is missing is picking a file and writing the asset through
+`commit()`.
 
 ---
 
