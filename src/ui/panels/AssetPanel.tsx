@@ -1,11 +1,18 @@
-import type { Project } from '../../core/types';
+import type { AudioDef, Project } from '../../core/types';
+import { hasRecording } from '../../core/audio/recording';
 
 /**
  * The asset library browser.
  *
  * Read-only in this phase: it shows that assets exist and are shared, which is the
- * point of the product. Editing an asset is a later phase; presenting a control
- * that does nothing would be a placeholder pretending to be a feature (RULE 9).
+ * point of the product. Editing an asset is a later phase; presenting a control that
+ * does nothing would be a placeholder pretending to be a feature (RULE 9).
+ *
+ * Audio is the one group that is not a bare list of names. An audio entry without a
+ * file is a declared slot waiting on a recording, and the whole library ships that way;
+ * listing those names with no marker would let a user believe a voice exists when none
+ * does. So each slot states its kind, its length, and whether there is anything behind
+ * it (RULE 9).
  */
 export function AssetPanel({ project }: { project: Project }): React.JSX.Element {
   const { assets } = project;
@@ -15,7 +22,6 @@ export function AssetPanel({ project }: { project: Project }): React.JSX.Element
     { label: 'Poses', count: assets.poses.length, names: assets.poses.map((p) => p.name) },
     { label: 'Expressions', count: assets.expressions.length, names: assets.expressions.map((e) => e.name) },
     { label: 'Props', count: assets.props.length, names: assets.props.map((p) => p.name) },
-    { label: 'Audio', count: assets.audio.length, names: assets.audio.map((a) => a.name) },
   ];
 
   return (
@@ -39,7 +45,39 @@ export function AssetPanel({ project }: { project: Project }): React.JSX.Element
             </dd>
           </div>
         ))}
+        <div>
+          <dt className="flex items-baseline justify-between text-xs text-ink-200">
+            <span>Audio</span>
+            <span className="font-mono text-[11px] text-ink-500">{assets.audio.length}</span>
+          </dt>
+          <dd className="mt-1 space-y-1">
+            {assets.audio.map((asset) => (
+              <AudioRow key={asset.id} asset={asset} />
+            ))}
+          </dd>
+        </div>
       </dl>
     </section>
+  );
+}
+
+function AudioRow({ asset }: { asset: AudioDef }): React.JSX.Element {
+  const recorded = hasRecording(asset);
+  return (
+    <div className="text-[11px]" title={asset.src ?? 'No file attached'}>
+      <p className="truncate text-ink-400">{asset.name}</p>
+      <p className="flex items-center gap-1.5 text-[10px] text-ink-500">
+        <span className="font-mono">{asset.kind}</span>
+        <span aria-hidden>·</span>
+        <span className="font-mono">{asset.duration.toFixed(1)}s</span>
+        {recorded ? (
+          <span className="text-ink-500">· file attached</span>
+        ) : (
+          <span className="text-amber-500/80" data-testid="audio-no-file">
+            · no recording
+          </span>
+        )}
+      </p>
+    </div>
   );
 }
