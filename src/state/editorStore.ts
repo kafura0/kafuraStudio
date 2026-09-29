@@ -18,6 +18,7 @@ import { validateProject } from '../core/document/invariants';
 import { touch } from '../core/document/projectOps';
 import { IndexedDbProjectRepository, isIndexedDbAvailable } from '../core/persistence/indexedDb.browser';
 import { createAutosave } from './autosave';
+import { syncPlaybackAudio, stopPlaybackAudio } from './audioChannel';
 
 export type SelectionKind = 'actor' | 'prop' | 'clip' | 'keyframe' | 'anchor' | null;
 
@@ -100,10 +101,16 @@ export const useEditor = create<EditorState>((set, get) => {
     dirty: false,
     lastSavedAt: null,
 
-    setScene: (sceneId) => set({ sceneId, playhead: 0, selection: { kind: null, id: null } }),
+    setScene: (sceneId) => {
+      stopPlaybackAudio(get().project);
+      set({ sceneId, playhead: 0, selection: { kind: null, id: null } });
+    },
     setPlayhead: (time) => set({ playhead: Math.max(0, time) }),
     play: () => set({ playing: true }),
-    pause: () => set({ playing: false }),
+    pause: () => {
+      stopPlaybackAudio(get().project);
+      set({ playing: false });
+    },
 
     activeDuration: () => {
       const { project, sceneId } = get();
@@ -119,6 +126,7 @@ export const useEditor = create<EditorState>((set, get) => {
       // end would leave the playhead pinned while the transport still reads "Play".
       const next = (state.playhead + dt) % duration;
       set({ playhead: next < 0 ? 0 : next });
+      syncPlaybackAudio(state.project, state.sceneId, next, true);
     },
 
     select: (kind, id) => set({ selection: { kind, id } }),
