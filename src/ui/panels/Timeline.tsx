@@ -450,12 +450,29 @@ export function Timeline(): React.JSX.Element {
       if (selection.kind === 'clip') {
         for (const track of sceneSel.tracks) {
           if (!track.clips.some((c) => c.id === selection.id)) continue;
-          const next = removeClip(project, sceneId, track.id, selection.id);
+          const clip = track.clips.find((c) => c.id === selection.id);
+          // A dialogue cue *is* its line: removing the clip alone would leave the line
+          // behind with nothing to say, and no lane for it. The panel's own delete
+          // button does the same thing, and the lane `×` already routes here.
+          const next =
+            clip?.dialogueLineId !== null && clip?.dialogueLineId !== undefined
+              ? removeDialogueLine(project, sceneId, clip.dialogueLineId)
+              : removeClip(project, sceneId, track.id, selection.id);
           if (next !== project) {
             select(null, null);
-            commit(next, 'Delete clip');
+            commit(next, clip?.dialogueLineId ? 'Delete line' : 'Delete clip');
           }
           return;
+        }
+        return;
+      }
+
+      // A line selected in the panel deletes the line, its cue, and its lane together.
+      if (selection.kind === 'line') {
+        const next = removeDialogueLine(project, sceneId, selection.id);
+        if (next !== project) {
+          select(null, null);
+          commit(next, 'Delete line');
         }
         return;
       }

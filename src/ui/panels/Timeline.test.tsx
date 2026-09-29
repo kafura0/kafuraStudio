@@ -457,6 +457,36 @@ describe('Timeline keyframe editing', () => {
     expect(clipAfter.find((c) => c.id === clip.id)).toBeUndefined();
   });
 
+  it('Delete on a dialogue cue takes the line with it, not just the clip', () => {
+    if (!scene) throw new Error('seed scene missing');
+    // A cue is the timing of a line. Removing only the clip would leave the line in the
+    // script with nothing that ever displays or plays it, and no lane to re-time it on.
+    const trackIndex = scene.tracks.findIndex((t) => t.kind === 'dialogue' && t.clips.length > 0);
+    const track = scene.tracks[trackIndex];
+    const clip = track?.clips[0];
+    const lineId = clip?.dialogueLineId;
+    if (!track || !clip || !lineId) throw new Error('seed scene has no dialogue cue');
+    if (clip.duration * SCALE <= 2 * 7 + 4) throw new Error('cue too narrow to press by its body');
+
+    render(<Timeline />);
+    const button = screen.getByLabelText(
+      new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`),
+    );
+    const before = useEditor.getState().past.length;
+
+    fireEvent.pointerDown(button, clipPosition(trackIndex, clip));
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    const after =
+      useEditor.getState().project.scenes.find((s) => s.id === scene.id) ?? null;
+    expect(after?.dialogue.map((l) => l.id)).not.toContain(lineId);
+    expect(after?.tracks.flatMap((t) => t.clips).map((c) => c.dialogueLineId)).not.toContain(lineId);
+    // The lane existed only to hold that cue, so it goes with it.
+    expect(after?.tracks.some((t) => t.kind === 'dialogue' && t.targetId === lineId)).toBe(false);
+    expect(useEditor.getState().past.length).toBe(before + 1);
+    expect(useEditor.getState().selection).toEqual({ kind: null, id: null });
+  });
+
   it('the M button mutes and unmutes its track through a commit', () => {
     if (!scene) throw new Error('seed scene missing');
     render(<Timeline />);
