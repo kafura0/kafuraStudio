@@ -487,6 +487,134 @@ describe('Timeline keyframe editing', () => {
         ?.tracks.map((t) => ({ id: t.id, muted: t.muted })) ?? [];
     expect(tracks.filter((t) => t.muted).length).toBe(beforeMuted);
   });
+
+  it('drops a dragged clip onto another lane of the same kind in one commit', async () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = pressableClip();
+    // pressableClip lands on the first dialogue lane; the next dialogue lane is a
+    // genuinely different track of the same kind.
+    const targetIndex = scene.tracks.findIndex(
+      (t, i) => t.kind === 'dialogue' && i !== trackIndex,
+    );
+    const targetTrack = scene.tracks[targetIndex];
+    if (!targetTrack) throw new Error('no other dialogue lane');
+
+    const before = useEditor.getState().past.length;
+    render(<Timeline />);
+    const button = screen.getByLabelText(
+      new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`),
+    );
+
+    const at = clipPosition(trackIndex, clip);
+    fireEvent.pointerDown(button, at);
+    await act(async () => {
+      fireEvent.pointerMove(window, {
+        clientX: at.clientX,
+        clientY: targetIndex * LANE + LANE / 2 + RULER,
+      });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window);
+    });
+
+    const state = useEditor.getState();
+    expect(state.past.length).toBe(before + 1);
+    const sceneNow = state.project.scenes.find((s) => s.id === scene.id);
+    // The clip left its one-clip dialogue lane entirely and now carries the line's cue.
+    expect(sceneNow?.tracks.some((t) => t.id === track.id)).toBe(false);
+    const onTarget = sceneNow?.tracks.find((t) => t.id === targetTrack.id);
+    expect(onTarget?.clips.some((c) => c.id === clip.id)).toBe(true);
+  });
+
+  it('a dropped clip that crosses kinds commits nothing and stays home', async () => {
+    if (!scene) throw new Error('seed scene missing');
+    const { trackIndex, track, clip } = pressableClip();
+    // An actor lane: a different kind from dialogue, so the drop must not land.
+    const actorIndex = scene.tracks.findIndex((t) => t.kind === 'actor');
+
+    const before = useEditor.getState().past.length;
+    render(<Timeline />);
+    const button = screen.getByLabelText(
+      new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`),
+    );
+
+    const at = clipPosition(trackIndex, clip);
+    fireEvent.pointerDown(button, at);
+    await act(async () => {
+      fireEvent.pointerMove(window, {
+        clientX: at.clientX,
+        clientY: actorIndex * LANE + LANE / 2 + RULER,
+      });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window);
+    });
+
+    const state = useEditor.getState();
+    expect(state.past.length).toBe(before);
+    const stillHome = state.project.scenes
+      .find((s) => s.id === scene.id)
+      ?.tracks.find((t) => t.id === track.id);
+    expect(stillHome?.clips.some((c) => c.id === clip.id)).toBe(true);
+  });
+
+  it('adds a one-second clip at the playhead through a commit', () => {
+    if (!scene) throw new Error('seed scene missing');
+    const audioIndex = scene.tracks.findIndex((t) => t.kind === 'audio');
+    const audioTrack = scene.tracks[audioIndex];
+    if (!audioTrack) throw new Error('no audio lane');
+
+    const before = useEditor.getState().past.length;
+    render(<Timeline />);
+    const add = screen.getByLabelText(`Add clip to ${audioTrack.name} at playhead`);
+    fireEvent.click(add);
+
+const state = useEditor.getState();
+    expect(state.past.length).toBe(before + 1);
+    const clips = state.project.scenes
+      .find((s) => s.id === scene.id)
+      ?.tracks.find((t) => t.id === audioTrack.id)?.clips ?? [];
+    // Playhead was 0, so the fresh clip starts on the frame grid origin.
+    expect(clips.some((c) => Math.abs(c.start) < 1e-6 && c.duration === 1)).toBe(true);
+  });
+
+  it('reorders a lane with the up control through a commit', () => {
+    if (!scene) throw new Error('seed scene missing');
+    const audioIndex = scene.tracks.findIndex((t) => t.kind === 'audio');
+    const audioTrack = scene.tracks[audioIndex];
+    if (!audioTrack || audioIndex <= 0) throw new Error('no movable audio lane');
+
+    const before = useEditor.getState().past.length;
+    render(<Timeline />);
+    const up = screen.getByLabelText(`Move ${audioTrack.name} up`);
+    fireEvent.click(up);
+
+    const state = useEditor.getState();
+    expect(state.past.length).toBe(before + 1);
+    const order = state.project.scenes.find((s) => s.id === scene.id)?.tracks ?? [];
+    const indexNow = order.findIndex((t) => t.id === audioTrack.id);
+    expect(indexNow).toBe(audioIndex - 1);
+  });
+
+  it('deleting a dialogue cue lane removes the line it exists to carry', () => {
+    if (!scene) throw new Error('seed scene missing');
+    const lineIndex = scene.tracks.findIndex((t) => t.kind === 'dialogue');
+    const lineTrack = scene.tracks[lineIndex];
+    if (!lineTrack || lineTrack.targetId === undefined) throw new Error('no dialogue lane');
+
+    const before = useEditor.getState().past.length;
+    render(<Timeline />);
+    const deleteButton = screen.getAllByLabelText(new RegExp(`^Delete ${escape(lineTrack.name)}$`))[0];
+    if (!deleteButton) throw new Error('no delete button');
+    fireEvent.click(deleteButton);
+
+    const state = useEditor.getState();
+    expect(state.past.length).toBe(before + 1);
+    const sceneNow = state.project.scenes.find((s) => s.id === scene.id);
+    expect(sceneNow?.tracks.some((t) => t.id === lineTrack.id)).toBe(false);
+    // The cue line lived only inside this lane; it is gone too.
+    expect(sceneNow?.dialogue.some((l) => l.id === lineTrack.targetId)).toBe(false);
+  });
 });
 
 function escape(text: string): string {

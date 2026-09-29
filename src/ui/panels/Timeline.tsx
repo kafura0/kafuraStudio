@@ -25,20 +25,26 @@ import { useEditor } from '../../state/editorStore';
 import {
   MIN_CLIP_DURATION,
   addKeyframe,
+  addSimpleClip,
   moveClip,
   moveKeyframe,
+  moveTrack,
+  relocateClip,
   removeClip,
   removeKeyframe,
+  removeTrack,
   snapToEdges,
   trimClip,
   updateTrack,
 } from '../../core/document/trackOps';
+import { removeDialogueLine } from '../../core/document/dialogueOps';
 import { sampleClip } from '../../core/animation/sample';
 import {
   DEFAULT_METRICS,
   clampScale,
   hitTestClip,
   keyframeTime,
+  laneIndexAt,
   layoutTracks,
   rulerTicks,
   snapCandidates,
@@ -83,6 +89,8 @@ interface DragState {
   keyframeId: string | null;
   keyframeTime: number;
   keyframeOriginTime: number;
+  /** During a move drag: the lane a same-kind drop would land on, or null. */
+  toTrackId: string | null;
   /** Neighbour edges to snap against, captured at drag start. */
   edges: number[];
 }
@@ -238,6 +246,7 @@ export function Timeline(): React.JSX.Element {
         keyframeId: null,
         keyframeTime: 0,
         keyframeOriginTime: 0,
+        toTrackId: null,
         edges: snapCandidates(lane, hit.clip.id, duration),
       });
       select('clip', hit.clip.id);
@@ -266,6 +275,7 @@ export function Timeline(): React.JSX.Element {
         keyframeId,
         keyframeTime: time,
         keyframeOriginTime: time,
+        toTrackId: null,
         edges: [],
       });
       select('keyframe', keyframeId);
@@ -279,7 +289,7 @@ export function Timeline(): React.JSX.Element {
     if (!drag || !scene) return;
 
     const onMove = (event: PointerEvent): void => {
-      const { x } = lanePoint(event.clientX, event.clientY);
+      const { x, y } = lanePoint(event.clientX, event.clientY);
       setDrag((current) => {
         if (!current) return current;
 
@@ -290,6 +300,21 @@ export function Timeline(): React.JSX.Element {
         // Alt suspends snapping mid-drag; an empty edge list disables it exactly.
         const edges = event.altKey ? [] : current.edges;
 
+        // A move drag may finish on another lane of the same kind; follow the pointer
+        // into the target lane so the drop highlights it.
+        let toTrackId: string | null = null;
+        if (current.mode === 'move') {
+          const lane = laneIndexAt(y, lanes.length, DEFAULT_METRICS);
+          const target = lane >= 0 ? lanes[lane] : undefined;
+          if (target) {
+            const sourceKind = scene.tracks.find((t) => t.id === current.trackId)?.kind;
+            toTrackId =
+              sourceKind && sourceKind === target.track.kind && target.track.id !== current.trackId
+                ? target.track.id
+                : null;
+          }
+        }
+
         if (current.mode === 'keyframe') {
           // The delta lands wherever the pointer is relative to the keyframe it
           // grabbed — the clip's start has nothing to do with it.
@@ -299,7 +324,7 @@ export function Timeline(): React.JSX.Element {
             current.originStart,
             Math.min(snapToFrame(clamped, fps), current.originStart + current.originDuration),
           );
-          return { ...current, keyframeTime: time };
+          return { ...current, keyframeTime: time, toTrackId };
         }
 
         // A trim moves exactly one edge and leaves the other where it is; the far edge
@@ -316,6 +341,7 @@ export function Timeline(): React.JSX.Element {
 
         return {
           ...current,
+          toTrackId,
           start: Math.max(start, 0),
           duration: Math.max(end, MIN_CLIP_DURATION) - Math.max(start, 0),
         };
@@ -342,6 +368,23 @@ export function Timeline(): React.JSX.Element {
         if (next !== project) {
           lastGestureAt.current = Date.now();
           commit(next, 'Move keyframe');
+        }
+        return;
+      }
+
+      if (current.mode === 'move' && current.toTrackId) {
+        // Dropped on another lane of the same kind: relocate the clip wholesale. The
+        // op refuses a cross-kind lane, so an accidental drop burns no undo step.
+        const next = relocateClip(
+          project,
+          scene.id,
+          current.trackId,
+          current.toTrackId,
+          current.clipId,
+        );
+        if (next !== project) {
+          lastGestureAt.current = Date.now();
+          commit(next, 'Move clip to track');
         }
         return;
       }
@@ -377,7 +420,7 @@ export function Timeline(): React.JSX.Element {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [commit, drag, fps, lanePoint, scale, scene]);
+  }, [commit, drag, fps, lanePoint, lanes, scale, scene]);
 
   useLayoutEffect(() => {
     const onWheel = (event: WheelEvent): void => {
@@ -466,6 +509,49 @@ export function Timeline(): React.JSX.Element {
     }
   };
 
+  // A 1s clip dropped at the playhead on a lane's own track. Reusing the lane's kind
+  // and targetId means every lane type lands on itself (dialogue tracks are keyed by
+  // line id, camera by "camera"), and the playhead lands on the frame grid.
+  const addClipAtPlayhead = (lane: TrackLane): void => {
+    if (!scene) return;
+    const p = useEditor.getState().project;
+    const { playhead } = useEditor.getState();
+    const start = snapToFrame(Math.max(Math.min(playhead, duration), 0), fps);
+    const { project: next, clipId } = addSimpleClip(
+      p,
+      scene.id,
+      lane.track.kind,
+      lane.track.targetId,
+      `${lane.track.name} clip ${lane.track.clips.length + 1}`,
+      start,
+      1,
+    );
+    if (next !== p) {
+      lastGestureAt.current = Date.now();
+      commit(next, 'Add clip');
+      select('clip', clipId);
+    }
+  };
+
+  // A dialogue track exists only to carry one line's cue, so deleting the lane is
+  // deleting the cue; the raw op would leave an orphaned line behind otherwise.
+  const removeTrackLane = (lane: TrackLane): void => {
+    if (!scene) return;
+    const p = useEditor.getState().project;
+    const isCueLane =
+      lane.track.kind === 'dialogue' &&
+      lane.track.clips.length > 0 &&
+      lane.track.clips.every((c) => c.dialogueLineId === lane.track.targetId);
+    const next = isCueLane
+      ? removeDialogueLine(p, scene.id, lane.track.targetId)
+      : removeTrack(p, scene.id, lane.track.id);
+    if (next !== p) {
+      lastGestureAt.current = Date.now();
+      select(null, null);
+      commit(next, 'Delete track');
+    }
+  };
+
   return (
     <div className="flex shrink-0 flex-col border-t border-ink-800 bg-ink-900 select-none">
       <div className="flex items-center gap-3 border-b border-ink-800 px-3 py-1.5">
@@ -512,9 +598,57 @@ export function Timeline(): React.JSX.Element {
                 style={{ background: lane.track.color }}
                 aria-hidden
               />
-              <span className="truncate text-[11px] text-ink-300" title={lane.track.name}>
+              <span className="min-w-0 flex-1 truncate text-[11px] text-ink-300" title={lane.track.name}>
                 {lane.track.name}
               </span>
+              {/* Lanes act on themselves: add a clip at the playhead, delete the
+                  lane, reorder against its neighbours, mute. Each is one commit. */}
+              <button
+                type="button"
+                onClick={() => addClipAtPlayhead(lane)}
+                className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200"
+                aria-label={`Add clip to ${lane.track.name} at playhead`}
+                title="Add clip at playhead"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => removeTrackLane(lane)}
+                className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200"
+                aria-label={`Delete ${lane.track.name}`}
+                title="Delete track"
+              >
+                ×
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = useEditor.getState().project;
+                  const next = moveTrack(p, scene.id, lane.track.id, lane.index - 1);
+                  if (next !== p) commit(next, 'Reorder track');
+                }}
+                disabled={lane.index === 0}
+                className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200 disabled:pointer-events-none disabled:opacity-30"
+                aria-label={`Move ${lane.track.name} up`}
+                title="Move track up"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = useEditor.getState().project;
+                  const next = moveTrack(p, scene.id, lane.track.id, lane.index + 1);
+                  if (next !== p) commit(next, 'Reorder track');
+                }}
+                disabled={lane.index === displayLanes.length - 1}
+                className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200 disabled:pointer-events-none disabled:opacity-30"
+                aria-label={`Move ${lane.track.name} down`}
+                title="Move track down"
+              >
+                ↓
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -522,7 +656,7 @@ export function Timeline(): React.JSX.Element {
                   const next = updateTrack(p, scene.id, lane.track.id, { muted: !lane.track.muted });
                   if (next !== p) commit(next, lane.track.muted ? 'Unmute track' : 'Mute track');
                 }}
-                className={`ml-auto rounded px-1 text-[10px] font-semibold leading-tight transition-colors ${
+                className={`rounded px-1 text-[10px] font-semibold leading-tight transition-colors ${
                   lane.track.muted
                     ? 'bg-zanza-500/20 text-zanza-400'
                     : 'text-ink-500 hover:bg-ink-800 hover:text-ink-300'
@@ -567,14 +701,16 @@ export function Timeline(): React.JSX.Element {
               <div
                 key={lane.track.id}
                 style={{ height: lane.height }}
-                className="relative border-b border-ink-800/60"
+                className={`relative border-b border-ink-800/60 ${
+                  drag?.toTrackId === lane.track.id ? 'bg-zanza-500/10' : ''
+                }`}
                 onPointerDown={(event) => {
                   // Empty lane space scrubs, which is what a user reaching for the
                   // playhead expects.
                   if (event.target === event.currentTarget) onScrub(event);
                 }}
               >
-                {lane.clips.map((rect) => {
+{lane.clips.map((rect) => {
                   const selected = selection.kind === 'clip' && selection.id === rect.clip.id;
                   return (
                     <div
