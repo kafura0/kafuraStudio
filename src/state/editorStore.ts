@@ -73,7 +73,19 @@ export interface EditorState {
   save: () => Promise<void>;
 }
 
-const repository = new IndexedDbProjectRepository();
+/**
+ * The database name the editor has always used.
+ *
+ * Persistence is named by the product, not by a show, so the engine carries only a
+ * default. This app still opens its original name because that is where existing
+ * projects live: changing it would present an empty project list and quietly orphan
+ * every saved document. Renaming the on-disk store is a storage migration with a
+ * copy-forward step, and it belongs in the phase that owns that migration rather than
+ * being smuggled in here.
+ */
+const LEGACY_DB_NAME = 'zanza-studio';
+
+const repository = new IndexedDbProjectRepository({ dbName: LEGACY_DB_NAME });
 
 /**
  * Serialises writes to the repository.

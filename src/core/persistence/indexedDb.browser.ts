@@ -13,10 +13,24 @@ import { parseProject, serializeProject } from '../serialize';
 import type { Project } from '../types';
 import type { ProjectRepository, ProjectSummary } from './repository';
 
-const DB_NAME = 'zanza-studio';
 const DB_VERSION = 1;
 const STORE_PROJECTS = 'projects';
 const STORE_META = 'meta';
+
+/**
+ * Storage defaults.
+ *
+ * The database is named after the *product*, never after a show, so a second series
+ * lands in the same local workspace instead of needing an engine change. Callers may
+ * override the name; the value below is only a default, not a decision core makes
+ * about content.
+ */
+export const DEFAULT_DB_NAME = 'kafura-studio';
+
+export interface IndexedDbOptions {
+  /** Database name. Defaults to {@link DEFAULT_DB_NAME}. */
+  dbName?: string | undefined;
+}
 
 interface ProjectRecord {
   id: string;
@@ -35,9 +49,9 @@ function promisify<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-function openDatabase(): Promise<IDBDatabase> {
+function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(name, DB_VERSION);
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -59,8 +73,14 @@ function openDatabase(): Promise<IDBDatabase> {
 export class IndexedDbProjectRepository implements ProjectRepository {
   private dbPromise: Promise<IDBDatabase> | null = null;
 
+  private readonly dbName: string;
+
+  constructor(options: IndexedDbOptions = {}) {
+    this.dbName = options.dbName ?? DEFAULT_DB_NAME;
+  }
+
   private db(): Promise<IDBDatabase> {
-    this.dbPromise ??= openDatabase();
+    this.dbPromise ??= openDatabase(this.dbName);
     return this.dbPromise;
   }
 
