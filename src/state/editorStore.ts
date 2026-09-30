@@ -12,15 +12,36 @@
 
 import { create } from 'zustand';
 import { AUTOSAVE_DEBOUNCE_MS, HISTORY_LIMIT } from '../core/constants';
+import { clamp } from '../core/geometry';
 import type { Id, Project } from '../core/types';
 import { SEED_PROJECT } from '../data/seed';
 import { validateProject } from '../core/document/invariants';
 import { touch } from '../core/document/projectOps';
 import { IndexedDbProjectRepository, isIndexedDbAvailable } from '../core/persistence/indexedDb.browser';
+import {
+  buildEpisodeTimeline,
+  safeEpisodeTime,
+  sceneAtTime,
+  timeOfScene,
+  type EpisodeTimeline,
+} from '../core/timeline/episode';
 import { createAutosave } from './autosave';
 import { syncPlaybackAudio, stopPlaybackAudio } from './audioChannel';
 
 export type SelectionKind = 'actor' | 'prop' | 'clip' | 'keyframe' | 'anchor' | 'line' | null;
+
+/**
+ * What the clock wraps at.
+ *
+ * `scene-wrap` loops the open scene forever, which is the behaviour a single scene's
+ * loop preview wants. `episode-advance` walks the whole cut and only wraps at the end
+ * of the episode, so the transport crosses scene boundaries instead of resetting — the
+ * difference between watching a scene and watching an episode.
+ *
+ * The mode is a view preference, not a document setting: it is not part of the project
+ * and does not belong in history.
+ */
+export type PlaybackMode = 'scene-wrap' | 'episode-advance';
 
 export interface EditorState {
   project: Project;
@@ -28,8 +49,16 @@ export interface EditorState {
   future: Project[];
 
   // Transient: never recorded in history.
+  /**
+   * The playhead, in the units the active playback mode uses: seconds into the open
+   * scene in `scene-wrap`, seconds into the episode in `episode-advance`.
+   *
+   * One number rather than two, because two would be two clocks. `playhead` is the
+   * clock; `sceneId` is derived from it in `episode-advance` mode. See `setScene`.
+   */
   playhead: number;
   playing: boolean;
+  playbackMode: PlaybackMode;
   /** Draw the subtitle bar. A view preference, not a document setting. */
   showSubtitles: boolean;
   /** The scene the editor is showing. Always a member of `project.scenes`. */
@@ -44,9 +73,9 @@ export interface EditorState {
   play: () => void;
   pause: () => void;
   toggleSubtitles: () => void;
+  setPlaybackMode: (mode: PlaybackMode) => void;
   /**
-   * Advance the playhead by `dt` seconds, wrapping at the end of the active scene.
-   * A no-op unless playing.
+   * Advance the playhead by `dt` seconds. A no-op unless playing.
    *
    * This is the clock. The Stage's animation frame calls it, and everything else
    * reads `playhead` — the transport readout, the timeline playhead, the stage
@@ -54,11 +83,30 @@ export interface EditorState {
    * the stage would be correct on screen and frozen everywhere else, so the scrubber
    * and the playhead marker would sit still during playback.
    *
+   * In `episode-advance` this resolves the new episode time to a scene and a
+   * scene-local time, and moves `sceneId` with it. The arithmetic lives in
+   * `src/core/timeline/episode.ts`; this function only decides what to do with the
+   * answer.
+   *
    * Not a commit: the playhead is transient view state and must never enter history.
    */
   advancePlayback: (dt: number) => void;
   /** Duration of the active scene in seconds; 0 when the project has no scenes. */
   activeDuration: () => number;
+  /**
+   * Total length of the active episode in seconds, or 0 when the project has no
+   * episode to play.
+   */
+  episodeDuration: () => number;
+  /**
+   * The scene-local time the renderer should be given, and the scene it belongs to.
+   *
+   * This is the seam between the episode transport and the renderer. The transport
+   * decides *which* scene and *what* local time; `renderScene` still decides how that
+   * scene looks. Anything asking the store what to draw asks this, rather than
+   * re-deriving the mapping.
+   */
+  playbackPosition: () => { sceneId: Id; sceneTime: number };
   select: (kind: SelectionKind, id: Id | null) => void;
 
   /* --- history --- */
@@ -100,10 +148,28 @@ const repository = new IndexedDbProjectRepository({ dbName: LEGACY_DB_NAME });
  */
 let pendingSave: Promise<unknown> = Promise.resolve();
 
+/**
+ * The episode the transport plays.
+ *
+ * The first episode in document order. A project today has one, and choosing
+ * "the first" is deterministic rather than arbitrary — a selector would be a way to
+ * pick which episode is playing, which is a different feature and gets its own state
+ * when it earns one.
+ */
+function activeEpisodeId(project: Project): Id | null {
+  return project.episodes[0]?.id ?? null;
+}
+
 export const useEditor = create<EditorState>((set, get) => {
   const autosave = createAutosave(() => {
     void get().save();
   });
+
+  /** The episode timeline for the current project. Rebuilt per call, never cached. */
+  const timeline = (project: Project): EpisodeTimeline | null => {
+    const id = activeEpisodeId(project);
+    return id ? buildEpisodeTimeline(project, id) : null;
+  };
 
   return {
     project: SEED_PROJECT,
@@ -111,6 +177,9 @@ export const useEditor = create<EditorState>((set, get) => {
     future: [],
     playhead: 0,
     playing: false,
+    // Episode playback is the shipped behaviour; scene-wrap is what the single-scene
+    // loop preview wants and is kept as a mode rather than a second clock.
+    playbackMode: 'episode-advance',
     showSubtitles: true,
     sceneId: SEED_PROJECT.scenes[0]?.id ?? '',
     selection: { kind: null, id: null },
@@ -118,32 +187,110 @@ export const useEditor = create<EditorState>((set, get) => {
     lastSavedAt: null,
 
     setScene: (sceneId) => {
-      stopPlaybackAudio(get().project);
-      set({ sceneId, playhead: 0, selection: { kind: null, id: null } });
+      const state = get();
+      stopPlaybackAudio(state.project);
+      // In episode mode the playhead means "where in the episode", so picking a scene
+      // has to move it to that scene's first frame. Leaving it at 0 would teleport the
+      // transport back to the top of the cut while the panel shows another scene, and
+      // pressing play would jump away from where the user just clicked.
+      const playhead =
+        state.playbackMode === 'episode-advance'
+          ? timeOfScene(timeline(state.project), sceneId)
+          : 0;
+      set({ sceneId, playhead, selection: { kind: null, id: null } });
     },
-    setPlayhead: (time) => set({ playhead: Math.max(0, time) }),
+
+    setPlayhead: (time) => {
+      const state = get();
+      if (state.playbackMode === 'episode-advance') {
+        const at = safeEpisodeTime(time, timeline(state.project)?.duration ?? 0);
+        // Scrubbing across a boundary has to move the scene with it, or the stage would
+        // keep drawing the old scene until playback happened to cross over.
+        const position = sceneAtTime(timeline(state.project), at);
+        set({ playhead: at, ...(position.scene ? { sceneId: position.scene.id } : {}) });
+        return;
+      }
+      set({ playhead: Math.max(0, time) });
+    },
+
     play: () => set({ playing: true }),
     pause: () => {
       stopPlaybackAudio(get().project);
       set({ playing: false });
     },
     toggleSubtitles: () => set((s) => ({ showSubtitles: !s.showSubtitles })),
+    setPlaybackMode: (mode) => {
+      // Switching mode has to re-express the current position in the new clock, or the
+      // playhead would keep its number while meaning something different.
+      const state = get();
+      if (mode === state.playbackMode) return;
+      if (mode === 'scene-wrap') {
+        const local = sceneAtTime(timeline(state.project), state.playhead).sceneTime;
+        set({ playbackMode: mode, playhead: local });
+        return;
+      }
+      const at = timeOfScene(timeline(state.project), state.sceneId);
+      set({ playbackMode: mode, playhead: at });
+    },
 
     activeDuration: () => {
       const { project, sceneId } = get();
       return project.scenes.find((s) => s.id === sceneId)?.duration ?? 0;
     },
 
+    episodeDuration: () => timeline(get().project)?.duration ?? 0,
+
+    playbackPosition: () => {
+      const state = get();
+      if (state.playbackMode === 'scene-wrap') {
+        // Clamp to the open scene. `sceneAtTime` guarantees the range in episode mode,
+        // but a scene-wrap scrub is bounded only at the bottom, and the renderer must
+        // never be handed a time outside the scene it was asked to draw.
+        const duration = state.activeDuration();
+        return { sceneId: state.sceneId, sceneTime: clamp(state.playhead, 0, duration) };
+      }
+      const position = sceneAtTime(timeline(state.project), state.playhead);
+      return { sceneId: position.sceneId, sceneTime: position.sceneTime };
+    },
+
     advancePlayback: (dt) => {
       const state = get();
       if (!state.playing || dt <= 0) return;
-      const duration = state.activeDuration();
+
+      if (state.playbackMode === 'scene-wrap') {
+        const duration = state.activeDuration();
+        if (duration <= 0) return;
+        // Wrap rather than clamp: the stage loops its scene, and stopping dead at the
+        // end would leave the playhead pinned while the transport still reads "Play".
+        const next = (state.playhead + dt) % duration;
+        set({ playhead: next < 0 ? 0 : next });
+        syncPlaybackAudio(state.project, state.sceneId, next, true);
+        return;
+      }
+
+      const projectTimeline = timeline(state.project);
+      const duration = projectTimeline?.duration ?? 0;
       if (duration <= 0) return;
-      // Wrap rather than clamp: the stage loops its scene, and stopping dead at the
-      // end would leave the playhead pinned while the transport still reads "Play".
-      const next = (state.playhead + dt) % duration;
-      set({ playhead: next < 0 ? 0 : next });
-      syncPlaybackAudio(state.project, state.sceneId, next, true);
+
+      const next = state.playhead + dt;
+      const position = sceneAtTime(projectTimeline, next);
+
+      // The end of the *episode* wraps; the end of a scene does not. The distinction is
+      // the whole point of the mode: a scene boundary is a place the transport passes
+      // through with the clock still running, and only the end of the cut restarts.
+      if (position.ended) {
+        // Modulo, not a single subtraction. The stage clamps its own dt, but a caller
+        // that does not — a backgrounded tab, a slow frame — would otherwise leave the
+        // playhead at 10^6 with the transport reading "Play" and nothing on screen.
+        const wrapped = ((next % duration) + duration) % duration;
+        const at = sceneAtTime(projectTimeline, wrapped);
+        set({ playhead: wrapped, sceneId: at.sceneId });
+        syncPlaybackAudio(state.project, at.sceneId, at.sceneTime, true);
+        return;
+      }
+
+      set({ playhead: next, sceneId: position.sceneId });
+      syncPlaybackAudio(state.project, position.sceneId, position.sceneTime, true);
     },
 
     select: (kind, id) => set({ selection: { kind, id } }),

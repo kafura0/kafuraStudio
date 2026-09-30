@@ -51,6 +51,7 @@ const reset = (): void => {
     future: [],
     playhead: 0,
     playing: false,
+    playbackMode: 'scene-wrap',
     sceneId: SEED_PROJECT.scenes[0]?.id ?? '',
     selection: { kind: null, id: null },
     dirty: false,
@@ -354,5 +355,231 @@ describe('editorStore persistence races', () => {
     expect(useEditor.getState().playhead).toBe(0);
     expect(useEditor.getState().playing).toBe(false);
     expect(useEditor.getState().project.name).toBe('Other');
+  });
+});
+
+describe('editorStore episode playback', () => {
+  // The seed episode is five scenes: 10s, 8s, 7s, 7s, 6s — 38s in total, with
+  // boundaries at 10, 18, 25 and 32. Every number below is checked against that table
+  // rather than against a duration read back out of the store, because a test that
+  // derives its own expectation from the code under test proves nothing.
+  const CUT = [10, 8, 7, 7, 6] as const;
+  const TOTAL = 38;
+  const BOUNDARIES = [10, 18, 25, 32];
+
+  const seedIds = (): string[] => {
+    const ids = SEED_PROJECT.episodes[0]?.sceneIds ?? [];
+    if (ids.length !== CUT.length) {
+      throw new Error(`Seed episode has ${ids.length} scenes, expected ${CUT.length}`);
+    }
+    return ids;
+  };
+
+  /** The seed project in episode mode at its first frame. */
+  const startEpisode = (): void => {
+    const [first] = seedIds();
+    useEditor.setState({
+      project: SEED_PROJECT,
+      past: [],
+      future: [],
+      playhead: 0,
+      playing: true,
+      playbackMode: 'episode-advance',
+      sceneId: first ?? '',
+      selection: { kind: null, id: null },
+      dirty: false,
+      lastSavedAt: null,
+    });
+  };
+
+  /** Step the clock in frames, the way the stage's animation loop does. */
+  const run = (seconds: number, fps = 24): void => {
+    const dt = 1 / fps;
+    const frames = Math.round(seconds * fps);
+    for (let i = 0; i < frames; i += 1) useEditor.getState().advancePlayback(dt);
+  };
+
+  beforeEach(() => {
+    reset();
+    startEpisode();
+  });
+
+  it('plays the whole cut rather than one scene', () => {
+    expect(useEditor.getState().episodeDuration()).toBe(TOTAL);
+  });
+
+  it('advances through the first scene', () => {
+    run(4);
+    const state = useEditor.getState();
+    expect(state.sceneId).toBe(seedIds()[0]);
+    expect(state.playhead).toBeCloseTo(4, 1);
+    expect(state.playbackPosition()).toEqual({ sceneId: seedIds()[0], sceneTime: expect.closeTo(4, 1) });
+  });
+
+  it('crosses the first boundary without resetting the clock', () => {
+    // The whole phase in one assertion: a scene boundary must not be a reset.
+    run(9.5);
+    const before = useEditor.getState();
+    expect(before.sceneId).toBe(seedIds()[0]);
+    const beforeTime = before.playhead;
+
+    run(1);
+    const after = useEditor.getState();
+
+    expect(after.sceneId).toBe(seedIds()[1]);
+    expect(after.playhead).toBeGreaterThan(beforeTime);
+    expect(after.playhead).toBeCloseTo(10.5, 1);
+    // Explicitly not zero: this is the failure this phase exists to prevent.
+    expect(after.playhead).not.toBe(0);
+    expect(after.playbackPosition()).toEqual({
+      sceneId: seedIds()[1],
+      sceneTime: expect.closeTo(0.5, 1),
+    });
+  });
+
+  it('crosses every boundary in the cut, moving the playhead forward each time', () => {
+    let lastTime = -1;
+    let lastScene = '';
+    for (const boundary of BOUNDARIES) {
+      run(boundary - useEditor.getState().playhead + 0.5);
+      const state = useEditor.getState();
+      expect(state.playhead).toBeGreaterThan(lastTime);
+      expect(state.sceneId).not.toBe(lastScene);
+      lastTime = state.playhead;
+      lastScene = state.sceneId;
+    }
+    // Four boundaries crossed, and the playhead ended up inside the fifth scene.
+    expect(useEditor.getState().sceneId).toBe(seedIds()[4]);
+    expect(useEditor.getState().playhead).toBeCloseTo(32.5, 1);
+  });
+
+  it('reports the local time within whichever scene is active', () => {
+    const ids = seedIds();
+    // 14s is 4s into the second scene, which starts at 10.
+    run(14);
+    expect(useEditor.getState().playbackPosition()).toEqual({
+      sceneId: ids[1],
+      sceneTime: expect.closeTo(4, 1),
+    });
+    // 27s is 2s into the fourth, which starts at 25.
+    run(13);
+    expect(useEditor.getState().playbackPosition()).toEqual({
+      sceneId: ids[3],
+      sceneTime: expect.closeTo(2, 1),
+    });
+  });
+
+  it('reaches the end of the episode and wraps to the start', () => {
+    run(TOTAL - 0.5);
+    expect(useEditor.getState().sceneId).toBe(seedIds()[4]);
+
+    run(1);
+    const state = useEditor.getState();
+    // The end of the *cut* restarts the episode; the end of a scene does not.
+    expect(state.playhead).toBeCloseTo(0.5, 1);
+    expect(state.sceneId).toBe(seedIds()[0]);
+  });
+
+  it('stops and resumes where it left off', () => {
+    run(7);
+    const at = useEditor.getState().playhead;
+    useEditor.getState().pause();
+    run(3, 24);
+    expect(useEditor.getState().playhead).toBeCloseTo(at, 6);
+
+    useEditor.getState().play();
+    run(0.5);
+    expect(useEditor.getState().playhead).toBeCloseTo(at + 0.5, 1);
+  });
+
+  it('resolves the right scene when the playhead is scrubbed across a boundary', () => {
+    const ids = seedIds();
+    useEditor.getState().setPlayhead(20);
+    const state = useEditor.getState();
+    expect(state.playhead).toBe(20);
+    expect(state.sceneId).toBe(ids[2]);
+    expect(state.playbackPosition().sceneTime).toBeCloseTo(2, 6);
+  });
+
+  it('clamps a scrub to the episode rather than to the scene', () => {
+    useEditor.getState().setPlayhead(-5);
+    expect(useEditor.getState().playhead).toBe(0);
+    useEditor.getState().setPlayhead(9999);
+    expect(useEditor.getState().playhead).toBe(TOTAL);
+  });
+
+  it('moves the playhead to a scene the user picks, rather than to zero', () => {
+    // Picking scene 3 in episode mode means "put me at scene 3", not "restart the
+    // episode" — otherwise pressing play jumps away from where the user just clicked.
+    useEditor.getState().setScene(seedIds()[2] ?? '');
+    expect(useEditor.getState().playhead).toBe(18);
+    expect(useEditor.getState().sceneId).toBe(seedIds()[2]);
+  });
+
+  it('clamps the local time to the open scene in scene-wrap mode', () => {
+    // The renderer is handed a scene and a time and must never be asked for a time
+    // outside that scene. Episode mode is bounded by `sceneAtTime`; scene-wrap has no
+    // episode timeline behind it, so the store has to do it.
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+    useEditor.setState({ playbackMode: 'scene-wrap', sceneId: first.id, playhead: 999 });
+
+    expect(useEditor.getState().playbackPosition()).toEqual({
+      sceneId: first.id,
+      sceneTime: first.duration,
+    });
+  });
+
+  it('resets the playhead when a scene is picked in scene-wrap mode', () => {
+    useEditor.getState().setPlaybackMode('scene-wrap');
+    useEditor.getState().setPlayhead(3);
+    useEditor.getState().setScene(seedIds()[2] ?? '');
+    expect(useEditor.getState().playhead).toBe(0);
+  });
+
+  it('re-expresses the position when the mode changes', () => {
+    // Switching mode has to re-express the playhead, or the number keeps its value while
+    // changing what it means — 20 is 20s into the cut, or 2s into scene 3.
+    useEditor.getState().setPlayhead(20);
+    useEditor.getState().setPlaybackMode('scene-wrap');
+    expect(useEditor.getState().playhead).toBeCloseTo(2, 6);
+
+    useEditor.getState().setPlaybackMode('episode-advance');
+    expect(useEditor.getState().playhead).toBe(18);
+  });
+
+  it('keeps the episode playhead out of history', () => {
+    run(12);
+    expect(useEditor.getState().playhead).toBeCloseTo(12, 1);
+    expect(useEditor.getState().past).toHaveLength(0);
+
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+    useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'duration');
+    useEditor.getState().undo();
+    expect(useEditor.getState().playhead).toBeCloseTo(12, 1);
+  });
+
+  it('does not advance a project with no episode to play', () => {
+    const empty = { ...createProject('No episode'), scenes: SEED_PROJECT.scenes };
+    useEditor.setState({ project: empty, playhead: 0 });
+    useEditor.getState().advancePlayback(1);
+    expect(useEditor.getState().playhead).toBe(0);
+    expect(useEditor.getState().episodeDuration()).toBe(0);
+  });
+
+  it('ignores a non-positive delta in episode mode too', () => {
+    useEditor.getState().setPlayhead(5);
+    useEditor.getState().advancePlayback(0);
+    useEditor.getState().advancePlayback(-1);
+    expect(useEditor.getState().playhead).toBe(5);
+  });
+
+  it('ignores a huge delta that would skip the whole cut', () => {
+    // A single frame should never be able to jump the transport to the end: the stage
+    // clamps dt for exactly this reason, and the clock must survive a caller that does
+    // not.
+    useEditor.getState().advancePlayback(1e6);
+    expect(useEditor.getState().playhead).toBeLessThanOrEqual(TOTAL);
   });
 });
