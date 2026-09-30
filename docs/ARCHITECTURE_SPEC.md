@@ -468,15 +468,18 @@ export interface ProjectRepository {
 
 ### 5.2 IndexedDB shape after Phase 14
 
+Ladder B, the *IndexedDB* schema ladder — independent of the document format ladder in §6.1.
+
 ```
-DB: zanza-studio          DB_VERSION: 1 → 2
+DB: zanza-studio          DB_VERSION: 1 → 2 (Phase 11) → 3 (Phase 14)
   ├─ projects   (keyPath id, index updatedAt)      [unchanged shape]
-  ├─ series     (keyPath id, index updatedAt)      [new store]
+  ├─ media      (keyPath id)                       [new in Phase 11]
+  ├─ series     (keyPath id, index updatedAt)      [new in Phase 14]
   └─ meta       (keyPath key)                      [keys: lastOpenedProjectId,
                                                       lastOpenedSeriesId]
 ```
 
-`DB_VERSION` goes 1 → 2 and the `onupgradeneeded` handler gains one `createObjectStore`. Existing records are untouched, which is the correct upgrade behaviour: the project→series promotion is a **record-level** migration applied on read, not a bulk `onupgradeneeded` rewrite, so a user who downgrades does not find their database scrambled.
+`DB_VERSION` goes 1 → 2 in Phase 11 for the `media` store, then 2 → 3 in Phase 14 for `series`; each step adds one `createObjectStore` in `onupgradeneeded`. Existing records are untouched, which is the correct upgrade behaviour: the project→series promotion is a **record-level** migration applied on read, not a bulk `onupgradeneeded` rewrite, so a user who downgrades does not find their database scrambled.
 
 ### 5.3 Store shape after Phase 11
 
@@ -554,13 +557,25 @@ Specified, not written (F8: `MIGRATIONS` is currently an empty array).
 
 ### 6.1 The version ladder
 
-| From | To | Change | Reversible? |
-|---|---|---|---|
-| v1 | v2 | Introduce `Series`; promote `Project.assets` to `Series.assets`; add `Project.seriesId`. `Scene`, `Episode`, `Track`, `Clip`, `Keyframe` **byte-identical**. | Yes, in principle — but the series row is the only copy, so deletion is the real risk. |
-| v2 | v3 | Add `VoiceDef` and `DialogueLine.voiceId`. `voiceAudioId` remains, deprecated but honoured. | Yes. |
-| v3 | v4 | Add `AnimationAsset` and `Clip.animationId`. Keyframes stay absolute. | Yes. |
+**There are two independent ladders, and conflating them is a defect.** `CURRENT_FORMAT_VERSION` (`serialize.ts:17`) versions the *document shape*. `DB_VERSION` (`indexedDb.browser.ts:17`) versions the *IndexedDB schema*. They live in different files, move at different phases, and a bump in one says nothing about the other: a new document field needs no new object store, and a new object store needs no document change.
 
-**Migrations are appended, never edited or reordered** (`serialize.ts:88-91` already says this). `CURRENT_FORMAT_VERSION` becomes 2 in Phase 14, 3 in Phase 20, 4 in Phase 21.
+**Ladder A — document format (`CURRENT_FORMAT_VERSION`)**
+
+| From | To | Phase | Change | Reversible? |
+|---|---|---|---|---|
+| v1 | v2 | 11 | `AudioDef.srcKind` (`'local' \| 'external' \| null`). Additive, and defaulted in `normaliseProject`, so a record written before it still opens with every slot honestly `null`. | Yes. |
+| v2 | v3 | 14 | Introduce `Series`; promote `Project.assets` to `Series.assets`; add `Project.seriesId`. `Scene`, `Episode`, `Track`, `Clip`, `Keyframe` **byte-identical**. | Yes, in principle — but the series row is the only copy, so deletion is the real risk. |
+| v3 | v4 | 20 | Add `VoiceDef` and `DialogueLine.voiceId`. `voiceAudioId` remains, deprecated but honoured. | Yes. |
+| v4 | v5 | 21 | Add `AnimationAsset` and `Clip.animationId`. Keyframes stay absolute. | Yes. |
+
+**Ladder B — IndexedDB schema (`DB_VERSION`)**
+
+| From | To | Phase | Change |
+|---|---|---|---|
+| 1 | 2 | 11 | Add the `media` store. |
+| 2 | 3 | 14 | Add the `series` store. |
+
+**Migrations are appended, never edited or reordered** (`serialize.ts:88-91` already says this).
 
 ### 6.2 Resolving the duplicated version field
 
@@ -2008,10 +2023,10 @@ Today `AudioDef.src` is a string and **nothing stores bytes**. The target:
 ```
 DB: zanza-studio
   ├─ projects
-  ├─ series
-  ├─ meta
-  └─ media      (keyPath id)          [new, DB_VERSION 2 → 3]
+  ├─ media      (keyPath id)          [new in Phase 11, DB_VERSION 1 → 2]
        { id, kind: 'audio'|'image', mime, bytes: ArrayBuffer, duration, updatedAt }
+  ├─ series     (keyPath id)          [new in Phase 14, DB_VERSION 2 → 3]
+  └─ meta
 ```
 
 `AudioDef.src` becomes a reference of one of two forms, distinguished by an explicit field rather than by sniffing a string:
@@ -2025,7 +2040,7 @@ export interface AudioDef {
 }
 ```
 
-This is a schema change and belongs in **Phase 11** because attaching a file is a Phase 11 deliverable and it cannot work without somewhere to put the bytes. It is a v1→v2 change folded into the same migration as `Series` — one `formatVersion` bump, two independent changes, because they ship together. That is a deliberate trade: a slightly larger migration in exchange for one version number rather than two, and the render-neutrality gate covers both.
+This is a schema change and belongs in **Phase 11** because attaching a file is a Phase 11 deliverable and it cannot work without somewhere to put the bytes. The document change is `formatVersion` 1 → 2; the storage change is `DB_VERSION` 1 → 2. They are the same phase and the same feature, but they are **two separate bumps in two separate files** (§6.1) — the document gains a reference to the media store, the media store gains the bytes the reference names. Phase 14's `Series` change moves the document ladder to v3 and the database ladder to `DB_VERSION` 3, independently, and the render-neutrality gate covers both.
 
 ### 20.5 Import
 
