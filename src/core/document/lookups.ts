@@ -8,6 +8,7 @@
 
 import type {
   AudioDef,
+  CameraPreset,
   CharacterDef,
   Clip,
   DialogueLine,
@@ -139,6 +140,22 @@ export function clipsForTarget(scene: Scene, kind: TrackKind, targetId: Id): Cli
 /** The environment backing a scene, or undefined if the reference is dangling. */
 export function sceneEnvironment(project: Project, scene: Scene): EnvironmentDef | undefined {
   return findEnvironment(project, scene.environmentId);
+}
+
+/**
+ * Every camera preset available to this project.
+ *
+ * Project-scope today. The seam is deliberate: Phase 14 moves the library to the series
+ * and resolves a project entry over a series entry **by name**, so the panel and every
+ * caller keep calling one function and the override rule lives in exactly one place.
+ * Returning a fresh array keeps callers from sorting the document's own array in place.
+ */
+export function resolveCameraPresets(project: Project): CameraPreset[] {
+  return [...(project.cameraPresets ?? [])];
+}
+
+export function findCameraPreset(project: Project, id: Id): CameraPreset | undefined {
+  return (project.cameraPresets ?? []).find((preset) => preset.id === id);
 }
 
 export function scenesOfEpisode(project: Project, episodeId: Id): Scene[] {

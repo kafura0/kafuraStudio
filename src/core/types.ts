@@ -258,6 +258,29 @@ export interface Camera {
   rotation: number;
 }
 
+/**
+ * A named framing a user can start a shot from.
+ *
+ * A preset is a **value, not an asset**: it is not in `AssetLibrary`, no scene
+ * references it by id, and applying one *copies* its camera into the scene. That is
+ * deliberate. A referenced preset means a project-level edit to "the wide two-shot"
+ * silently changes every finished scene shot with it; a copied one means the scene
+ * stays self-describing, which is what a production tool needs.
+ *
+ * `authoredFor` records the environment size the numbers were composed against, so a
+ * later pass can tell a preset composed for a 1920x1080 frame from one composed for
+ * something else. It is advisory: nothing depends on it yet.
+ */
+export interface CameraPreset {
+  id: Id;
+  name: string;
+  description: string;
+  tags: string[];
+  camera: Camera;
+  /** Optional recommended framing for a given environment size. */
+  authoredFor?: { width: number; height: number };
+}
+
 export interface DialogueLine {
   id: Id;
   speaker: string;
@@ -392,6 +415,12 @@ export interface Project {
   formatVersion: number;
   settings: ProjectSettings;
   assets: AssetLibrary;
+  /**
+   * Named framings a shot can be started from. Project-scope today; Phase 14 resolves
+   * them from the series as well, with a project entry overriding a series entry by
+   * name. Not in `assets` on purpose — see `CameraPreset`.
+   */
+  cameraPresets: CameraPreset[];
   episodes: Episode[];
   /** Flat pool. Episodes reference scenes by id and hold the order. */
   scenes: Scene[];

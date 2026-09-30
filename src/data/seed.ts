@@ -24,6 +24,7 @@ import {
 import { addKeyframe, addSimpleClip } from '../core/document/trackOps';
 import type { EaseType, Id, KeyframeTarget, Project } from '../core/types';
 import { AUDIO } from './audio';
+import { CAMERA_PRESETS } from './cameraPresets';
 import { CHARACTERS, KITO, MAMA_NIA, NIA, THE_LANDLORD } from './characters';
 import { ENVIRONMENTS, NIA_APARTMENT, ZANZA_LOUNGE, ZANZA_STREET } from './environments';
 import { EXPRESSIONS } from './expressions';
@@ -124,6 +125,7 @@ export function createSeedProject(): Project {
       props: [...PROPS],
       audio: [...AUDIO],
     },
+    cameraPresets: [...CAMERA_PRESETS],
     episodes: [],
     scenes: [],
   };

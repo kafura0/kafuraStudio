@@ -71,6 +71,23 @@ export function composeTransform(
   return out;
 }
 
+/**
+ * The scale that fits a `sourceWidth x sourceHeight` frame inside a target box.
+ *
+ * Shared, not private to the renderer, because the camera has to reason about it: the
+ * renderer multiplies the camera zoom by this fit, so a framing calculation that
+ * computed its own value would silently disagree with what is drawn.
+ */
+export function fitScale(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+): number {
+  if (sourceWidth <= 0 || sourceHeight <= 0) return 1;
+  return Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+}
+
 /** Interpolate two transforms. `t` is clamped to 0..1. */
 export function lerpTransform(a: Transform2D, b: Transform2D, t: number): Transform2D {
   const k = clamp(t, 0, 1);

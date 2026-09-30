@@ -6,7 +6,7 @@
  * mechanical form of RULE 2 (reusable assets) and RULE 3 (Nia is not special).
  */
 
-import type { Id, Project } from '../types';
+import type { Camera, Id, Project } from '../types';
 
 export interface ValidationIssue {
   path: string;
@@ -149,6 +149,30 @@ export function validateProject(project: Project): ValidationIssue[] {
       seenAssetIds.add(asset.id);
     });
   }
+
+  // Camera presets are referenced by name in Phase 14, so their ids must be unique
+  // today or that override rule would be ambiguous from the start.
+  const seenPresetIds = new Set<Id>();
+  (project.cameraPresets ?? []).forEach((preset, index) => {
+    const path = `cameraPresets[${index}]`;
+    if (seenPresetIds.has(preset.id)) {
+      add(`${path}.id`, `Duplicate camera preset id: ${preset.id}`);
+    }
+    seenPresetIds.add(preset.id);
+    // A non-finite value here renders as a blank frame, and the renderer would not
+    // complain — so it is caught at validation rather than discovered in playback.
+    const values: Array<[keyof Camera, number]> = [
+      ['x', preset.camera.x],
+      ['y', preset.camera.y],
+      ['zoom', preset.camera.zoom],
+      ['rotation', preset.camera.rotation],
+    ];
+    for (const [field, value] of values) {
+      if (!Number.isFinite(value)) {
+        add(`${path}.camera.${field}`, `Camera preset ${field} is not a finite number`);
+      }
+    }
+  });
 
   return issues;
 }

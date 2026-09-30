@@ -140,6 +140,7 @@ export function normaliseProject(raw: Record<string, unknown>): Project {
       props: asArray(assetsRaw.props, 'assets.props'),
       audio: asArray(assetsRaw.audio, 'assets.audio'),
     },
+    cameraPresets: asArray(raw.cameraPresets, 'project.cameraPresets'),
     episodes: asArray(raw.episodes, 'project.episodes'),
     scenes: asArray(raw.scenes, 'project.scenes'),
   };

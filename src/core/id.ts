@@ -41,4 +41,5 @@ export const ID_PREFIX = {
   expression: 'expr',
   audio: 'audio',
   anchor: 'anchor',
+  cameraPreset: 'camp',
 } as const;

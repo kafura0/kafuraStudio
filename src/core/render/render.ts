@@ -14,6 +14,7 @@
  *   5. subtitles
  */
 
+import { fitScale } from '../geometry';
 import { resolveCamera, sampleKeyframes, talkPulseAt } from '../animation/sample';
 import { allClips } from '../document/lookups';
 import type { Canvas2DLike, ImageLike } from './canvas';
@@ -518,18 +519,4 @@ export function isActorTalking(scene: Scene, actorId: string, time: number): boo
     if (line?.actorId === actorId) return true;
   }
   return false;
-}
-
-/* ------------------------------------------------------------------ */
-/* Geometry                                                            */
-/* ------------------------------------------------------------------ */
-
-function fitScale(
-  sourceWidth: number,
-  sourceHeight: number,
-  targetWidth: number,
-  targetHeight: number,
-): number {
-  if (sourceWidth <= 0 || sourceHeight <= 0) return 1;
-  return Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
 }

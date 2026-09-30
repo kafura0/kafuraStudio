@@ -11,11 +11,13 @@ import { transform } from '../types';
 import type {
   AssetLibrary,
   Camera,
+  CameraPreset,
   Clip,
   DialogueLine,
   EaseType,
   Episode,
   EnvironmentDef,
+  Id,
   Keyframe,
   KeyframeTarget,
   Project,
@@ -70,6 +72,12 @@ export function defaultCamera(environment?: EnvironmentDef): Camera {
   return { x: STAGE_WIDTH / 2, y: STAGE_HEIGHT / 2, zoom: 1, rotation: 0 };
 }
 
+/** The width/height pair shared by an environment, a frame and a viewport. */
+export interface FrameSize {
+  width: number;
+  height: number;
+}
+
 export function createProject(name: string, description = ''): Project {
   const now = new Date().toISOString();
   return {
@@ -81,8 +89,36 @@ export function createProject(name: string, description = ''): Project {
     formatVersion: 1,
     settings: defaultProjectSettings(),
     assets: emptyAssetLibrary(),
+    cameraPresets: [],
     episodes: [],
     scenes: [],
+  };
+}
+
+/**
+ * A named framing. The id is generated here so a caller cannot accidentally hand two
+ * presets the same one.
+ */
+export function createCameraPreset(
+  name: string,
+  camera: Camera,
+  extras: {
+    description?: string | undefined;
+    tags?: string[] | undefined;
+    id?: Id | undefined;
+    authoredFor?: FrameSize | undefined;
+  } = {},
+): CameraPreset {
+  // Spreads rather than assigns so an absent `authoredFor` is absent from the object,
+  // which `exactOptionalPropertyTypes` requires: `{ authoredFor: undefined }` is not the
+  // same type as `{}` when a caller is asking whether the preset was composed for a size.
+  return {
+    id: extras.id ?? createId(ID_PREFIX.cameraPreset),
+    name,
+    description: extras.description ?? '',
+    tags: extras.tags ?? [],
+    camera,
+    ...(extras.authoredFor ? { authoredFor: extras.authoredFor } : {}),
   };
 }
 
