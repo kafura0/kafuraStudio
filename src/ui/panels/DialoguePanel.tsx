@@ -23,7 +23,9 @@
  * papered over with a generated tone.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { inputClass, round2, useDraftField } from '../draftFields';
+import { Field } from '../fields';
 import { useEditor } from '../../state/editorStore';
 import {
   addDialogueLineWithCue,
@@ -503,28 +505,6 @@ function GainField({
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const inputClass =
-  'w-full min-w-0 rounded border border-ink-700 bg-ink-950 px-1.5 py-1 text-[11px] text-ink-100 outline-none focus:border-zanza-500 disabled:opacity-40';
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string | undefined;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <label className="block space-y-1">
-      <span className="flex items-baseline justify-between text-[10px] uppercase tracking-wider text-ink-500">
-        {label}
-      </span>
-      {children}
-      {hint && <span className="block text-[10px] leading-snug text-ink-500">{hint}</span>}
-    </label>
-  );
-}
 
 /** The honest voice status. Never implies a file that is not there (RULE 9). */
 function voiceHint(voice: AudioDef | null, recorded: boolean): string {
@@ -533,40 +513,6 @@ function voiceHint(voice: AudioDef | null, recorded: boolean): string {
   return `Recording attached (${voice.duration.toFixed(1)}s).`;
 }
 
-interface DraftField {
-  value: string;
-  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-  onFocus: () => void;
-  onBlur: () => void;
-}
-
-/**
- * A text field whose document edit happens on blur.
- *
- * The draft is local while the field has focus, so an external change (an undo, a
- * reload) cannot overwrite what is half-typed, and the document never sees a keystroke
- * it was not asked to accept.
- */
-function useDraftField(value: string, onCommit: (next: string) => void): DraftField {
-  const [draft, setDraft] = useState(value);
-  const focused = useRef(false);
-
-  useEffect(() => {
-    if (!focused.current) setDraft(value);
-  }, [value]);
-
-  return {
-    value: draft,
-    onChange: (event) => setDraft(event.target.value),
-    onFocus: () => {
-      focused.current = true;
-    },
-    onBlur: () => {
-      focused.current = false;
-      onCommit(draft);
-    },
-  };
-}
 
 function resolveLine(
   scene: Scene,
@@ -591,8 +537,4 @@ function cuesFor(scene: Scene, lineId: Id): Cue[] {
     }
   }
   return out;
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
