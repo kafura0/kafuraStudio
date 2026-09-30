@@ -14,6 +14,7 @@ import { AssetPanel } from './panels/AssetPanel';
 import { TransportBar } from './panels/TransportBar';
 import { IssuePanel } from './panels/IssuePanel';
 import { Timeline } from './panels/Timeline';
+import { CameraPanel } from './panels/CameraPanel';
 import { DialoguePanel } from './panels/DialoguePanel';
 
 export function App(): React.JSX.Element {
@@ -90,6 +91,7 @@ export function App(): React.JSX.Element {
             activeSceneId={scene.id}
             onSelect={setScene}
           />
+          <CameraPanel />
           <DialoguePanel />
           <AssetPanel project={project} />
         </aside>

@@ -615,7 +615,10 @@ export function Timeline(): React.JSX.Element {
                 style={{ background: lane.track.color }}
                 aria-hidden
               />
-              <span className="min-w-0 flex-1 truncate text-[11px] text-ink-300" title={lane.track.name}>
+              <span
+                className="min-w-0 flex-1 truncate text-[11px] text-ink-300"
+                title={laneHint(lane.track)}
+              >
                 {lane.track.name}
               </span>
               {/* Lanes act on themselves: add a clip at the playhead, delete the
@@ -806,4 +809,19 @@ function formatTick(time: number): string {
   if (Math.abs(time) < 1e-9) return '0';
   if (Number.isInteger(time)) return String(time);
   return time.toFixed(1);
+}
+
+/**
+ * The tooltip on a lane header.
+ *
+ * The camera lane was the one place a new user had no way to learn: it exists in the
+ * document, it renders, and nothing in the UI said what it was for. A camera keyframe
+ * stores its zoom in `scaleX`, which is exactly the sort of thing a user needs telling
+ * rather than discovering.
+ */
+function laneHint(track: Track): string {
+  if (track.kind === 'camera') {
+    return 'Camera — clips are camera moves. Keyframes on x, y and scaleX (the zoom) drive the shot.';
+  }
+  return track.name;
 }

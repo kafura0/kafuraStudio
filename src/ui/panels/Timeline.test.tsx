@@ -110,14 +110,23 @@ describe('Timeline', () => {
     stubRect();
   });
 
+  it('explains the camera lane, which nothing in the UI previously described', () => {
+    render(<Timeline />);
+    // The zoom lives in `scaleX` on a camera keyframe. That is not discoverable and
+    // not guessable, so the lane has to say it.
+    expect(screen.getByTitle(/scaleX/)).toBeTruthy();
+  });
+
   it('renders one lane per track, labelled', () => {
     if (!scene) throw new Error('seed scene missing');
     render(<Timeline />);
 
     // Track names are not unique: one dialogue track per line, so two are both
-    // "Dialogue — Nia". Every track must still be represented.
+    // "Dialogue - Nia". Every track must still be represented.
     for (const track of scene.tracks) {
-      expect(screen.getAllByTitle(track.name).length).toBeGreaterThan(0);
+      // The camera lane's tooltip is expanded to explain the lane, so match on the
+      // name being present rather than on it being the whole string.
+      expect(screen.getAllByTitle(new RegExp(track.name.replace(/[.*+?^${}()|[\]\\]/g, '\\expect(screen.getAllByTitle(new RegExp(escapeRegExp(track.name))).length).toBeGreaterThan(0);'))).length).toBeGreaterThan(0);
     }
     expect(screen.getAllByTitle(/./).length).toBeGreaterThanOrEqual(scene.tracks.length);
   });
