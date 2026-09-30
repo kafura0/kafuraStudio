@@ -27,7 +27,7 @@ complete.
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
 | 7 | Timeline | **complete** | Lanes, ruler, playhead, zoom, clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, clip add, drag clips to another track of the same kind — all through one undoable `commit()` per gesture. |
 | 8 | Dialogue / audio | **partial** | Web Audio playback scheduled against the playhead, per-clip gain, and a dialogue panel that edits speaker, actor, emotion, text, subtitle, cue timing and voice — all through one undoable `commit()` per gesture. Missing recordings are reported honestly in the UI. There is no way to attach a file to a slot, and no audio is authored. |
-| 9 | Camera | **partial** | Rest camera and keyframed moves resolve and render. No shot presets, no camera UI. |
+| 9 | Camera | **complete** | Rest camera and keyframed moves resolve and render. A camera panel authors rest framing numerically, applies any of the seeded shot presets in one undoable step, and frames a selection to fit. `frameBounds` inverts the renderer's own camera transform, and an invariant test holds the two to each other. |
 | 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
 | 11 | Preview | **partial** | The stage loops one scene via rAF. No episode-sequential playback, no transport UI beyond play/pause. |
 | 12 | Export | **planned** | Nothing written. Not started. |
@@ -36,7 +36,7 @@ complete.
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-243 tests green, all four gates clean.
+329 tests green, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
@@ -49,7 +49,7 @@ Verified by `npm run lint && npm run typecheck && npm run test && npm run build`
 - Editor: Zustand store with snapshot undo/redo through a single `commit()` path,
   debounced autosave, and a canvas stage that redraws without re-rendering React.
 - UI: scene list, read-only asset library, transport bar with a subtitle toggle,
-  a dialogue panel, the timeline, and the issue panel.
+  a dialogue panel, a camera panel, the timeline, and the issue panel.
 
 ### What is deliberately not built
 
