@@ -12,6 +12,11 @@
  * a private copy. A second clock would be correct here on screen and frozen
  * everywhere else, which is how the scrubber and the timeline playhead end up sitting
  * still during playback.
+ *
+ * The stage renders one scene at a time, and it is handed that scene plus its
+ * scene-local time. Choosing which scene and which local time is the transport's job
+ * (see `src/core/timeline/episode.ts`); the renderer is not asked to know what an
+ * episode is.
  */
 
 import { useEffect, useRef } from 'react';
@@ -46,7 +51,12 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       const state = useEditor.getState();
       state.advancePlayback(dt);
 
-      const { project, sceneId, playhead, showSubtitles } = useEditor.getState();
+      // The episode transport decides which scene and what local time; the renderer
+      // still takes a scene and a time and knows nothing about episodes. Reading the
+      // resolved position rather than `playhead` is what lets a boundary cross without
+      // the stage drawing a time that belongs to the previous scene.
+      const { project, showSubtitles } = useEditor.getState();
+      const { sceneId, sceneTime } = useEditor.getState().playbackPosition();
       const scene = project.scenes.find((s) => s.id === sceneId) ?? null;
       const stageWidth = widthRef.current;
       const stageHeight =
@@ -66,7 +76,7 @@ export function Stage({ width }: StageProps): React.JSX.Element {
         canvas.style.width = `${stageWidth}px`;
         canvas.style.height = `${stageHeight}px`;
 
-        renderScene(ctx, project, scene, playhead, {
+        renderScene(ctx, project, scene, sceneTime, {
           width: stageWidth,
           height: stageHeight,
           pixelRatio: dpr,

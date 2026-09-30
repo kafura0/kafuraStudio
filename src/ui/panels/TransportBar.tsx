@@ -1,4 +1,5 @@
 import { useEditor } from '../../state/editorStore';
+import { formatTimecode } from '../../core/constants';
 import type { Scene } from '../../core/types';
 
 export interface TransportBarProps {
@@ -24,18 +25,25 @@ export function TransportBar({
 }: TransportBarProps): React.JSX.Element {
   const playhead = useEditor((s) => s.playhead);
   const playing = useEditor((s) => s.playing);
+  const playbackMode = useEditor((s) => s.playbackMode);
   const dirty = useEditor((s) => s.dirty);
   const showSubtitles = useEditor((s) => s.showSubtitles);
   const setPlayhead = useEditor((s) => s.setPlayhead);
+  const setPlaybackMode = useEditor((s) => s.setPlaybackMode);
   const play = useEditor((s) => s.play);
   const pause = useEditor((s) => s.pause);
   const toggleSubtitles = useEditor((s) => s.toggleSubtitles);
+  const episodeDuration = useEditor((s) => s.episodeDuration());
 
-  // The duration of the scene actually open. Reading the project's first scene here
-  // is what made the scrubber range and the timecode disagree with the scene being
-  // edited — invisible while every scene happens to be the same length, wrong the
+  // What the scrubber spans depends on the mode, and it has to match what `playhead`
+  // means or the slider fights the user: a 0..38s slider driving a 0..10s scene-local
+  // number is a control that lies.
+  //
+  // In scene-wrap the duration is the scene actually open. Reading the project's first
+  // scene here is what made the scrubber range and the timecode disagree with the scene
+  // being edited — invisible while every scene happens to be the same length, wrong the
   // moment one is not.
-  const duration = scene.duration;
+  const duration = playbackMode === 'episode-advance' ? episodeDuration : scene.duration;
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-ink-800 bg-ink-900 px-3">
@@ -72,6 +80,24 @@ export function TransportBar({
 
       <button
         type="button"
+        onClick={() => setPlaybackMode(playbackMode === 'episode-advance' ? 'scene-wrap' : 'episode-advance')}
+        aria-pressed={playbackMode === 'episode-advance'}
+        title={
+          playbackMode === 'episode-advance'
+            ? 'Playing the whole cut. Click to loop this scene instead.'
+            : 'Looping this scene. Click to play the whole cut instead.'
+        }
+        className={`rounded px-2 py-1 text-xs transition-colors ${
+          playbackMode === 'episode-advance'
+            ? 'bg-zanza-500/20 text-zanza-400 hover:bg-zanza-500/30'
+            : 'text-ink-500 hover:bg-ink-800 hover:text-ink-300'
+        }`}
+      >
+        {playbackMode === 'episode-advance' ? 'Episode' : 'Scene loop'}
+      </button>
+
+      <button
+        type="button"
         onClick={() => (playing ? pause() : play())}
         className="rounded bg-ink-800 px-3 py-1 text-xs font-medium text-ink-100 hover:bg-ink-700"
       >
@@ -83,13 +109,23 @@ export function TransportBar({
         min={0}
         max={Math.max(duration, 0.001)}
         step={1 / fps}
-        value={Math.min(playhead, duration)}
+        value={Math.min(playhead, Math.max(duration, 0))}
         onChange={(event) => setPlayhead(Number(event.target.value))}
-        aria-label="Playhead"
+        aria-label={playbackMode === 'episode-advance' ? 'Episode playhead' : 'Playhead'}
         className="w-64 accent-zanza-500"
       />
-      <span className="w-24 text-right font-mono text-[11px] text-ink-400">
+      <span
+        className="w-40 text-right font-mono text-[11px] text-ink-400"
+        title={
+          playbackMode === 'episode-advance'
+            ? 'Episode time. The scene above shows the playhead within its own length.'
+            : 'Scene time.'
+        }
+      >
         {playhead.toFixed(2)} / {duration.toFixed(2)}s
+      </span>
+      <span className="w-20 text-right font-mono text-[11px] text-ink-500">
+        {formatTimecode(playhead, fps)}
       </span>
 
       <button

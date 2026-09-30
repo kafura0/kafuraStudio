@@ -17,6 +17,21 @@ import { Timeline } from './panels/Timeline';
 import { CameraPanel } from './panels/CameraPanel';
 import { DialoguePanel } from './panels/DialoguePanel';
 
+/**
+ * True when a keystroke belongs to whatever the user is typing into.
+ *
+ * Anything that accepts text — plus any button, because space is what activates one.
+ * Without this, holding space to scrub would also toggle playback repeatedly and pause
+ * the episode mid-sentence.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return tag === 'BUTTON' || target.getAttribute('role') === 'button';
+}
+
 export function App(): React.JSX.Element {
   const project = useEditor((s) => s.project);
   const sceneId = useEditor((s) => s.sceneId);
@@ -37,18 +52,33 @@ export function App(): React.JSX.Element {
     void hydrate();
   }, [hydrate]);
 
-  // Ctrl+Z / Ctrl+Shift+Z, the one shortcut an editor must never get wrong.
+  // Ctrl+Z / Ctrl+Shift+Z, the one shortcut an editor must never get wrong, plus
+  // spacebar transport, which `docs/MVP.md` check 3 claims exists and did not.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === 'z') {
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'z') {
+          event.preventDefault();
+          if (event.shiftKey) redo();
+          else undo();
+        } else if (key === 's') {
+          event.preventDefault();
+          void save();
+        }
+        return;
+      }
+      // Spacebar only when the user is not typing. A transport shortcut that eats a
+      // space in the dialogue editor is worse than no shortcut, and a focused range
+      // input legitimately uses space for its own affordance.
+      if (event.key === ' ' && !isTypingTarget(event.target)) {
         event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-      } else if (key === 's') {
-        event.preventDefault();
-        void save();
+        // Read the store imperatively. Selecting a derived `() => toggle()` would hand
+        // React a new function identity on every render, and `useSyncExternalStore`
+        // re-renders forever on a selector whose result is never referentially equal.
+        const store = useEditor.getState();
+        if (store.playing) store.pause();
+        else store.play();
       }
     };
     window.addEventListener('keydown', onKey);
