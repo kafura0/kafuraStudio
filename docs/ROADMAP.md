@@ -1,6 +1,6 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 8 — DIALOGUE / AUDIO**
+> **Current phase: Phase 11 — PROJECT IO & SESSION LIFECYCLE**
 
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
@@ -11,6 +11,11 @@ discipline are in [`PLAN.md`](PLAN.md).
 Status is reported honestly (RULE 9). A phase is `complete` only when its gate is
 demonstrably met — a control that renders but does nothing is `partial`, not
 complete.
+
+Phases 0–8 keep their original numbers as the historical record. From 9 onward the
+numbering is reconciled against
+[`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md) §24.1, which retires the old Phase 10
+(Animation) as a number and renumbers the old Phase 11 (Preview) to **10**.
 
 ---
 
@@ -27,34 +32,41 @@ complete.
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
 | 7 | Timeline | **complete** | Lanes, ruler, playhead, zoom, clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, clip add, drag clips to another track of the same kind — all through one undoable `commit()` per gesture. |
 | 8 | Dialogue / audio | **partial** | Web Audio playback scheduled against the playhead, per-clip gain, and a dialogue panel that edits speaker, actor, emotion, text, subtitle, cue timing and voice — all through one undoable `commit()` per gesture. Missing recordings are reported honestly in the UI. There is no way to attach a file to a slot, and no audio is authored. |
-| 9 | Camera | **complete** | Rest camera and keyframed moves resolve and render. A camera panel authors rest framing numerically, applies any of the seeded shot presets in one undoable step, and frames a selection to fit. `frameBounds` inverts the renderer's own camera transform, and an invariant test holds the two to each other. |
-| 10 | Animation | **complete** | Keyframes, interpolation, per-channel holds, talk pulse |
-| 11 | Preview | **partial** | The stage loops one scene via rAF. No episode-sequential playback, no transport UI beyond play/pause. |
+| 9 | Camera Authoring | **complete** | Rest camera and keyframed moves resolve and render. A camera panel authors rest framing numerically, applies any of the seeded shot presets in one undoable step, and frames a selection to fit. `frameBounds` inverts the renderer's own camera transform, and an invariant test holds the two to each other. |
+| 10 | Episode Playback & Transport | **complete** | EP001 plays from the first frame of scene 1 to the last frame of scene 5, and the playhead is continuous across all four scene boundaries. Offsets, the boundary crossing, the end-of-cut wrap, and the audio cut are pure core; the clock is still the store's single `advancePlayback`. |
+| 11 | Project IO & Session Lifecycle | **planned** | Not started. Three projects, import/export, and the two data-loss defects. |
 | 12 | Export | **planned** | Nothing written. Not started. |
-| 13 | Polish | **planned** | Not started. |
+| 13 | MVP Acceptance & Documentation Truth | **planned** | Not started. |
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-329 tests green, all four gates clean.
+416 tests green, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
+- Playback: pure `timeline/episode` flattens a cut into timed segments, resolves an
+  episode time to a scene and a local time, and totals a duration; pure
+  `audio/episodePlan` offsets the scene-local audio segments onto the episode clock,
+  shared with Phase 12's mixdown.
 - Audio: a pure `audioPlan` turning timeline clips into audible segments, and a Web
-  Audio scheduler fed the store's clock, so picture and sound cannot drift.
+  Audio scheduler fed the store's clock, so picture and sound cannot drift. A scene
+  boundary is a hard audio cut.
 - Persistence: `ProjectRepository` + IndexedDB, re-validating on read.
 - Content: shared rig builder, 4 characters, 3 environments, poses, expressions,
   props, declared audio slots, and the EP001 seed project — which validates with
   zero invariant issues and renders every one of its five scenes.
 - Editor: Zustand store with snapshot undo/redo through a single `commit()` path,
-  debounced autosave, and a canvas stage that redraws without re-rendering React.
-- UI: scene list, read-only asset library, transport bar with a subtitle toggle,
-  a dialogue panel, a camera panel, the timeline, and the issue panel.
+  debounced autosave, and a canvas stage that redraws without re-rendering React. One
+  clock, two modes: episode-sequential by default, scene loop on demand.
+- UI: scene list (which follows the clock), read-only asset library, transport bar with
+  an episode-length scrubber, a dialogue panel, a camera panel, the timeline, and the
+  issue panel. Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+S, and spacebar are bound.
 
 ### What is deliberately not built
 
-Asset editing, attaching files to audio slots, episode playback, and export. These are
-the phases above, not gaps in the ones below.
+Asset editing, attaching files to audio slots, and export. These are the phases above,
+not gaps in the ones below.
 
 ---
 
@@ -128,6 +140,45 @@ demonstrated on the shipped content, because no slot has a file — the mechanis
 implemented and tested against a fake `AudioPort`, and stays silent until content
 exists. The phase is left `partial` for that reason, not `complete`.
 
+The episode-sequential half of this phase's deferred scope shipped as Phase 10; the
+mixdown is Phase 12.
+
+---
+
+## PHASE 10 — EPISODE PLAYBACK & TRANSPORT (complete)
+
+A scene loop is not an episode. This phase makes the cut play through, with one clock
+and one playhead that never resets at a boundary.
+
+- [x] `npm run lint` clean — **done**
+- [x] `npm run typecheck` clean — **done**
+- [x] `npm run test` green — **done** (416 tests)
+- [x] `npm run build` succeeds — **done**
+- [x] Scene offsets for a multi-scene episode — **done**,
+      `src/core/timeline/episode.ts`, pure and DOM-free
+- [x] The playhead crosses a boundary and lands at the right local time in the next
+      scene — **done**, asserted in `episode.test.ts` and `editorStore.test.ts`
+- [x] The end of the *cut* wraps; the end of a scene does not — **done**
+- [x] One clock, unchanged — **done**. `advancePlayback` is still the only thing that
+      moves time; only its wrap rule is mode-dependent, and `playbackMode` is not
+      persisted
+- [x] `Stage` renders scene-local time, so a scene past the first is not drawn at its
+      own duration — **done**
+- [x] The transport scrubber spans the episode, and the scene list follows the clock —
+      **done**
+- [x] A scene switch during playback stops the old audio and starts the new — **done**,
+      `src/state/audioChannel.ts`, a hard cut ordered before the new schedule
+- [x] Audio segments offset across the boundary — **done**,
+      `src/core/audio/episodePlan.ts`, the same function Phase 12 mixes down
+- [x] Spacebar transport — **done**, and it stands down while the user is typing
+
+Gate: *"EP001 plays from the first frame of scene 1 to the last frame of scene 5, with
+dialogue, expressions and camera moves, and the playhead is continuous across all four
+scene boundaries."* Reachable in the app: press play.
+
+Not built here, by the phase's own exclusions: export, transitions, a master timeline
+view, per-scene audio offsets authored by hand.
+
 ---
 
 ## POST-MVP — planned
@@ -196,3 +247,5 @@ the document is the shared asset.
 | 2026-09-28 | Phase 7 keyframe editing: core semantics (clips shift their keyframes; an end trim cuts them), drag-anchored preview fix, double-click to add a keyframe, frame-grid drag, Delete/Backspace, per-lane mute. 186 tests green. |
 | 2026-09-29 | Phase 7 **complete**. Track management (`moveTrack`, `relocateClip` core ops) and its UI: add-clip-at-playhead, delete lane, reorder, drag clips to another same-kind lane with the drop lane highlighted. 196 tests green. Current phase is now Phase 8 — Dialogue / audio. |
 | 2026-09-29 | Phase 8 mechanism. Web Audio playback scheduled against the store's clock (`audioPlan` + engine + adapter), the dialogue panel, `setDialogueCue`, the per-clip gain slider, the `CC` subtitle toggle, honest "no recording" reporting in the asset library and the panel, and Delete-on-cue taking the line with it. 243 tests green. Phase stays `partial`: no slot has a file, and there is no UI to attach one. |
+| 2026-09-30 | Phase 9 **complete**. Rest framing and a seeded-preset picker in the camera panel, plus `frameBounds`, which inverts the renderer's own camera transform; an invariant test holds the two to each other. 329 tests green. |
+| 2026-09-30 | Phase 10 **complete**. Pure `timeline/episode` (offsets, resolution, duration) and `audio/episodePlan` (the mixdown offsets Phase 12 will consume); the store's single clock gained a sequence mode that crosses a scene boundary and wraps only at the end of the cut; the stage, transport, and scene list read episode time; a scene boundary is a hard audio cut; spacebar transport. 416 tests green. Numbering reconciled with `ARCHITECTURE_SPEC.md` §24.1 — the old Phase 10 (Animation) is retired as a number and the old Phase 11 (Preview) becomes Phase 10. The post-MVP list below still carries the legacy numbers; §24.1 is the authority. Current phase is now Phase 11 — Project IO & Session Lifecycle. |

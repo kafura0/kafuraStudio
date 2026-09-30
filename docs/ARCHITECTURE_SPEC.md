@@ -162,11 +162,13 @@ Flat scene pool, ordered by `Episode.sceneIds`. No nesting. `episodeScenes`, `ep
 
 `Stage.tsx` is the only component touching canvas. It reads `useEditor.getState()` inside the rAF callback rather than subscribing, so advancing the playhead costs zero React renders. It matches the backing store to a capped `devicePixelRatio` and passes `pixelRatio` to the renderer. It redraws **unconditionally every frame** — `docs/ARCHITECTURE.md:69` claims it "skips the frame entirely when nothing has changed"; there is no such check.
 
-Keyboard: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+S are bound in `App.tsx:40-55`. **There is no spacebar binding** — the transport has a Play/Pause button only. `docs/MVP.md:51` claims undo is "not yet wired to keyboard shortcuts", which is false; `docs/MVP.md:94` check 4 correctly relies on Ctrl+Z.
+Keyboard: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+S are bound in `App.tsx:40-55`. **Corrected 2026-09-30 (Phase 10):** there *is* now a spacebar binding, and the transport is no longer a Play/Pause button only. The spacebar stands down while the user is typing in a text field, on a focused control, or with a modifier held, because a transport shortcut that eats a space in the dialogue editor is a data-loss bug. It reads the store with `useEditor.getState()` inside the handler rather than selecting a derived `() => toggle()`: `useSyncExternalStore` re-renders without end on a selector that returns a new function identity every time, and that mistake hung the app until `App.test.tsx` caught it.
+
+This line also recorded that `docs/MVP.md:51` claimed undo was "not yet wired to keyboard shortcuts", which was false at audit time and has since been corrected in `MVP.md`.
 
 ### 1.11 Testing architecture
 
-Vitest 3 + Testing Library, jsdom, `src/test/setup.ts`. 20 files, 243 tests.
+Vitest 3 + Testing Library, jsdom, `src/test/setup.ts`. 29 files, 416 tests.
 
 - **Pure core** — sampling, sparse keyframes, timeline geometry, transform composition, part resolution, audio plan, audio engine against a fake port, recording predicate
 - **Document ops** — `trackOps.test.ts`, `dialogueOps.test.ts`; store behaviour in `editorStore.test.ts`

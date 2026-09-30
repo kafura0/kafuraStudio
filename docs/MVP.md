@@ -48,11 +48,11 @@ user can actually operate. A capability is only `implemented` when both are true
 | 14 | Basic animation keyframes | done | done | Add/move/delete on the timeline; keyframes travel with moves and start trims; an end trim cuts them |
 | 15 | Save project | done | partial | IndexedDB persists; `.zanza.json` import/export not built |
 | 16 | Load project | done | done | Hydrates on start, re-validates on read |
-| 17 | Undo / redo | done | partial | One `commit()` path; one step per drag/gesture; not yet wired to keyboard shortcuts |
-| 18 | Preview scene | done | partial | Play/pause and a scrubber; no episode playback |
+| 17 | Undo / redo | done | done | One `commit()` path; one step per drag/gesture; bound to Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z |
+| 18 | Preview scene | done | done | Play/pause, a scrubber, and spacebar; episode-sequential playback across the whole cut, or a scene loop on demand |
 | 19 | Export a basic scene result | none | none | **Not started.** No PNG still, no WebM |
 
-The MVP gate is not met. Items 1-19 with a `none` in the UI column are Phase 7 and
+The MVP gate is not met. Items 1-19 with a `none` in the UI column are Phase 11 and
 Phase 12 work; see `docs/ROADMAP.md`.
 
 ---
@@ -100,17 +100,22 @@ npm run build      # succeeds
 9. Export the project JSON, reload the app, import it → identical document.
 10. Add a fifth character to the asset library → placeable, animatable and
     renderable **without editing a single line of `core/`**. (RULE 3.)
+11. Press play from the first frame of scene 1 → EP001 runs through to the last frame
+    of scene 5, and the playhead keeps climbing across all four scene boundaries
+    instead of snapping back to zero.
 
 Check 10 is the load-bearing one. If adding a character requires a code change, the
-architecture has failed, regardless of whether the other nine pass.
+architecture has failed, regardless of whether the other ten pass.
 
-**Current status: not met.** The four build gates pass. Of the ten manual checks,
-1 and 2 are expected to pass but have not been verified in a browser. Checks 3-10
-depend on the exporter, which does not exist. Check 10 is
-the one the design is built for, and it is now automated in
-`src/data/rule3.test.ts`: an unknown character is added to the production project,
-staged, keyed, posed, expressioned, and rendered, with `validateProject` clean
-throughout and no `core/` file touched.
+**Current status: not met.** The four build gates pass. Of the eleven manual checks,
+1 and 2 are expected to pass but have not been verified in a browser. Check 3
+(spacebar), 4 (undo), 11 (episode playback) and 10 (RULE 3) are implemented and
+automated; 5, 6 and 7 are implemented but have not been walked in a browser. Only
+check 8 needs the video exporter, which does not exist, and check 9 needs project
+import/export, which is Phase 11. Check 10 is the one the design is built for, and it
+is automated in `src/data/rule3.test.ts`: an unknown character is added to the
+production project, staged, keyed, posed, expressioned, and rendered, with
+`validateProject` clean throughout and no `core/` file touched.
 
 ---
 
