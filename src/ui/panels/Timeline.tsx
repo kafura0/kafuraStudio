@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useEditor } from '../../state/editorStore';
+import { useEditor, useOpenProject } from '../../state/editorStore';
 import {
   MIN_CLIP_DURATION,
   addKeyframe,
@@ -96,7 +96,7 @@ interface DragState {
 }
 
 function useScene(): { project: Project; scene: Scene | null } {
-  const project = useEditor((s) => s.project);
+  const project = useOpenProject();
   const sceneId = useEditor((s) => s.sceneId);
   const scene = useMemo(
     () => project.scenes.find((s) => s.id === sceneId) ?? null,
@@ -354,6 +354,11 @@ export function Timeline(): React.JSX.Element {
       if (!current) return;
 
       const project = useEditor.getState().project;
+      // The project can be closed mid-drag — the browser is a different screen now, and
+      // this component is about to unmount. Dropping the clip into a document that is no
+      // longer open would be a write against the wrong project, so the gesture is
+      // abandoned instead. The drag state is already cleared above either way.
+      if (project === null) return;
 
       if (current.mode === 'keyframe') {
         if (Math.abs(current.keyframeTime - current.keyframeOriginTime) < 1e-6 || !current.keyframeId) return;
@@ -442,6 +447,10 @@ export function Timeline(): React.JSX.Element {
       if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
 
       const { project, sceneId, selection } = useEditor.getState();
+      // A selection cannot outlive its document, and this handler is bound to `window`
+      // rather than to a focused element — so it can fire between the project closing and
+      // this component unmounting. With no project there is nothing to delete from.
+      if (project === null) return;
       if (selection.kind === null || selection.kind === 'actor' || selection.kind === 'prop') return;
       if (!selection.id) return;
       const sceneSel = project.scenes.find((s) => s.id === sceneId);
@@ -513,7 +522,9 @@ export function Timeline(): React.JSX.Element {
     const { x } = lanePoint(event.clientX, event.clientY);
     const { time } = keyframeTime(clip, xToTime(x, scale), fps);
     const props = sampleClip(clip, time);
-    const project = useEditor.getState().project;
+    // `project` from the render, not a fresh read: this panel re-renders on every project
+    // change, so it is already current, and using it makes it impossible to edit a
+    // document other than the one this lane was drawn from.
     const next = addKeyframe(project, scene.id, lane.track.id, clipId, time, props);
     if (next !== project) {
       commit(next, 'Add keyframe');
@@ -531,7 +542,7 @@ export function Timeline(): React.JSX.Element {
   // line id, camera by "camera"), and the playhead lands on the frame grid.
   const addClipAtPlayhead = (lane: TrackLane): void => {
     if (!scene) return;
-    const p = useEditor.getState().project;
+    const p = project;
     const { playhead } = useEditor.getState();
     const start = snapToFrame(Math.max(Math.min(playhead, duration), 0), fps);
     const { project: next, clipId } = addSimpleClip(
@@ -554,7 +565,7 @@ export function Timeline(): React.JSX.Element {
   // deleting the cue; the raw op would leave an orphaned line behind otherwise.
   const removeTrackLane = (lane: TrackLane): void => {
     if (!scene) return;
-    const p = useEditor.getState().project;
+    const p = project;
     const isCueLane =
       lane.track.kind === 'dialogue' &&
       lane.track.clips.length > 0 &&
@@ -644,7 +655,7 @@ export function Timeline(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => {
-                  const p = useEditor.getState().project;
+                  const p = project;
                   const next = moveTrack(p, scene.id, lane.track.id, lane.index - 1);
                   if (next !== p) commit(next, 'Reorder track');
                 }}
@@ -658,7 +669,7 @@ export function Timeline(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => {
-                  const p = useEditor.getState().project;
+                  const p = project;
                   const next = moveTrack(p, scene.id, lane.track.id, lane.index + 1);
                   if (next !== p) commit(next, 'Reorder track');
                 }}
@@ -672,7 +683,7 @@ export function Timeline(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => {
-                  const p = useEditor.getState().project;
+                  const p = project;
                   const next = updateTrack(p, scene.id, lane.track.id, { muted: !lane.track.muted });
                   if (next !== p) commit(next, lane.track.muted ? 'Unmute track' : 'Mute track');
                 }}

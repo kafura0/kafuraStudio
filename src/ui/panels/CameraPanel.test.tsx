@@ -43,7 +43,11 @@ function resetStore(project: Project = SEED_PROJECT): void {
 
 function currentScene(): Scene {
   const state = useEditor.getState();
-  return state.project.scenes.find((s) => s.id === state.sceneId) as Scene;
+  // `project` is nullable now that a workspace can have nothing open, but this panel only
+  // renders inside the editor, where one always is.
+  const project = state.project;
+  if (project === null) throw new Error('Expected a project to be open');
+  return project.scenes.find((s) => s.id === state.sceneId) as Scene;
 }
 
 function typeInto(label: string, value: string): void {

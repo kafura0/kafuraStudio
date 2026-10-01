@@ -14,7 +14,7 @@ import { audioPlan } from './audioPlan';
 import type { AudioDef, DialogueLine, Project } from '../types';
 
 function asset(id: string, kind: AudioDef['kind'], duration: number): AudioDef {
-  return { id, name: id, kind, src: null, duration, tags: [] };
+  return { id, name: id, kind, src: null, srcKind: null, duration, tags: [] };
 }
 
 /** A project whose scene locks up the given audio assets on the track asked for. */

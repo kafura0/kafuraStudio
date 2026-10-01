@@ -214,6 +214,18 @@ export interface AudioDef {
   kind: AudioKind;
   /** null = a declared slot with no file loaded yet. */
   src: string | null;
+  /**
+   * What `src` means, stated rather than sniffed.
+   *
+   * `'local'` - `src` is a media id, and the bytes are in the media store.
+   * `'external'` - `src` is a path the operator supplies; the editor never reads it.
+   * `null` - no file, which is the honest state for a declared slot.
+   *
+   * Document format v2. A v1 record has no such field, so it migrates to `null`
+   * everywhere and every slot stays honestly "missing" rather than being guessed at
+   * from a string that looks like a path.
+   */
+  srcKind: 'local' | 'external' | null;
   /** Seconds. */
   duration: number;
   tags: string[];
@@ -404,6 +416,22 @@ export interface ProjectSettings {
   autosave: boolean;
 }
 
+/**
+ * Facts about a project that are not part of the production itself.
+ *
+ * Nothing here changes what renders. It exists so the browser can hide an archived
+ * project, name where a duplicate came from, and label a snapshot — all without
+ * inventing a second document type or a side-car database of its own.
+ */
+export interface ProjectMetadata {
+  /** ISO 8601. Hidden from the default list; never deleted by archiving. */
+  archived: string | null;
+  /** Project id this one was duplicated from. */
+  duplicatedFrom: Id | null;
+  /** Project id this one is a point-in-time copy of. */
+  snapshotOf: Id | null;
+}
+
 export interface Project {
   id: Id;
   name: string;
@@ -424,6 +452,12 @@ export interface Project {
   episodes: Episode[];
   /** Flat pool. Episodes reference scenes by id and hold the order. */
   scenes: Scene[];
+  /**
+   * Lifecycle facts. Absent in a v1 document and defaulted on read, so this is additive:
+   * an old project opens with `archived: null` and is neither hidden nor claimed to be
+   * a copy of anything.
+   */
+  metadata: ProjectMetadata;
 }
 
 /* ------------------------------------------------------------------ */

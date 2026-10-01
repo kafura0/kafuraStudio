@@ -16,8 +16,8 @@
  */
 
 import { useState } from 'react';
-import { useEditor } from '../../state/editorStore';
-import { inputClass, round2, useDraftNumber } from '../draftFields';
+import { useEditor, useOpenProject } from '../../state/editorStore';
+import { draftNumberInputProps, inputClass, round2, useDraftNumber } from '../draftFields';
 import { Field } from '../fields';
 import type { Camera, CameraPreset, Id, Project, Scene } from '../../core/types';
 import {
@@ -34,7 +34,7 @@ const buttonClass =
   'rounded border border-ink-700 px-2 py-1 text-[11px] text-ink-200 hover:border-zanza-500 hover:text-white disabled:opacity-40 disabled:hover:border-ink-700 disabled:hover:text-ink-200';
 
 export function CameraPanel(): React.JSX.Element {
-  const project = useEditor((s) => s.project);
+  const project = useOpenProject();
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
   const commit = useEditor((s) => s.commit);
@@ -69,7 +69,7 @@ function CameraBody({
   selectedActorId: Id | null;
   onChange: (next: Project, label?: string) => void;
 }): React.JSX.Element {
-  const project = useEditor((s) => s.project);
+  const project = useOpenProject();
   const [presetId, setPresetId] = useState('');
   const camera = scene.camera;
   const presets = resolveCameraPresets(project);
@@ -136,17 +136,17 @@ function CameraBody({
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="X" hint={invalid(x) ? 'Not a number — ignored' : undefined}>
-          <input {...x} aria-label="X" className={inputClass} inputMode="decimal" />
+          <input {...draftNumberInputProps(x)} aria-label="X" className={inputClass} inputMode="decimal" />
         </Field>
         <Field label="Y" hint={invalid(y) ? 'Not a number — ignored' : undefined}>
-          <input {...y} aria-label="Y" className={inputClass} inputMode="decimal" />
+          <input {...draftNumberInputProps(y)} aria-label="Y" className={inputClass} inputMode="decimal" />
         </Field>
         <Field label="Zoom" hint="1 shows the whole frame. Larger is closer.">
-          <input {...zoom} aria-label="Zoom" className={inputClass} inputMode="decimal" />
+          <input {...draftNumberInputProps(zoom)} aria-label="Zoom" className={inputClass} inputMode="decimal" />
         </Field>
         <Field label="Rotation (degrees)" hint={invalid(rotation) ? 'Not a number — ignored' : undefined}>
           <input
-            {...rotation}
+            {...draftNumberInputProps(rotation)}
             aria-label="Rotation (degrees)"
             className={inputClass}
             inputMode="decimal"

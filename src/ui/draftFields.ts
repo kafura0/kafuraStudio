@@ -51,6 +51,22 @@ export function useDraftField(value: string, onCommit: (next: string) => void): 
 }
 
 /**
+ * Spread a numeric draft onto an `<input>`.
+ *
+ * `useDraftNumber` returns an `invalid` flag for logic — the panel turns it into a hint.
+ * Spread raw, that flag also lands on the element as a DOM attribute, and React rejects it
+ * with `Received 'false' for a non-boolean attribute 'invalid'` on every render of every
+ * camera panel. The flag is not an input attribute; the ARIA one is. This keeps the
+ * mapping in one place so no panel has to remember it.
+ */
+export function draftNumberInputProps(
+  field: DraftField & { invalid: boolean },
+): DraftField & { 'aria-invalid': true | undefined } {
+  const { invalid, ...rest } = field;
+  return { ...rest, 'aria-invalid': invalid ? true : undefined };
+}
+
+/**
  * A numeric field, committed on blur, reporting unreadable input honestly.
  *
  * `Number('')` and `Number('  ')` are both 0, so an emptied field would silently write a

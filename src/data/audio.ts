@@ -21,7 +21,7 @@ function slot(
   duration: number,
   tags: string[],
 ): AudioDef {
-  return { id, name, kind, src: null, duration, tags };
+  return { id, name, kind, src: null, srcKind: null, duration, tags };
 }
 
 export const AUDIO: AudioDef[] = [

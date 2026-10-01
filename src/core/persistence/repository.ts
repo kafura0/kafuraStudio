@@ -15,6 +15,15 @@ export interface ProjectSummary {
   updatedAt: string;
   sceneCount: number;
   episodeCount: number;
+  /**
+   * When the project was archived, or `null` if it is live.
+   *
+   * Carried on the summary rather than read back per row because the browser has to
+   * decide what to show before it opens anything. Archive is "hidden from the default
+   * list, not deleted" — so the list needs to know, and a summary that could not say was
+   * a browser that either showed archived projects forever or hid them with no way back.
+   */
+  archivedAt: string | null;
 }
 
 export interface ProjectRepository {
@@ -48,6 +57,7 @@ export class MemoryProjectRepository implements ProjectRepository {
         updatedAt: p.updatedAt,
         sceneCount: p.scenes.length,
         episodeCount: p.episodes.length,
+        archivedAt: p.metadata.archived,
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }

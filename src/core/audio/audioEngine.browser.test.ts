@@ -77,7 +77,7 @@ function launch(): { engine: AudioEngine; port: FakePort; project: Project; scen
     ...createProject('A'),
     assets: {
       ...createProject('A').assets,
-      audio: [{ id: 'vo', name: 'vo', kind: 'dialogue', src: null, duration: 8, tags: [] }],
+      audio: [{ id: 'vo', name: 'vo', kind: 'dialogue', src: null, srcKind: null, duration: 8, tags: [] }],
     },
     scenes: [scene],
   };

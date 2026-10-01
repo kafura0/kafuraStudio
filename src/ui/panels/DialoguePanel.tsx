@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { inputClass, round2, useDraftField } from '../draftFields';
 import { Field } from '../fields';
-import { useEditor } from '../../state/editorStore';
+import { useEditor, useOpenProject } from '../../state/editorStore';
 import {
   addDialogueLineWithCue,
   removeDialogueLine,
@@ -44,7 +44,7 @@ interface Cue {
 }
 
 export function DialoguePanel(): React.JSX.Element {
-  const project = useEditor((s) => s.project);
+  const project = useOpenProject();
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
   const commit = useEditor((s) => s.commit);

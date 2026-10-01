@@ -57,6 +57,12 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       // the stage drawing a time that belongs to the previous scene.
       const { project, showSubtitles } = useEditor.getState();
       const { sceneId, sceneTime } = useEditor.getState().playbackPosition();
+      // The frame after the last project closes can still be requested: the loop is
+      // driven by requestAnimationFrame, and unmounting the canvas happens on the commit
+      // that started it. Drawing with no project would be reading settings off a null, so
+      // the frame is skipped and the next one never comes, since the loop stops with the
+      // component.
+      if (project === null) return;
       const scene = project.scenes.find((s) => s.id === sceneId) ?? null;
       const stageWidth = widthRef.current;
       const stageHeight =

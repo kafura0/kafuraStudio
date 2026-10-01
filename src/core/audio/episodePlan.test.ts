@@ -15,7 +15,7 @@ import { createEpisode, createProject, createScene, createTrack } from '../docum
 import type { AudioDef, Id, Project, Scene } from '../types';
 
 function asset(id: string, kind: AudioDef['kind'], duration: number): AudioDef {
-  return { id, name: id, kind, src: null, duration, tags: [] };
+  return { id, name: id, kind, src: null, srcKind: null, duration, tags: [] };
 }
 
 /**

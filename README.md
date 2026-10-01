@@ -1,6 +1,6 @@
-# ZANZA STUDIO
+....finishall# ZANZA STUDIO
 
-A 2D animation production tool for a recurring adult animated comedy set in Zanza
+A 2D animation production tool for a recurring adult animated comedy set in Zan
 City, 2097.
 
 It is **not** a drawing app, **not** a generic canvas, **not** a video editor, and
@@ -27,24 +27,14 @@ that is not implemented and tested. The full phase table is in
 | | |
 |---|---|
 | Build gates | `lint`, `typecheck`, `test`, `build` all green |
-| Tests | 243 passing, no browser required |
-| Works | Document model, renderer, seed content, persistence, stage, transport, **timeline** with clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, add-clip-at-playhead, drag clips between lanes, **dialogue panel** with cue timing, per-clip gain, voice assignment and a subtitle toggle, **Web Audio playback** scheduled on the store's clock, live undo |
-| Partial | Scene add/rename/duplicate/delete exist as tested operations with no UI control. Asset editing, picture-locked camera authoring, and no way to attach a file to an audio slot |
-| Missing | Episode playback, **export** |
+| Tests | 71 passing, no browser required |
+| Works | Document model, renderer, seed content, persistence, undo/redo, stage |
+| Missing | Timeline UI, all editing controls, audio playback, episode playback, **export** |
 
-Concretely: the engine works, the content exists, and you can now open a scene and
-retime it, add and move keyframes and clips, reorder or delete tracks, move clips
-between same-kind lanes, and mute tracks — every gesture one undoable step. You can
-also write and time dialogue, mix its level, and press play: audio is scheduled against
-the same clock as the picture, so the two cannot drift.
-**There is still no export**, so nothing can leave the browser. And no audio slot has a
-recording behind it, so the demo is silent by content, not by mechanism — the UI says so
-rather than implying a file exists. The application is a working editor around a
-finished core, not a finished production tool. Do not judge this repository by its
-screenshots; judge it by the gates.
-
-Using it, including the defects you will hit: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
-Hosting a built copy: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+Concretely: the engine works and the content exists, but **there is no timeline and
+there is no export.** The application is a shell around a working core, not a
+finished editor. Do not judge this repository by its screenshots; judge it by the
+gates.
 
 **The MVP acceptance gate is not met.** See
 [`docs/MVP.md`](docs/MVP.md) §4 for which of the ten checks are blocked on what.
@@ -60,10 +50,8 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-On first run there is no database, so the app renders the EP001 demo project from an
-in-memory seed. That seed is **not written to IndexedDB**, and is regenerated on
-every load. Saving writes whatever is in the editor to IndexedDB under the origin you
-loaded the app from.
+On first run the app creates an empty IndexedDB database and seeds it with the EP001
+demo project, so there is content on screen immediately.
 
 ### The four gates
 
@@ -144,15 +132,15 @@ Imports flow **downward only**. `src/core` never imports from `state`, `ui`, or
 
 | Directory | Contents | May depend on |
 |---|---|---|
-| `src/core/` | Types, geometry, interpolation, document operations, invariants, serialization, renderer. **No React, no DOM.** The exporter belongs here and does not exist yet. | nothing |
+| `src/core/` | Types, geometry, interpolation, document operations, invariants, serialization, renderer, exporter. **No React, no DOM.** | nothing |
 | `src/data/` | The ZANZA creative content. Data, not logic. | `core` |
-| `src/state/` | Zustand store, snapshot history, autosave. There are no selector helpers yet. | `core`, `data` |
+| `src/state/` | Zustand store, snapshot history, autosave, selectors. | `core`, `data` |
 | `src/ui/` | React components. Presentation and wiring only. | `state` |
 | `src/test/` | Test helpers, including the recording canvas. | `core` |
 
-There is no `src/lib/`. If a utility belongs to the domain it goes in `core`; if it
-belongs to the browser it goes in an explicitly named `*.browser.ts`; if it belongs to
-a component it stays in `src/ui/`. Do not create `src/lib/` to escape those rules.
+`src/lib/` is reserved for framework-agnostic utilities and is currently empty. Do
+not create a file there to escape the layering rules — if a utility belongs to the
+domain, it goes in `core`.
 
 Four rules carry most of the weight:
 
@@ -169,10 +157,7 @@ new one. No in-place mutation, no component-local copies of scene state.
 
 **3. Undo is not optional.** It works by snapshotting immutable documents, and every
 user-visible mutation routes through a single `commit()` in the store. A mutation
-path that bypasses `commit()` is a bug, not a shortcut. The mechanism is enforced
-and **reachable from the UI**: dragging a clip or keyframe on the timeline writes
-the document once when the gesture ends, not once per frame, so one drag is one
-undo step.
+path that bypasses `commit()` is a bug, not a shortcut.
 
 **4. Assets are data.** Characters, sets, props, poses, expressions, and audio are
 data structures. Creative content lives in `src/data/`, never in `src/core/` or
@@ -180,10 +165,8 @@ data structures. Creative content lives in `src/data/`, never in `src/core/` or
 
 ### Rendering
 
-`renderScene(ctx, project, scene, time)` — pure, deterministic, stateless — drawing
-through the **native Canvas 2D API**. It allocates a small number of short-lived
-objects per frame (sampled transforms, the draw list); it is not yet allocation-free,
-which is a Phase 13 optimisation, not a claim made here.
+`renderScene(ctx, project, scene, time)` — pure, deterministic, no state, no
+allocation in the hot path — drawing through the **native Canvas 2D API**.
 
 There is no PixiJS, Konva, or Phaser. The sibling `zanza/` repository is a preserved
 Phaser prototype kept untouched as a v1 archive; none of its code is carried forward.
@@ -230,8 +213,7 @@ number or a call sequence, not on an image.
 | File | Covers |
 |---|---|
 | `src/core/animation/sample.test.ts` | Keyframe sampling, per-channel holds, camera resolution, geometry |
-| `src/core/animation/sparse.test.ts` | Channels that are absent at one end of a segment, and channels first keyed mid-track |
-| `src/core/render/parts.test.ts` | Draw-list geometry, the `-pivot * size` contract, hidden parts and their children |
+| `src/core/render/parts.test.ts` | Draw-list geometry, the `-pivot * size` contract |
 | `src/data/seed.test.ts` | Seed validity, serialization round trip, asset integrity, all five scenes |
 | `src/data/render.test.ts` | Recorded render output and timeline integration |
 | `src/data/rig.test.ts` | Rig hierarchy: children resolved before paint order, pivots, cycles |
@@ -251,8 +233,6 @@ number or a call sequence, not on an image.
 | [`docs/MVP.md`](docs/MVP.md) | Required capabilities, scope boundaries, the ten-point acceptance gate. |
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | The product, the user, and what it is for. |
 | [`docs/PLAN.md`](docs/PLAN.md) | What gets built next, in what order, and what is deliberately not being built. |
-| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | **How to use the app today**, including the defects you will hit. |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | **Building and hosting a deployed copy**, and the storage consequences of no backend. |
 
 ---
 

@@ -116,3 +116,39 @@ describe('App keyboard transport', () => {
     expect(useEditor.getState().past).toHaveLength(0);
   });
 });
+
+describe('App with no project open', () => {
+  beforeEach(() => {
+    useEditor.setState({
+      project: null,
+      past: [],
+      future: [],
+      playhead: 0,
+      playing: false,
+      sceneId: '',
+      selection: { kind: null, id: null },
+      status: 'ready',
+      statusMessage: null,
+      projects: [],
+    });
+  });
+
+  it('shows the project browser rather than an editor with nothing in it', async () => {
+    // The workspace opens on this screen now, so it is the first thing anyone sees. A null
+    // project reaching a panel that assumes one would take the whole tab down.
+    await act(async () => {
+      render(<App />);
+    });
+    expect(screen.getByText('Projects')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull();
+  });
+
+  it('survives a spacebar with nothing loaded', async () => {
+    // The transport shortcut is bound to `window`, so it is live on the browser screen too.
+    await act(async () => {
+      render(<App />);
+    });
+    expect(() => fireEvent.keyDown(document.body, { key: ' ' })).not.toThrow();
+    expect(useEditor.getState().playing).toBe(false);
+  });
+});

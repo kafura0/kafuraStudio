@@ -9,12 +9,15 @@
  * editor, and must never enter it in a state that violates an invariant.
  */
 
-import { STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from './constants';
-import type { Project } from './types';
+import { CURRENT_FORMAT_VERSION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from './constants';
+import type { AudioDef, Project } from './types';
 import { validateProject } from './document/invariants';
 import { emptyAssetLibrary } from './document/factories';
 
-export const CURRENT_FORMAT_VERSION = 1;
+// Re-exported so callers have one obvious place to ask "what version is current?", and
+// so the import graph stays acyclic. Defined in `constants` because the project factory
+// needs it too and `serialize` already depends on `factories`.
+export { CURRENT_FORMAT_VERSION } from './constants';
 
 export interface ProjectFile {
   formatVersion: number;
@@ -45,6 +48,32 @@ export function serializeProject(project: Project, pretty = true): string {
 /* ------------------------------------------------------------------ */
 
 export function parseProject(input: string | unknown): Project {
+  return readProjectFile(input).project;
+}
+
+export interface ParsedProject {
+  project: Project;
+  /**
+   * Things that were recoverable and were corrected.
+   *
+   * Separate from `ProjectParseError.issues` on purpose: a warning is not a reason to
+   * refuse a file. Discarding the distinction is how "the project opened but something
+   * was wrong with it" becomes indistinguishable from "the project opened".
+   */
+  warnings: string[];
+}
+
+/**
+ * Parse, migrate and validate, reporting anything that had to be corrected.
+ *
+ * `parseProject` keeps its narrower signature because it is called from three places and
+ * only one of them can show a warning to a user. The version ladder is driven by the
+ * *outer* `ProjectFile.formatVersion`, never the copy inside the project: the outer field
+ * is written by the serializer on every save, so it is the one that is actually
+ * trustworthy, and a hand-edited inner value must not be able to send a v1 document down
+ * a v2 migration it was never written for.
+ */
+export function readProjectFile(input: string | unknown): ParsedProject {
   let raw: unknown;
   if (typeof input === 'string') {
     try {
@@ -69,7 +98,19 @@ export function parseProject(input: string | unknown): Project {
     throw new ProjectParseError('Missing `project` key.');
   }
 
-  const project = migrateProject(file.project, version);
+  const warnings: string[] = [];
+  const rawProject = file.project;
+  if (typeof rawProject === 'object' && rawProject !== null && !Array.isArray(rawProject)) {
+    const inner = (rawProject as Record<string, unknown>).formatVersion;
+    if (typeof inner === 'number' && inner !== version) {
+      warnings.push(
+        `The file declares format version ${version} but the project inside declares ` +
+          `${inner}. Using ${version}; the inner value is more likely to be wrong.`,
+      );
+    }
+  }
+
+  const project = migrateProject(rawProject, version);
   const issues = validateProject(project);
   if (issues.length > 0) {
     throw new ProjectParseError(
@@ -77,7 +118,7 @@ export function parseProject(input: string | unknown): Project {
       issues.slice(0, 12).map((i) => `${i.path}: ${i.message}`),
     );
   }
-  return project;
+  return { project, warnings };
 }
 
 /* ------------------------------------------------------------------ */
@@ -89,10 +130,48 @@ type Migration = (project: Record<string, unknown>, from: number) => Record<stri
 /**
  * Ordered forward migrations. Index i upgrades a project from version i+1 to i+2.
  * Append new steps; never edit or reorder existing ones.
+ *
+ * Every step must be additive and idempotent. A migration that renumbers an id or
+ * rewrites a `Keyframe.time` would break the join keys a user may hold references to,
+ * and one that is not idempotent would make a re-imported file land somewhere different
+ * from the original.
  */
 const MIGRATIONS: Migration[] = [
-  // v1 -> v2 (reserved, example of the shape):
-  // (project) => ({ ...project, someNewField: defaultValue }),
+  /**
+   * v1 -> v2: `AudioDef.srcKind` and `Project.metadata`.
+   *
+   * Two additive fields, both defaulting to the honest empty answer. A v1 record has no
+   * `srcKind`, and the tempting thing is to infer it — a `src` that looks like a path is
+   * `'external'`, anything else is `'local'`. That inference is exactly the bug this
+   * field exists to prevent, so the migration refuses to guess: every pre-v2 slot comes
+   * out `srcKind: null`, which the UI reports as "no file", which is what it is. An
+   * operator re-attaches the recording and the slot is honest again.
+   */
+  (project) => {
+    const assets = asRecord(project.assets ?? {}, 'project.assets');
+    const audio = Array.isArray(assets.audio) ? assets.audio : [];
+
+    return {
+      ...project,
+      assets: {
+        ...assets,
+        audio: audio.map((def) => {
+          if (typeof def !== 'object' || def === null || Array.isArray(def)) return def;
+          const record = def as Record<string, unknown>;
+          // Only fill it in. A record that already declares one is not second-guessed,
+          // which is what makes re-running this a no-op.
+          if ('srcKind' in record) return record;
+          return { ...record, srcKind: null };
+        }),
+      },
+      metadata: {
+        archived: null,
+        duplicatedFrom: null,
+        snapshotOf: null,
+        ...asRecord(project.metadata ?? {}, 'project.metadata'),
+      },
+    };
+  },
 ];
 
 /** Apply every migration needed to bring a project to the current version. */
@@ -115,6 +194,7 @@ export function migrateProject(project: unknown, fromVersion: number): Project {
 export function normaliseProject(raw: Record<string, unknown>): Project {
   const assetsRaw = asRecord(raw.assets ?? {}, 'project.assets');
   const settingsRaw = asRecord(raw.settings ?? {}, 'project.settings');
+  const metadataRaw = asRecord(raw.metadata ?? {}, 'project.metadata');
 
   const createdAt = typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString();
 
@@ -138,12 +218,47 @@ export function normaliseProject(raw: Record<string, unknown>): Project {
       poses: asArray(assetsRaw.poses, 'assets.poses'),
       expressions: asArray(assetsRaw.expressions, 'assets.expressions'),
       props: asArray(assetsRaw.props, 'assets.props'),
-      audio: asArray(assetsRaw.audio, 'assets.audio'),
+      audio: asArray(assetsRaw.audio, 'assets.audio').map(normaliseAudioDef),
     },
     cameraPresets: asArray(raw.cameraPresets, 'project.cameraPresets'),
     episodes: asArray(raw.episodes, 'project.episodes'),
     scenes: asArray(raw.scenes, 'project.scenes'),
+    metadata: {
+      archived: asIsoDate(metadataRaw.archived),
+      duplicatedFrom: asNullableString(metadataRaw.duplicatedFrom),
+      snapshotOf: asNullableString(metadataRaw.snapshotOf),
+    },
   };
+}
+
+/**
+ * An audio slot, with `srcKind` coerced to a value the type admits.
+ *
+ * An unrecognised `srcKind` becomes `null` rather than passing through. The difference
+ * matters: a slot with `srcKind: 'local'` and no media id would claim a recording exists
+ * when none can be loaded, and every honest-reporting surface in the app asks
+ * `hasRecording` first.
+ */
+function normaliseAudioDef(value: unknown): AudioDef {
+  const record = asRecord(value, 'assets.audio[]');
+  const srcKind = record.srcKind;
+  return {
+    ...record,
+    src: typeof record.src === 'string' ? record.src : null,
+    srcKind: srcKind === 'local' || srcKind === 'external' ? srcKind : null,
+    duration: asNumber(record.duration, 0),
+    tags: asArray<string>(record.tags, 'assets.audio[].tags'),
+  } as AudioDef;
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function asIsoDate(value: unknown): string | null {
+  const text = asNullableString(value);
+  if (text === null) return null;
+  return Number.isNaN(Date.parse(text)) ? null : text;
 }
 
 /* ------------------------------------------------------------------ */

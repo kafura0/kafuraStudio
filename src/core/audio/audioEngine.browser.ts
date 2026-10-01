@@ -16,6 +16,7 @@
  * live AudioContext.
  */
 import { audioPlan, type AudioSegment } from './audioPlan';
+import { decodeAudioDataCopy } from './decode.browser';
 import type { Id, Project, Scene } from '../types';
 
 /** The slice of the Web Audio API the engine touches, so a test can fake it. */
@@ -90,6 +91,55 @@ export class AudioEngine {
     this.scheduled.clear();
   }
 
+  /**
+   * Play one asset once, ignoring the timeline. Returns whether a file was started.
+   *
+   * Used to check an attachment, so it reports failure rather than silently doing nothing:
+   * `false` means "no bytes", which is the one thing the operator needs to be told.
+   */
+  async preview(project: Project, audioId: Id): Promise<boolean> {
+    const buffer = await this.bufferFor(audioId);
+    if (!buffer) return false;
+    const def = project.assets.audio.find((a) => a.id === audioId);
+    const duration = def && Number.isFinite(def.duration) && def.duration > 0 ? def.duration : 0;
+    try {
+      const source = this.port.createBufferSource();
+      source.buffer = buffer;
+      source.loop = false;
+      const gain = this.port.createGain();
+      // A preview is a monitoring action, so it plays at unity gain rather than at the
+      // asset's timeline gain, which is frequently zero for an ambience bed under dialogue.
+      gain.gain.value = 1;
+      source.connect(gain);
+      gain.connect(this.port.destination);
+
+      const when = this.port.currentTime;
+      // A zero `duration` would mean "play nothing", which is why attach probes the real
+      // length. Playing the buffer unbounded is the safe fallback: an unmeasured file is
+      // still heard, rather than being cut to silence.
+      source.start(when, 0, duration > 0 ? duration : undefined);
+      source.onended = () => this.live.delete(handle);
+      const handle: object = {
+        cancel: () => {
+          source.onended = null;
+          try {
+            source.stop();
+          } catch {
+            // already stopped
+          }
+          gain.disconnect();
+        },
+      };
+      this.live.add(handle);
+      return true;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('AudioEngine could not start a preview', error);
+      }
+      return false;
+    }
+  }
+
   dispose(): void {
     this.stop();
     this.cache.clear();
@@ -159,8 +209,17 @@ interface WebAudioWindow {
  * The default resolver: finds the asset by id and fetches + decodes its `src`.
  * A slot with no `src`, an unreachable file, or an undecodable buffer yields null —
  * the engine treats null as silence. Failures surface once in dev.
+ *
+ * `context` is the engine's own, borrowed for decoding rather than minted per file. An
+ * `AudioContext` is a real, capped hardware resource — a browser allows only a handful per
+ * page and starts suspending the rest — and a decoded buffer is held for as long as its
+ * context is open. One context that both decodes and plays is the whole point of
+ * `createBrowserAudioEngine` owning one.
  */
-export function createFetchingResolver(getSrc: (audioId: Id) => string | null): AudioResolver {
+export function createFetchingResolver(
+  context: BaseAudioContext,
+  getSrc: (audioId: Id) => string | null,
+): AudioResolver {
   return async (audioId) => {
     const src = getSrc(audioId);
     if (!src) return null;
@@ -168,10 +227,6 @@ export function createFetchingResolver(getSrc: (audioId: Id) => string | null): 
       const response = await fetch(src);
       if (!response.ok) return null;
       const bytes = await response.arrayBuffer();
-      const windowWithAudio = globalThis as WebAudioWindow;
-      const Ctor = windowWithAudio.AudioContext ?? windowWithAudio.webkitAudioContext;
-      if (!Ctor) return null;
-      const context = new Ctor();
       return await context.decodeAudioData(bytes);
     } catch (error) {
       if (import.meta.env.DEV) {
@@ -182,14 +237,70 @@ export function createFetchingResolver(getSrc: (audioId: Id) => string | null): 
   };
 }
 
+/** How a slot's `src` should be read: a media id in the store, or a URL. */
+export interface AudioSourceRef {
+  src: string | null;
+  srcKind: 'local' | 'external' | null;
+}
+
+/** Reads the bytes behind a media id. Async because the store is (IndexedDB). */
+export type MediaByteSource = (mediaId: Id) => Promise<ArrayBuffer | null>;
+
+/**
+ * The resolver for attached files: reads a media id out of the media store.
+ *
+ * This exists because a media id is not a URL. `fetch('media_ab12cd34')` resolves against
+ * the current document's base and 404s, so an attachment stored through Phase 11's media
+ * store could be saved, reloaded, listed as attached, and still be inaudible — the worst
+ * possible failure, because every piece of it reports success. `srcKind` is what makes the
+ * two cases distinguishable: `'local'` is an id to look up, `'external'` is a path to fetch.
+ *
+ * A slot claiming media the store does not have yields null, which the engine plays as
+ * silence. That is the honest outcome and matches `mediaStore.ts`: the same three-way
+ * agreement (`src` present, `srcKind: 'local'`, bytes present) decides there and here, so
+ * the panel's "attached" and the engine's audibility cannot disagree.
+ */
+export function createMediaStoreResolver(
+  context: BaseAudioContext,
+  getSource: (audioId: Id) => AudioSourceRef | null,
+  loadBytes: MediaByteSource,
+): AudioResolver {
+  const fetching = createFetchingResolver(context, (id) => {
+    const source = getSource(id);
+    return source?.srcKind === 'external' ? source.src : null;
+  });
+  return async (audioId) => {
+    const source = getSource(audioId);
+    if (!source?.src) return null;
+    if (source.srcKind !== 'local') return fetching(audioId);
+    try {
+      const bytes = await loadBytes(source.src);
+      if (!bytes) return null;
+      return await decodeAudioDataCopy(context, bytes);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(`AudioEngine could not decode attached media "${source.src}"`, error);
+      }
+      return null;
+    }
+  };
+}
+
 /** Build the engine against the browser's real AudioContext, or null when absent. */
 export function createBrowserAudioEngine(
-  assets: readonly { id: Id; src: string | null }[],
+  assets: readonly { id: Id; src: string | null; srcKind: 'local' | 'external' | null }[],
+  loadBytes?: MediaByteSource,
 ): AudioEngine | null {
   const windowWithAudio = globalThis as WebAudioWindow;
   const Ctor = windowWithAudio.AudioContext ?? windowWithAudio.webkitAudioContext;
   if (!Ctor) return null;
   const context = new Ctor();
   const byId = new Map(assets.map((a) => [a.id, a]));
-  return new AudioEngine(context, createFetchingResolver((id) => byId.get(id)?.src ?? null));
+  const getSource = (id: Id): AudioSourceRef | null => byId.get(id) ?? null;
+  // Without a byte source there is nothing to resolve local media against, so fall back to
+  // the URL-only resolver rather than pretending attached files are loadable.
+  const resolver = loadBytes
+    ? createMediaStoreResolver(context, getSource, loadBytes)
+    : createFetchingResolver(context, (id) => byId.get(id)?.src ?? null);
+  return new AudioEngine(context, resolver);
 }

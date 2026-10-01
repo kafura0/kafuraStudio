@@ -73,7 +73,11 @@ function AudioRow({ asset }: { asset: AudioDef }): React.JSX.Element {
         {recorded ? (
           <span className="text-ink-500">· file attached</span>
         ) : (
-          <span className="text-amber-500/80" data-testid="audio-no-file">
+          // Namespaced, because `AudioSlotPanel` states the same fact about the same slot
+          // and used `audio-no-file` first. Two elements answering to one test id makes
+          // "is this slot empty?" ambiguous to any test that does not scope itself to one
+          // panel, and it is how a harness ends up asserting against the wrong row.
+          <span className="text-amber-500/80" data-testid="asset-audio-no-file">
             · no recording
           </span>
         )}

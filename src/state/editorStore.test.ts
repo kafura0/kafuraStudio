@@ -41,6 +41,20 @@ vi.mock('../core/persistence/indexedDb.browser', () => ({
   IndexedDbProjectRepository: vi.fn(() => repository),
 }));
 
+/**
+ * The open project, for assertions that only make sense when one is open.
+ *
+ * `project` is nullable now that a workspace can legitimately have nothing open, so these
+ * tests state that expectation once here instead of scattering `!` through every
+ * assertion. A test that runs with nothing open gets a clear failure rather than a
+ * `Cannot read properties of null` at some unrelated line.
+ */
+function currentProject(): Project {
+  const project = useEditor.getState().project;
+  if (project === null) throw new Error('Expected a project to be open');
+  return project;
+}
+
 const reset = (): void => {
   repository.save.mockClear();
   repository.loadMostRecent.mockReset();
@@ -155,14 +169,14 @@ describe('editorStore history', () => {
     const actorId = first.actors[0]?.id;
     if (!actorId) throw new Error('First scene has no actors');
 
-    const before = useEditor.getState().project;
+    const before = currentProject();
     useEditor.getState().commit(setSceneDuration(before, first.id, 25), 'duration');
 
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(25);
+    expect(currentProject().scenes[0]?.duration).toBe(25);
     expect(useEditor.getState().past).toHaveLength(1);
 
     useEditor.getState().undo();
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(before.scenes[0]?.duration);
+    expect(currentProject().scenes[0]?.duration).toBe(before.scenes[0]?.duration);
   });
 
   it('redo restores the committed document', () => {
@@ -173,14 +187,14 @@ describe('editorStore history', () => {
     useEditor.getState().undo();
     useEditor.getState().redo();
 
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(25);
+    expect(currentProject().scenes[0]?.duration).toBe(25);
     expect(useEditor.getState().future).toHaveLength(0);
   });
 
   it('does not record a commit that changes nothing', () => {
     // An effect or handler may call commit with the document it already has; that
     // would make undo appear broken.
-    useEditor.getState().commit(useEditor.getState().project, 'noop');
+    useEditor.getState().commit(currentProject(), 'noop');
     expect(useEditor.getState().past).toHaveLength(0);
   });
 
@@ -228,12 +242,12 @@ describe('editorStore persistence races', () => {
     const saving = useEditor.getState().save();
     // The user's next edit lands while the write is still in flight.
     useEditor.getState().commit(
-      setSceneDuration(useEditor.getState().project, first.id, 42),
+      setSceneDuration(currentProject(), first.id, 42),
       'edited during save',
     );
     await saving;
 
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(42);
+    expect(currentProject().scenes[0]?.duration).toBe(42);
     // Still dirty: this document has never reached the database.
     expect(useEditor.getState().dirty).toBe(true);
     // The write itself did happen, so the timestamp is real.
@@ -247,7 +261,7 @@ describe('editorStore persistence races', () => {
     useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'edited');
     await useEditor.getState().save();
 
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(25);
+    expect(currentProject().scenes[0]?.duration).toBe(25);
     expect(useEditor.getState().dirty).toBe(false);
     expect(useEditor.getState().lastSavedAt).not.toBeNull();
   });
@@ -259,7 +273,7 @@ describe('editorStore persistence races', () => {
     useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 25), 'edited');
     const saving = useEditor.getState().save();
     useEditor.getState().commit(
-      setSceneDuration(useEditor.getState().project, first.id, 42),
+      setSceneDuration(currentProject(), first.id, 42),
       'later',
     );
     await saving;
@@ -268,7 +282,8 @@ describe('editorStore persistence races', () => {
     // and the 42 document is still awaiting its own autosave.
     const written = repository.save.mock.calls.at(-1)?.[0] as { scenes: { duration: number }[] };
     expect(written.scenes[0]?.duration).toBe(25);
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(42);  });
+    expect(currentProject().scenes[0]?.duration).toBe(42);
+  });
 
   it('does not start a second write until the first has finished', async () => {
     // The point of the queue is that the repository is never asked to write two
@@ -316,7 +331,7 @@ describe('editorStore persistence races', () => {
     await Promise.all([a, b]);
 
     expect(stored).toEqual([11, 22]);
-    expect(useEditor.getState().project.scenes[0]?.duration).toBe(22);
+    expect(currentProject().scenes[0]?.duration).toBe(22);
   });
 
   it('keeps saving after a write fails', async () => {
@@ -354,7 +369,7 @@ describe('editorStore persistence races', () => {
     expect(useEditor.getState().selection).toEqual({ kind: null, id: null });
     expect(useEditor.getState().playhead).toBe(0);
     expect(useEditor.getState().playing).toBe(false);
-    expect(useEditor.getState().project.name).toBe('Other');
+    expect(currentProject().name).toBe('Other');
   });
 });
 

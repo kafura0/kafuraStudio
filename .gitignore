@@ -19,3 +19,6 @@ eslint.config.js
 .env
 .env.*
 !.env.example
+# A dev server started with output redirected to a file leaves a log full of ANSI
+# escapes behind. It is a local artifact, not something to review.
+vite.log

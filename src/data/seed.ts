@@ -23,6 +23,7 @@ import {
 } from '../core/document/sceneOps';
 import { addKeyframe, addSimpleClip } from '../core/document/trackOps';
 import type { EaseType, Id, KeyframeTarget, Project } from '../core/types';
+import { CURRENT_FORMAT_VERSION } from '../core/constants';
 import { AUDIO } from './audio';
 import { CAMERA_PRESETS } from './cameraPresets';
 import { CHARACTERS, KITO, MAMA_NIA, NIA, THE_LANDLORD } from './characters';
@@ -115,7 +116,7 @@ export function createSeedProject(): Project {
       'Episode 001 of ZANZA, the original Afrofuturist adult animated comedy set in Zanza City, 2097.',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-    formatVersion: 1,
+    formatVersion: CURRENT_FORMAT_VERSION,
     settings: { width: 1920, height: 1080, fps: 24, autosave: true },
     assets: {
       characters: [...CHARACTERS],
@@ -128,6 +129,7 @@ export function createSeedProject(): Project {
     cameraPresets: [...CAMERA_PRESETS],
     episodes: [],
     scenes: [],
+    metadata: { archived: null, duplicatedFrom: null, snapshotOf: null },
   };
 
   project = addEpisode(

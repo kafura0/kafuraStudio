@@ -9,7 +9,7 @@ import { hasRecording } from './recording';
 import type { AudioDef } from '../types';
 
 function slot(src: string | null): AudioDef {
-  return { id: 'a', name: 'A', kind: 'dialogue', src, duration: 1, tags: [] };
+  return { id: 'a', name: 'A', kind: 'dialogue', src, srcKind: null, duration: 1, tags: [] };
 }
 
 describe('hasRecording', () => {

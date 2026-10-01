@@ -13,7 +13,21 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { Timeline } from './Timeline';
 import { useEditor } from '../../state/editorStore';
 import { SEED_PROJECT } from '../../data/seed';
-import type { Clip, Track } from '../../core/types';
+import type { Clip, Project, Track } from '../../core/types';
+
+/**
+ * The open project.
+ *
+ * `project` is nullable now that a workspace can have nothing open, but the timeline only
+ * renders inside the editor, where one always is. Asserting that in one place keeps the
+ * `!`s out of the assertions and turns a genuine regression into a clear failure.
+ */
+function openProject(): Project {
+  const project = useEditor.getState().project;
+  if (project === null) throw new Error('Expected a project to be open');
+  return project;
+}
+
 
 vi.mock('../../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => false,
@@ -231,7 +245,7 @@ describe('Timeline', () => {
       new RegExp(`${escape(track.name)} clip at ${clip.start.toFixed(2)}s`),
     );
 
-    const original = useEditor.getState().project;
+    const original = openProject();
     const at = clipPosition(trackIndex, clip);
     fireEvent.pointerDown(button, at);
     await act(async () => {
@@ -243,11 +257,11 @@ describe('Timeline', () => {
 
     const state = useEditor.getState();
     // The document is a new object, not the same one mutated in place.
-    expect(state.project).not.toBe(original);
+    expect(openProject()).not.toBe(original);
     expect(state.past.length).toBe(before + 1);
 
     // And it moved in the direction the pointer went.
-    const moved = state.project.scenes
+    const moved = openProject().scenes
       .find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id)
       ?.clips.find((c) => c.id === clip.id);
@@ -257,9 +271,7 @@ describe('Timeline', () => {
     act(() => {
       useEditor.getState().undo();
     });
-    const restored = useEditor
-      .getState()
-      .project.scenes.find((s) => s.id === scene.id)
+    const restored = openProject().scenes.find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id)
       ?.clips.find((c) => c.id === clip.id);
     expect(restored?.start).toBe(clip.start);
@@ -299,9 +311,7 @@ describe('Timeline', () => {
       fireEvent.pointerUp(window);
     });
 
-    const moved = useEditor
-      .getState()
-      .project.scenes.find((s) => s.id === scene.id)
+    const moved = openProject().scenes.find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id)
       ?.clips.find((c) => c.id === clip.id);
     // 120px is 2s at the default 60px/s scale. A preview that fed on itself would
@@ -353,7 +363,7 @@ describe('Timeline keyframe editing', () => {
     });
 
     const state = useEditor.getState();
-    const edited = state.project.scenes
+    const edited = openProject().scenes
       .find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id)
       ?.clips.find((c) => c.id === clip.id);
@@ -390,7 +400,7 @@ describe('Timeline keyframe editing', () => {
     });
 
     const state = useEditor.getState();
-    const edited = state.project.scenes
+    const edited = openProject().scenes
       .find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id)
       ?.clips.find((c) => c.id === clip.id);
@@ -446,9 +456,7 @@ describe('Timeline keyframe editing', () => {
     fireEvent.keyDown(window, { key: 'Backspace' });
 
     let clipAfter =
-      useEditor
-        .getState()
-        .project.scenes.find((s) => s.id === scene.id)
+      openProject().scenes.find((s) => s.id === scene.id)
         ?.tracks.find((t) => t.id === track.id)?.clips ?? [];
     const survivor = clipAfter.find((c) => c.id === clip.id);
     expect(survivor).toBeDefined();
@@ -459,9 +467,7 @@ describe('Timeline keyframe editing', () => {
     fireEvent.keyDown(window, { key: 'Delete' });
 
     clipAfter =
-      useEditor
-        .getState()
-        .project.scenes.find((s) => s.id === scene.id)
+      openProject().scenes.find((s) => s.id === scene.id)
         ?.tracks.find((t) => t.id === track.id)?.clips ?? [];
     expect(clipAfter.find((c) => c.id === clip.id)).toBeUndefined();
   });
@@ -487,7 +493,7 @@ describe('Timeline keyframe editing', () => {
     fireEvent.keyDown(window, { key: 'Delete' });
 
     const after =
-      useEditor.getState().project.scenes.find((s) => s.id === scene.id) ?? null;
+      openProject().scenes.find((s) => s.id === scene.id) ?? null;
     expect(after?.dialogue.map((l) => l.id)).not.toContain(lineId);
     expect(after?.tracks.flatMap((t) => t.clips).map((c) => c.dialogueLineId)).not.toContain(lineId);
     // The lane existed only to hold that cue, so it goes with it.
@@ -507,9 +513,7 @@ describe('Timeline keyframe editing', () => {
     fireEvent.click(firstMute);
 
     let tracks =
-      useEditor
-        .getState()
-        .project.scenes.find((s) => s.id === scene.id)
+      openProject().scenes.find((s) => s.id === scene.id)
         ?.tracks.map((t) => ({ id: t.id, muted: t.muted })) ?? [];
     expect(tracks.filter((t) => t.muted).length).toBe(beforeMuted + 1);
 
@@ -520,9 +524,7 @@ describe('Timeline keyframe editing', () => {
     fireEvent.click(firstUnmute);
 
     tracks =
-      useEditor
-        .getState()
-        .project.scenes.find((s) => s.id === scene.id)
+      openProject().scenes.find((s) => s.id === scene.id)
         ?.tracks.map((t) => ({ id: t.id, muted: t.muted })) ?? [];
     expect(tracks.filter((t) => t.muted).length).toBe(beforeMuted);
   });
@@ -558,7 +560,7 @@ describe('Timeline keyframe editing', () => {
 
     const state = useEditor.getState();
     expect(state.past.length).toBe(before + 1);
-    const sceneNow = state.project.scenes.find((s) => s.id === scene.id);
+    const sceneNow = openProject().scenes.find((s) => s.id === scene.id);
     // The clip left its one-clip dialogue lane entirely and now carries the line's cue.
     expect(sceneNow?.tracks.some((t) => t.id === track.id)).toBe(false);
     const onTarget = sceneNow?.tracks.find((t) => t.id === targetTrack.id);
@@ -591,7 +593,7 @@ describe('Timeline keyframe editing', () => {
 
     const state = useEditor.getState();
     expect(state.past.length).toBe(before);
-    const stillHome = state.project.scenes
+    const stillHome = openProject().scenes
       .find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === track.id);
     expect(stillHome?.clips.some((c) => c.id === clip.id)).toBe(true);
@@ -610,7 +612,7 @@ describe('Timeline keyframe editing', () => {
 
 const state = useEditor.getState();
     expect(state.past.length).toBe(before + 1);
-    const clips = state.project.scenes
+    const clips = openProject().scenes
       .find((s) => s.id === scene.id)
       ?.tracks.find((t) => t.id === audioTrack.id)?.clips ?? [];
     // Playhead was 0, so the fresh clip starts on the frame grid origin.
@@ -630,7 +632,7 @@ const state = useEditor.getState();
 
     const state = useEditor.getState();
     expect(state.past.length).toBe(before + 1);
-    const order = state.project.scenes.find((s) => s.id === scene.id)?.tracks ?? [];
+    const order = openProject().scenes.find((s) => s.id === scene.id)?.tracks ?? [];
     const indexNow = order.findIndex((t) => t.id === audioTrack.id);
     expect(indexNow).toBe(audioIndex - 1);
   });
@@ -649,7 +651,7 @@ const state = useEditor.getState();
 
     const state = useEditor.getState();
     expect(state.past.length).toBe(before + 1);
-    const sceneNow = state.project.scenes.find((s) => s.id === scene.id);
+    const sceneNow = openProject().scenes.find((s) => s.id === scene.id);
     expect(sceneNow?.tracks.some((t) => t.id === lineTrack.id)).toBe(false);
     // The cue line lived only inside this lane; it is gone too.
     expect(sceneNow?.dialogue.some((l) => l.id === lineTrack.targetId)).toBe(false);

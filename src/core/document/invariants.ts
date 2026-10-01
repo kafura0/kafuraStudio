@@ -123,11 +123,25 @@ export function validateProject(project: Project): ValidationIssue[] {
     });
   });
 
-  if (project.assets.characters.length === 0) {
-    add('assets.characters', 'A project needs at least one character');
-  }
-  if (project.assets.environments.length === 0) {
-    add('assets.environments', 'A project needs at least one environment');
+  // Whether a library must be populated depends on whether there is anything to draw.
+  //
+  // The requirement is not "a project owns a character" - it is "the renderer is never
+  // handed a scene it cannot draw". A project with no scenes draws nothing, so an empty
+  // library is a legitimate starting state: that is exactly what `createProject` returns,
+  // and refusing it meant a newly created project saved fine and was then quarantined as
+  // unreadable the first time anyone opened it, leaving a record in the list that could
+  // never be opened again.
+  //
+  // So the rule is scoped to the scenes. Once a project has one, the art it refers to has
+  // to exist, and the checks above that reject a dangling character or environment id are
+  // what actually make it drawable.
+  if (project.scenes.length > 0) {
+    if (project.assets.characters.length === 0) {
+      add('assets.characters', 'A project with scenes needs at least one character');
+    }
+    if (project.assets.environments.length === 0) {
+      add('assets.environments', 'A project with scenes needs at least one environment');
+    }
   }
 
   // Asset ids are the join keys for the whole document, so they must be unique

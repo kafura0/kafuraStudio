@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { validateProject } from '../../core/document/invariants';
-import { useEditor } from '../../state/editorStore';
+import { useOpenProject } from '../../state/editorStore';
 
 /**
  * Surfaces invariant violations instead of swallowing them.
@@ -10,7 +10,7 @@ import { useEditor } from '../../state/editorStore';
  * than a silently broken frame.
  */
 export function IssuePanel(): React.JSX.Element | null {
-  const project = useEditor((s) => s.project);
+  const project = useOpenProject();
   const issues = useMemo(() => validateProject(project), [project]);
 
   if (issues.length === 0) return null;

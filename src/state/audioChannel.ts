@@ -12,8 +12,20 @@
  */
 import { type AudioEngine, createBrowserAudioEngine } from '../core/audio/audioEngine.browser';
 import type { Id, Project } from '../core/types';
+import { mediaStore } from './mediaLibrary';
 
 let engine: AudioEngine | null | undefined;
+
+/**
+ * Which project's asset library the engine was built for.
+ *
+ * This is a fix for a real bug. The engine resolves clip ids to files once, at
+ * construction, from the asset list it was handed. Caching it without recording *whose*
+ * assets those were meant one project forever: switching projects left the engine
+ * playing the first project's recordings against the second project's clips, which
+ * sounds like silence or like the wrong scene rather than like an error.
+ */
+let engineProjectId: Id | null = null;
 
 /**
  * The scene the engine last scheduled for.
@@ -28,9 +40,36 @@ let engine: AudioEngine | null | undefined;
 let scheduledSceneId: Id | null = null;
 
 function getEngine(project: Project): AudioEngine | null {
-  if (engine !== undefined) return engine;
-  engine = createBrowserAudioEngine(project.assets.audio as readonly { id: Id; src: string | null }[]);
+  if (engine !== undefined && engineProjectId === project.id) return engine;
+  // A different project, or an engine cleared by hand. Whatever was sounding belongs to
+  // the document we are leaving, so it is stopped rather than allowed to ring on.
+  engine?.stop();
+  // The byte source is what makes an *attached* file audible: a local `src` is a media id,
+  // and the engine can only read it through the store that holds the bytes.
+  engine = createBrowserAudioEngine(
+    project.assets.audio as readonly {
+      id: Id;
+      src: string | null;
+      srcKind: 'local' | 'external' | null;
+    }[],
+    async (mediaId) => (await mediaStore().get(mediaId))?.data ?? null,
+  );
+  engineProjectId = project.id;
+  scheduledSceneId = null;
   return engine;
+}
+
+/**
+ * Forget the engine entirely.
+ *
+ * Called when a project is closed or the workspace goes back to having nothing open, so
+ * the next project gets an engine built from its own assets rather than inheriting one.
+ */
+export function resetPlaybackAudio(): void {
+  engine?.stop();
+  engine = undefined;
+  engineProjectId = null;
+  scheduledSceneId = null;
 }
 
 /** Feed the current scene time into the engine each frame while playing. */
@@ -63,4 +102,28 @@ export function syncPlaybackAudio(
 export function stopPlaybackAudio(project: Project): void {
   scheduledSceneId = null;
   getEngine(project)?.stop();
+}
+
+/**
+ * Play a slot's file once, outside the timeline.
+ *
+ * This exists so an attachment can be checked the moment it is made, and it deliberately
+ * goes through the same engine and the same media-backed resolver as scene playback rather
+ * than opening an `<audio>` element. That is the whole reason the feature is trustworthy:
+ * if preview used a different path, "it played in the preview" would say nothing about
+ * whether the file plays in the cut.
+ *
+ * The engine is stopped first and afterwards, so a preview cannot ring on underneath a
+ * transport that has been paused — the panel's own Stop button, a scene change, or the
+ * next preview.
+ *
+ * Returns whether a file was actually started. An empty slot, a missing record, and an
+ * undecodable buffer are all silence, and reporting them as "played" would make the panel
+ * claim success for the exact case the user needs to know about.
+ */
+export async function previewAudioAsset(project: Project, audioId: Id): Promise<boolean> {
+  const current = getEngine(project);
+  if (!current) return false;
+  const started = await current.preview(project, audioId);
+  return started;
 }

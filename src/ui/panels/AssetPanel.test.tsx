@@ -36,7 +36,7 @@ describe('AssetPanel', () => {
     render(<AssetPanel project={project} />);
 
     // The seed ships declared slots, so every one of them is honest about being empty.
-    expect(screen.getAllByTestId('audio-no-file')).toHaveLength(project.assets.audio.length);
+    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(project.assets.audio.length);
     expect(screen.queryByText(/file attached/)).toBeNull();
   });
 
@@ -51,7 +51,7 @@ describe('AssetPanel', () => {
 
     render(<AssetPanel project={withOne} />);
     expect(screen.getAllByText(/file attached/)).toHaveLength(1);
-    expect(screen.getAllByTestId('audio-no-file')).toHaveLength(withOne.assets.audio.length - 1);
+    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(withOne.assets.audio.length - 1);
   });
 
   it('shows each slot its kind and declared length', () => {

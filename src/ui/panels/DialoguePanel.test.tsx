@@ -49,9 +49,21 @@ function selectFirstLine(): string {
   return first.id;
 }
 
+/**
+ * The open project.
+ *
+ * `project` is nullable now that a workspace can have nothing open, but the panel only
+ * renders inside the editor, where one always is.
+ */
+function openProject(): Project {
+  const project = useEditor.getState().project;
+  if (project === null) throw new Error('Expected a project to be open');
+  return project;
+}
+
 function currentScene(): Scene {
   const id = useEditor.getState().sceneId;
-  const found = useEditor.getState().project.scenes.find((s) => s.id === id);
+  const found = openProject().scenes.find((s) => s.id === id);
   if (!found) throw new Error('scene missing from the store');
   return found;
 }
@@ -107,7 +119,7 @@ describe('DialoguePanel', () => {
     unmount();
 
     // A line with no cue must say so rather than offering a window that does not exist.
-    act(() => useEditor.setState((s) => ({ project: withoutFirstCue(s.project) })));
+    act(() => useEditor.setState(() => ({ project: withoutFirstCue(openProject()) })));
     render(<DialoguePanel />);
     expect((screen.getByLabelText('Cue start') as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/No cue on the timeline/)).toBeTruthy();
@@ -188,7 +200,7 @@ describe('DialoguePanel', () => {
     expect(screen.getByText(/Plays silent/)).toBeTruthy();
 
     // Once a file is attached, the panel says so instead.
-    act(() => useEditor.setState((s) => ({ project: withRecording(s.project, voiceId as string) })));
+    act(() => useEditor.setState(() => ({ project: withRecording(openProject(), voiceId as string) })));
     render(<DialoguePanel />);
     expect(screen.getAllByText(/Recording attached/).length).toBeGreaterThan(0);
   });
@@ -196,8 +208,8 @@ describe('DialoguePanel', () => {
   it('reports an unassigned voice as silent rather than broken', () => {
     const lineId = selectFirstLine();
     act(() =>
-      useEditor.setState((s) => ({
-        project: withVoice(s.project, lineId, null),
+      useEditor.setState(() => ({
+        project: withVoice(openProject(), lineId, null),
       })),
     );
     render(<DialoguePanel />);
@@ -268,7 +280,7 @@ describe('DialoguePanel', () => {
     ).map((o) => o.value);
     // The suggestions come from the project's own expression assets, not from a list
     // hard-coded into the panel (RULE 3).
-    for (const expression of useEditor.getState().project.assets.expressions) {
+    for (const expression of openProject().assets.expressions) {
       expect(options).toContain(expression.name);
     }
   });

@@ -5,8 +5,8 @@
  * is a matter of keeping the previous reference (see ARCHITECTURE.md §3).
  */
 
-import { createId, ID_PREFIX } from '../id';
 import type { Camera, Episode, Id, Project, Scene } from '../types';
+import { duplicateSceneWithFreshIds } from '../io/projectIo';
 import { createEpisode, createScene, defaultCamera } from './factories';
 import { findEnvironment, findScene, requireScene, scenesOfEpisode } from './lookups';
 
@@ -226,6 +226,53 @@ export function removeAsset(
 }
 
 /* ------------------------------------------------------------------ */
+/* Audio slots                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Point an audio slot at a file in the media store.
+ *
+ * The document records the *reference* only — a media id, the `srcKind` that says how to
+ * read it, and the probed duration. Bytes never enter the project (RULE: a project is JSON
+ * that must stay diffable, and media is shared between projects), so this operation cannot
+ * be verified by looking at the project: it is paired with a `MediaStore.put` by the caller.
+ * Keeping the pairing one-directional is deliberate. The store holds the bytes, the document
+ * says which id to read, and neither has to trust the other to be complete.
+ *
+ * `duration` is the *real* decoded length, not a placeholder. `audioPlan` bounds a segment
+ * by `asset.duration`, so a slot left at 0 is inaudible no matter how good the file is —
+ * a file that plays as silence is the one outcome the UI cannot honestly describe as
+ * "attached".
+ */
+export function attachAudioMedia(
+  project: Project,
+  audioId: Id,
+  mediaId: Id,
+  duration: number,
+): Project {
+  return updateAsset(project, 'audio', audioId, {
+    src: mediaId,
+    srcKind: 'local',
+    // A NaN or negative probe would silently mute every clip on this asset, so the floor
+    // keeps a failed measurement honest ("no length") instead of quietly wrong.
+    duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+  });
+}
+
+/**
+ * Undo an attachment.
+ *
+ * This only forgets the reference. The bytes are *not* deleted here, and that is the whole
+ * point: a duplicated project shares its media with the original, and an undo is expected to
+ * bring the attachment back. Reclaiming unreferenced bytes is a separate, explicit sweep
+ * (`sweepOrphanedMedia`) so that clearing a slot can never destroy a file another document
+ * is still pointing at.
+ */
+export function detachAudioMedia(project: Project, audioId: Id): Project {
+  return updateAsset(project, 'audio', audioId, { src: null, srcKind: null });
+}
+
+/* ------------------------------------------------------------------ */
 /* Derived                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -241,37 +288,9 @@ export function episodeScenes(project: Project, episodeId: Id): Scene[] {
 
 export function duplicateScene(project: Project, sceneId: Id): { project: Project; sceneId: Id } {
   const source = requireScene(project, sceneId);
-  const copy: Scene = {
-    ...structuredClone(source),
-    id: createId(ID_PREFIX.scene),
-    name: `${source.name} copy`,
-  };
-  // Nested node ids must be unique too, or selection and keyframe lookup collide.
-  const actorIdMap = new Map<string, string>();
-  copy.actors = copy.actors.map((actor) => {
-    const nextId = createId(ID_PREFIX.actor);
-    actorIdMap.set(actor.id, nextId);
-    return { ...actor, id: nextId };
-  });
-  copy.props = copy.props.map((prop) => ({ ...prop, id: createId(ID_PREFIX.propInstance) }));
-  copy.dialogue = copy.dialogue.map((line) => ({
-    ...line,
-    id: createId(ID_PREFIX.dialogue),
-    actorId: line.actorId ? (actorIdMap.get(line.actorId) ?? null) : null,
-  }));
-  copy.tracks = copy.tracks.map((track) => {
-    const remappedTarget =
-      track.kind === 'actor' ? (actorIdMap.get(track.targetId) ?? track.targetId) : track.targetId;
-    return {
-      ...track,
-      id: createId(ID_PREFIX.track),
-      targetId: remappedTarget,
-      clips: track.clips.map((clip) => ({
-        ...clip,
-        id: createId(ID_PREFIX.clip),
-        keyframes: clip.keyframes.map((kf) => ({ ...kf, id: createId(ID_PREFIX.keyframe) })),
-      })),
-    };
-  });
+  // Nested node ids must be unique too, or selection and keyframe lookup collide. The
+  // remapping rules live in one place because getting one of them wrong produces a
+  // scene that looks fine and fails validation on the next save.
+  const copy: Scene = { ...duplicateSceneWithFreshIds(source), name: `${source.name} copy` };
   return { project: touch({ ...project, scenes: [...project.scenes, copy] }), sceneId: copy.id };
 }

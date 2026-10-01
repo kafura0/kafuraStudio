@@ -38,6 +38,16 @@ These are not carried over from the audit. Each was verified in the source at `3
 | F7 | The render loop has no per-frame index | `render.ts:82,161,186,192,193` — `find` over assets per actor per frame; `render.ts:452-469` — track scan per target; `render.ts:513-521` — `allClips` scan per actor for the talk pulse | Cost is `O(actors × assets)` for lookups and `O(actors × clips)` for talking state, every frame. Fine at seed scale, not at episode scale. |
 | F8 | `MIGRATIONS` is an empty array | `serialize.ts:93-96` | The migration ladder is scaffolding. `Project.formatVersion` also duplicates `ProjectFile.formatVersion`, and the two are never reconciled. Every phase that touches the persisted shape must fix this first. |
 
+**Status after Phase 11 (2026-09-30).** F4, F5, F6 and F8 are **fixed**; F1, F2, F3 and F7 are **still open** and belong to Phase 15. F1–F3 are silent-wrong-answer defects in the renderer, and F7 is a per-frame cost that is fine at seed scale. They are recorded here rather than quietly dropped, because "fixed" and "still wrong" are the only two honest words available:
+
+| # | Status | What was done |
+|---|---|---|
+| F4 | **Fixed** | `state/autosaveLifecycle.browser.ts` binds `flushAutosave` to `visibilitychange` and `pagehide`, wired in `App.tsx`. A flush also runs before any project switch or close, so leaving a project is never a silent discard. |
+| F5 | **Fixed** | `ProjectParseError` now writes the raw bytes to a `quarantine` store and removes the record from the project list, instead of leaving `SEED_PROJECT` open to be autosaved over it. The operator is told. `project: Project \| null` is what made this possible: there is no seed to fall back to. |
+| F6 | **Fixed (both halves)** | The cached engine is keyed by project id and torn down by `resetPlaybackAudio()` on every document transition. Separately, `createFetchingResolver` takes the engine's own `AudioContext` as a parameter rather than constructing one per decoded file — it previously leaked one context per file against a browser cap of roughly six. |
+| F8 | **Fixed** | `MIGRATIONS` carries a real v1 → v2 step, applied on read and idempotent, and `CURRENT_FORMAT_VERSION` is the single owner of the ladder's top. A v1 record still opens with every audio slot honestly `null` rather than guessed at from a string that looks like a path. |
+| F1, F2, F3, F7 | **Open — Phase 15** | Not touched. F7's per-frame `find` is the reason the Phase 12 exporter needs an index before it can claim 60 fps on an episode. |
+
 ### 0.3 The roadmap in one line
 
 Finish and prove the MVP (Phases 9–13) → widen scope to `Series` (14) → repair engine correctness and performance (15) → build the command/transaction layer (16) → build plans, validation and compilation (17) → build human review (18) → then, and only then, the AI boundary (19).
@@ -94,14 +104,18 @@ Two details in `commit` worth naming because later phases depend on them:
 
 `src/core/persistence/repository.ts` defines `ProjectRepository` (`save`, `load`, `list`, `remove`, `loadMostRecent`) plus `ProjectSummary`. Two implementations exist: `MemoryProjectRepository` (tests and fallback) and `IndexedDbProjectRepository` (`indexedDb.browser.ts`, the only module that touches IndexedDB).
 
-- Database `zanza-studio`, `DB_VERSION = 1`
+- Database `zanza-studio`, `DB_VERSION = 2` (Phase 11 added `media` and `quarantine`; Phase 14 adds `series` at 3)
 - Store `projects`, keyPath `id`, index on `updatedAt`
 - Store `meta`, keyPath `key` — holds only `lastOpenedProjectId`
-- Each record stores `id`, `name`, `updatedAt`, `sceneCount`, `episodeCount`, and `document: string` — the serialized `{ formatVersion, project }` text
+- Store `media`, keyPath `id` — raw audio bytes plus their metadata
+- Store `quarantine`, keyPath `id` — unparseable project records, kept byte-for-byte
+- Each `projects` record stores `id`, `name`, `updatedAt`, `sceneCount`, `episodeCount`, `archivedAt`, and `document: string` — the serialized `{ formatVersion, project }` text
 
 Reads re-validate: `load` calls `parseProject(record.document)`, so a corrupt or newer-build record cannot enter the editor. Writes are chained through a module-level `pendingSave` promise so two overlapping saves cannot land out of order, and the saved document is only adopted into the store if the store still holds the document that was written (`editorStore.ts:267`).
 
-There is **no** asset blob store. `AudioDef.src` is a string path; nothing in the repository writes or reads audio bytes. The "media lives in IndexedDB" claim in `docs/ARCHITECTURE.md:233` is not implemented.
+`archivedAt` on the record is a **denormalised projection of `Project.metadata.archived`**, written from the document on every save and read back only to build the list. The document is the source of truth — the browser's archive button mutates `Project.metadata.archived`, which is why an archived project stays archived through export, import and duplicate. A record written before this field existed is treated as live, which is the safe direction: showing a project beats hiding one silently.
+
+**There is now an asset blob store** (`core/media/mediaStore.ts` behind a `MediaStore` interface, `core/persistence/media.browser.ts` for IndexedDB, `DB_VERSION` 1 → 2). `AudioDef.src` names a media id when `srcKind === 'local'`, a path when `'external'`, and is `null` for a declared slot with no file. **The gap that remains is the UI**: there is no file-attach control, so every slot in practice is still `null`. The store and the engine honour `srcKind`; nothing in the editor yet populates it. That is the honest state, and it is why the Phase 8 note about "no slot has a file" still stands.
 
 ### 1.4 Rendering model
 
@@ -520,6 +534,29 @@ interface EditorState {
 | **Export** | `serializeProject` to `.zanza.json`. Media referenced, not embedded. | 11 |
 | **Autosave** | Debounced 800 ms; **plus `visibilitychange`/`pagehide` flush** (fixes F4). | 11 |
 | **Recover** | On parse failure: **quarantine** the bad record, do not overwrite it, and surface a recovery state. (Fixes F5.) | 11 |
+
+**Phase 11 delivery status (2026-09-30).** Every row above is implemented with a working
+UI except **Create Series**, which is Phase 14 by design. Two notes where the
+implementation refined the specification:
+
+- **Create Project** ships a four-entry neutral starter library (one environment, one
+  character on the shared human rig, one pose, one expression — `src/data/starter.ts`).
+  A strictly empty project is *valid* but cannot hold a scene, because the invariant
+  requires a character and an environment as soon as one exists and there is no
+  asset-authoring UI in this phase. The scaffold is not canon and carries no Zanza names;
+  it exists so "New project" leads somewhere. This is the one place the UI added content
+  the specification did not name.
+- **Create Episode** and **Create Scene** are exposed where the table says they should
+  be: `+ Episode` on each browser row, `+ New scene` in the scene list, and an
+  "Add the first scene" button in the empty-project state. The episode action writes
+  straight through for a closed project — there is no session to undo into for a document
+  nobody is editing — and routes through `commit` when that project is the open one.
+
+One consequence worth recording, because it is a data-loss-adjacent bug that only appears
+once both features exist: every write records `lastOpenedProjectId`, and archiving *is* a
+write, so the newest record on disk is the archived one. `loadMostRecent` therefore
+refuses to return an archived project, or the archive would be silently undone on the
+next launch.
 
 ### 5.5 Multi-series coexistence
 

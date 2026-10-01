@@ -6,7 +6,7 @@
  */
 
 import { createId, ID_PREFIX } from '../id';
-import { DEFAULT_SCENE_DURATION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from '../constants';
+import { CURRENT_FORMAT_VERSION, DEFAULT_SCENE_DURATION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from '../constants';
 import { transform } from '../types';
 import type {
   AssetLibrary,
@@ -86,12 +86,13 @@ export function createProject(name: string, description = ''): Project {
     description,
     createdAt: now,
     updatedAt: now,
-    formatVersion: 1,
+    formatVersion: CURRENT_FORMAT_VERSION,
     settings: defaultProjectSettings(),
     assets: emptyAssetLibrary(),
     cameraPresets: [],
     episodes: [],
     scenes: [],
+    metadata: { archived: null, duplicatedFrom: null, snapshotOf: null },
   };
 }
 
