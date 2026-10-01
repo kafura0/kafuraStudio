@@ -1,7 +1,11 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 11 — PROJECT IO & SESSION LIFECYCLE** (complete; gates green).
-> **Next: Phase 12 — RENDER EXPORT.**
+> **Current phase: Phase 12 — RENDER EXPORT.**
+> **Next: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.**
+
+Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
+§ Phase 12, which is the authority. The gate below narrows it deliberately; the
+reason is stated in the section.
 
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
@@ -32,11 +36,11 @@ numbering is reconciled against
 | 5 | Character system | **complete** | Rig, pose/expression override, palette theming |
 | 6 | Scene composition | **complete** | Actor placement, anchor binding, z-order, free + bound transform |
 | 7 | Timeline | **complete** | Lanes, ruler, playhead, zoom, clip move/trim, keyframe editing, per-lane mute, track add/remove/reorder, clip add, drag clips to another track of the same kind — all through one undoable `commit()` per gesture. |
-| 8 | Dialogue / audio | **partial** | Web Audio playback scheduled against the playhead, per-clip gain, and a dialogue panel that edits speaker, actor, emotion, text, subtitle, cue timing and voice — all through one undoable `commit()` per gesture. Missing recordings are reported honestly in the UI. There is no way to attach a file to a slot, and no audio is authored. |
+| 8 | Dialogue / audio | **complete** | Web Audio playback scheduled against the playhead, per-clip gain, and a dialogue panel that edits speaker, actor, emotion, text, subtitle, cue timing and voice — all through one undoable `commit()` per gesture. Missing recordings are reported honestly in the UI. A file can be attached to a slot from `AudioSlotPanel`, which closed the gate this phase was left `partial` for. |
 | 9 | Camera Authoring | **complete** | Rest camera and keyframed moves resolve and render. A camera panel authors rest framing numerically, applies any of the seeded shot presets in one undoable step, and frames a selection to fit. `frameBounds` inverts the renderer's own camera transform, and an invariant test holds the two to each other. |
 | 10 | Episode Playback & Transport | **complete** | EP001 plays from the first frame of scene 1 to the last frame of scene 5, and the playhead is continuous across all four scene boundaries. Offsets, the boundary crossing, the end-of-cut wrap, and the audio cut are pure core; the clock is still the store's single `advancePlayback`. |
-| 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 565 tests green. |
-| 12 | Export | **planned** | Nothing written. Not started. |
+| 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 627 tests green. |
+| 12 | Export | **in progress** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly. |
 | 13 | MVP Acceptance & Documentation Truth | **planned** | Not started. |
 
 ### What exists today
@@ -66,8 +70,7 @@ Verified by `npm run lint && npm run typecheck && npm run test && npm run build`
 
 ### What is deliberately not built
 
-Asset editing, attaching files to audio slots, and export. These are the phases above,
-not gaps in the ones below.
+Asset editing and export. These are the phases above, not gaps in the ones below.
 
 ---
 
@@ -130,16 +133,19 @@ The mechanism is built; the recordings are a production task and the panel says 
 - [x] Subtitles can be turned off — **done**, the `CC` toggle; the `subtitles` render
       option had been accepted by the renderer and passed by nobody
 - [x] Delete on a dialogue cue takes the line, its cue and its lane with it — **done**
-- [ ] Attaching a file to an audio slot — **not built**. The engine resolves and
-      decodes whatever `src` holds, and there is no UI that sets it; the honest state
-      is reported instead
-- [ ] Episode-sequential playback and a real mixdown — Phase 11 and Phase 12
+- [x] Attaching a file to an audio slot — **done**, shipped as Phase 11 work
+      (`AudioSlotPanel`): the file is decoded, stored in the media store, and the slot's
+      `src` set through one undoable `commit()`. This is what closed the gate below
+- [ ] A real mixdown — **not built**. `episodeAudioPlan` computes the episode-clock
+      windows and the transport plays them, but nothing renders them to a single file.
+      Phase 12
 
 Gate: *"pressing play produces audio in time with the picture, and a missing recording
-is reported honestly."* The second half is demonstrated. The first half cannot be
-demonstrated on the shipped content, because no slot has a file — the mechanism is
-implemented and tested against a fake `AudioPort`, and stays silent until content
-exists. The phase is left `partial` for that reason, not `complete`.
+is reported honestly."* Both halves are now demonstrated. The mechanism was implemented
+and tested against a fake `AudioPort` while every slot was still fileless; Phase 11 gave
+an operator a way to attach a file, and the browser acceptance run plays one
+(`state=running peak=0.5`) rather than reporting a peak of 0.0. The phase is
+`complete`.
 
 The episode-sequential half of this phase's deferred scope shipped as Phase 10; the
 mixdown is Phase 12.
@@ -179,6 +185,66 @@ scene boundaries."* Reachable in the app: press play.
 
 Not built here, by the phase's own exclusions: export, transitions, a master timeline
 view, per-scene audio offsets authored by hand.
+
+---
+
+## PHASE 12 — RENDER EXPORT (in progress)
+
+Export is not "encode a video". It is: decide the frame list, prove the renderer draws
+each of those frames correctly, and only then involve a codec. PNG-first is deliberate —
+it makes export demonstrable and verifiable before any codec exists, so a codec problem
+can never be mistaken for a renderer problem (`ARCHITECTURE_SPEC.md` Phase 12).
+
+The unit of export is an **episode**, which may be one scene long. `frameSequence` takes
+an episode, so a single-scene episode is the trivial case rather than a separate code
+path built to be replaced later.
+
+- [x] `frameSequence(settings, episode) -> { index, time }[]`, pure and DOM-free —
+      **done**, `src/core/export/frameSequence.ts`. No canvas, no store, no document
+      mutation. 12 tests cover fps, non-finite and non-positive fps, the half-open
+      boundary, even `1/fps` spacing, and a duration that is an exact multiple of the
+      frame interval
+- [x] PNG still of the current frame — **done**, `exportStill` in
+      `src/core/export/exportImages.browser.ts`
+- [x] PNG sequence, frame by frame, at the computed frame times — **done**,
+      `exportSequence`. It takes the frame list as an argument rather than recomputing it,
+      so the exporter cannot disagree with `frameSequence` about what to export. One
+      canvas is allocated and released per frame, so peak memory is one frame rather
+      than one episode
+- [x] The exporter's per-frame draw log is deep-equal to the golden `renderScene` log
+      at the same times — **done**, `src/test/exportDrawLog.test.ts`. This, not visual
+      inspection, is the exporter's real test, and it is what proves export renders
+      through the *same* call as the stage rather than a second, subtly different path.
+      The test calls the production `drawExportFrame`, not a copy of it, and covers every
+      frame of the seed episode. It also asserts the logs are non-empty, that the scene
+      boundary is resolved to the right scene, that the subtitle toggle genuinely changes
+      the log, and that the export size does not follow the stage's
+- [ ] Mixdown via `OfflineAudioContext` driven by `episodeAudioPlan`
+      (`src/core/audio/episodePlan.ts`, built in Phase 10 per §19.5 — one function, two
+      consumers) — **not built**
+- [x] Subtitles burned in, matching the stage, with a toggle — **done**. The renderer's
+      draw order already includes them and `RenderOptions.subtitles` already gates them,
+      so the export's default costs nothing, and the draw-log test proves the default
+      matches the stage and the toggle reaches the renderer
+- [ ] The video encoder decision, written down — **not built**. An ADR, not an
+      implementation: WebCodecs plus a hand-written WebM muxer versus `MediaRecorder`
+      as a real-time fallback, with the tradeoffs measured against this renderer.
+      RULE 11 applies, so any new dependency needs its argument written first
+- [ ] `ExportPanel` with honest capability reporting and progress — **not built**.
+      Reports what *this* browser can actually do, per the risk register's
+      "Feature-detected and reported honestly; PNG still always available"
+
+Gate: *"every frame of the export is provably the frame the stage already drew, and the
+episode plays back as one continuous audio mixdown."*
+
+`docs/MVP.md` check 8 — "export produces a playable video file" — is **not** part of this
+gate and will remain unmet, reported as a gap rather than papered over (RULE 9). A PNG
+sequence plus a mixdown is a complete, verifiable, codec-free deliverable. Video encoding
+is best-effort inside this phase and is not allowed to stand between the phase and its
+gate.
+
+Not built here, by this phase's own exclusions: whole-episode assembly with transitions,
+title cards and end credits; per-line fades and a full mixing desk; subtitle generation.
 
 ---
 

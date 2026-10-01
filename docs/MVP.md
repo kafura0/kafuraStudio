@@ -57,10 +57,9 @@ The MVP gate is not met. Item 19 needs the Phase 12 exporter, and the rows with 
 
 **Known gap in Phase 11, stated rather than implied.** The `media` store and
 `AudioDef.srcKind` exist and the audio engine reads them, but there is still no UI for
-attaching a file to an audio slot — `AudioSlotPanel` was not built. So every slot is
-still `src: null` in practice, exactly as the Phase 8 note says. The `srcKind: 'local'`
-path is implemented and tested at the store and engine level and is simply not reachable
-from the editor yet.
+attaching a file to an audio slot — that was Phase 11 work and it has since shipped as
+`AudioSlotPanel`, so a slot can now hold a real recording. `srcKind: 'local'` is reachable
+from the editor, not just implemented at the store and engine level.
 
 ---
 
@@ -121,11 +120,13 @@ architecture has failed, regardless of whether the other checks pass.
 are automated in `src/core/io/projectIo.test.ts` and
 `src/state/editorStore.lifecycle.test.ts` respectively. Check 3 (spacebar), 4 (undo),
 10 (RULE 3) and 11 (episode playback) are implemented and automated. Checks 1, 2, 5, 6
-and 7 are implemented but have not been walked in a browser. Only check 8 needs the video
-exporter, which does not exist. Check 10 is the one the design is built for, and it is
-automated in `src/data/rule3.test.ts`: an unknown character is added to the production
-project, staged, keyed, posed, expressioned, and rendered, with `validateProject` clean
-throughout and no `core/` file touched.
+and 7 are implemented and have been walked in a browser at 1920×1080 by the Phase 11
+acceptance run. Check 8 is the one that does not pass: Phase 12's gate is deliberately a
+PNG sequence plus a mixdown rather than a video file, so a playable video remains
+unbuilt and is reported here as a gap rather than claimed. Check 10 is the one the design
+is built for, and it is automated in `src/data/rule3.test.ts`: an unknown character is
+added to the production project, staged, keyed, posed, expressioned, and rendered, with
+`validateProject` clean throughout and no `core/` file touched.
 
 ---
 
