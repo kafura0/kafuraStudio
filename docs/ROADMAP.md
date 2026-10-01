@@ -219,9 +219,14 @@ path built to be replaced later.
       frame of the seed episode. It also asserts the logs are non-empty, that the scene
       boundary is resolved to the right scene, that the subtitle toggle genuinely changes
       the log, and that the export size does not follow the stage's
-- [ ] Mixdown via `OfflineAudioContext` driven by `episodeAudioPlan`
+- [x] Mixdown via `OfflineAudioContext` driven by `episodeAudioPlan`
       (`src/core/audio/episodePlan.ts`, built in Phase 10 per §19.5 — one function, two
-      consumers) — **not built**
+      consumers) — **done**. `mixdownPlan.ts` decides *what* plays, purely and tested;
+      `mixdown.browser.ts` only executes that decision through an `OfflineAudioContext`
+      and encodes the result. A segment the plan scheduled but the render could not place
+      is reported by name in `missing`, with the reason — a mixdown that silently drops a
+      cue is worse than one that fails. The file is WAV: no dependency, no codec, and
+      every tool reads it
 - [x] Subtitles burned in, matching the stage, with a toggle — **done**. The renderer's
       draw order already includes them and `RenderOptions.subtitles` already gates them,
       so the export's default costs nothing, and the draw-log test proves the default
