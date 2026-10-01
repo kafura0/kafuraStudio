@@ -138,7 +138,20 @@ function isPlayable(scene: Scene | undefined): scene is Scene {
 export function buildEpisodeTimeline(project: Project, episodeId: Id): EpisodeTimeline | null {
   const episode = findEpisode(project, episodeId);
   if (!episode) return null;
+  return flattenCut(project, episode);
+}
 
+/**
+ * Flatten a cut the caller already holds, without a lookup by id.
+ *
+ * Separate from `buildEpisodeTimeline` because the two differ in *which* episode they
+ * read: that one resolves the project's copy from an id, this one takes the object it is
+ * given. Passing an episode that is not the project's current copy is a legitimate case
+ * for the exporter, which must render the document it was handed rather than whichever
+ * copy happens to be committed, so a silently different answer here would mean exporting
+ * frames from a cut nobody asked for.
+ */
+export function flattenCut(project: Project, episode: Episode): EpisodeTimeline {
   const segments: EpisodeSegment[] = [];
   let cursor = 0;
 
