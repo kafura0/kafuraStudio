@@ -231,10 +231,13 @@ path built to be replaced later.
       draw order already includes them and `RenderOptions.subtitles` already gates them,
       so the export's default costs nothing, and the draw-log test proves the default
       matches the stage and the toggle reaches the renderer
-- [ ] The video encoder decision, written down — **not built**. An ADR, not an
-      implementation: WebCodecs plus a hand-written WebM muxer versus `MediaRecorder`
-      as a real-time fallback, with the tradeoffs measured against this renderer.
-      RULE 11 applies, so any new dependency needs its argument written first
+- [x] The video encoder decision, written down — **done**,
+      [`docs/adr/001-video-encoding.md`](adr/001-video-encoding.md). An ADR, not an
+      implementation, as the spec asks. It compares `MediaRecorder` against `VideoEncoder`
+      plus a hand-written WebM muxer and against `VideoEncoder` plus a dependency, and
+      decides that the PNG sequence and the mixdown are the deliverable, with
+      `MediaRecorder` available as a best-effort extra. No WebCodecs code, no muxer, no
+      new dependency
 - [ ] `ExportPanel` with honest capability reporting and progress — **not built**.
       Reports what *this* browser can actually do, per the risk register's
       "Feature-detected and reported honestly; PNG still always available"
