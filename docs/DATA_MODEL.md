@@ -10,15 +10,21 @@
 
 ```jsonc
 {
-  "formatVersion": 1,
-  "project": { /* see §7 */ }
+  "formatVersion": 2,
+  "project": { /* see §10 */ }
 }
 ```
 
-- `formatVersion` enables forward migration (`migrateProject`). Bump it whenever a
-  persisted shape changes and append a migration step.
-- **Media is never embedded.** Audio and images are referenced by `src` (a URL or
-  an IndexedDB blob key). The JSON stays diffable and versionable in git.
+- `formatVersion` enables forward migration. `MIGRATIONS` in `src/core/serialize.ts` is
+  an ordered array; index *i* upgrades a document from version *i+1* to *i+2*. There is
+  one step today, v1 to v2. Bump `CURRENT_FORMAT_VERSION` and append a step whenever a
+  persisted shape changes.
+- **Media is never embedded.** Audio and images are referenced by `src` (a media id or an
+  operator-supplied path, disambiguated by `AudioDef.srcKind`). The JSON stays diffable and
+  versionable in git.
+
+Throughout this document, `Id` is written as `string`. `src/core/types.ts` declares
+`type Id = string`; the alias exists so ids are greppable as ids, not to brand them.
 
 ---
 
@@ -100,10 +106,13 @@ mechanism means one resolution function, one set of tests.
 Composition order at render time:
 
 ```
-rest  <-  pose  <-  keyframe
+rest  <-  pose  <-  expression  <-  keyframe
 ```
 
-later layers win. The mouth is an ordinary part with slot `mouth`, so "angry" is
+later layers win. `rest` is the part's own `PartDef.rest`; pose and expression are
+composed inside `src/core/render/resolve.ts`; the keyframe layer is applied afterwards by
+`src/core/render/render.ts`, because a keyframe may name a pose or expression that has to
+be resolved for that time. The mouth is an ordinary part with slot `mouth`, so "angry" is
 just `mouth: <frown shape> + browL: rotate(+8deg)`. No dedicated mouth pipeline.
 
 ---
@@ -124,9 +133,10 @@ interface CharacterDef {
 }
 ```
 
-`height` exists so the stage can offer "scale to 85% of frame height" and so
-`getCharacterHeadY()` can position a close-up crop. The renderer never hardcodes a
-character's proportions.
+`height` is the character's pixel height at scale 1, with the feet at `y = 0`, so a
+camera can frame a close-up on a character without the renderer knowing anything about its
+proportions. There is no `getCharacterHeadY()` helper and nothing derives a head position
+from it today; `height` is currently carried for staging and future framing work.
 
 ---
 
@@ -145,7 +155,7 @@ interface StagingAnchor {
   tags: string[];
 }
 
-interface EnvPart { id: string; shape: ShapeDef; colorKey: string; pivot: Vec2; transform: Transform2D }
+interface EnvPart { id?: Id; shape: ShapeDef; colorKey: string; pivot: Vec2; transform: Transform2D }
 interface EnvLayer { id: string; name: string; z: number; parallax: number; parts: EnvPart[] }
 
 interface EnvironmentDef {
@@ -159,6 +169,10 @@ interface EnvironmentDef {
   lighting: { ambient: string; overlayColor: string | null; vignette: number };
 }
 ```
+
+`EnvPart.id` is **optional**: seed content omits it and the id is assigned when the
+environment is loaded, so authoring a background does not mean inventing stable ids for
+every rectangle in it. `AnchoredEnvPart` is an alias for the same shape.
 
 **Anchors are the composition system.** A scene does not hand-place characters with
 raw coordinates every time; it binds an actor to an anchor
@@ -185,6 +199,7 @@ interface AudioDef {
   id: string; name: string;
   kind: 'dialogue' | 'sfx' | 'music' | 'ambience';
   src: string | null;        // null = a slot that is defined but not yet loaded
+  srcKind: 'local' | 'external' | null;   // what `src` means; null when there is no file
   duration: number;          // seconds
   tags: string[];
 }
@@ -193,6 +208,12 @@ interface AudioDef {
 Props reuse `PartDef`, so the renderer draws a character and a mug through the same
 code path. One `drawRig()` function. `src: null` is legitimate — it lets the
 timeline be authored before the recording exists.
+
+`srcKind` exists because `src` is ambiguous on its own. `'local'` means `src` is a media
+id whose bytes are in the media store; `'external'` means it is a path the operator
+supplies and the editor never reads it. Stating which is which keeps every un-loaded slot
+honestly "missing" instead of being guessed at from a string that looks like a path. It is
+a v2 field: a v1 record has none, and the migration sets it to `null`.
 
 ---
 
@@ -351,27 +372,74 @@ interface Project {
   name: string;
   description: string;
   createdAt: string;          // ISO 8601
-  updatedAt: string;
+  updatedAt: string;          // ISO 8601
   formatVersion: number;
   settings: ProjectSettings;
   assets: AssetLibrary;
+  cameraPresets: CameraPreset[];   // named framings a shot can start from
   episodes: Episode[];
   scenes: Scene[];
+  metadata: ProjectMetadata;        // lifecycle facts: archived, duplicateOf, snapshotOf
 }
 ```
 
+`cameraPresets` and `metadata` are v2 fields. `metadata` is absent in a v1 document and
+defaulted on read, so an old project opens with `archived: null` — neither hidden nor
+claimed to be a copy of anything. `cameraPresets` is project-scoped today; Phase 14
+resolves presets from the series as well, with a project entry overriding a series entry.
+
 ## 11. INVARIANTS
 
-Enforced by tests in `src/core/document/invariants.test.ts`:
+These are the rules `validateProject` in `src/core/document/invariants.ts` enforces.
+`parseProject` refuses any document that breaks one, so a corrupted or hand-edited file
+cannot enter the editor in a broken state. This is the mechanical form of RULE 2
+(reusable assets) and RULE 3 (Nia is not special).
 
-1. Every `SceneActor.characterId` resolves to a `CharacterDef`.
-2. Every `SceneActor.poseId` / `expressionId` resolves.
-3. Every `Scene.environmentId` resolves.
+**References resolve:**
+
+1. Every `Scene.environmentId` resolves to an `EnvironmentDef`.
+2. Every `SceneActor.characterId` resolves to a `CharacterDef`.
+3. Every `SceneActor.poseId` and `expressionId` resolve.
 4. Every `SceneProp.propId` resolves.
-5. Every `Track` and `Clip` `targetId` resolves.
-6. Every `DialogueLine.voiceAudioId` resolves or is `null`.
-7. Every `Episode.sceneIds` resolves, in order, without duplicates.
-8. Keyframe times fall within their clip; clips fall within `[0, scene.duration]`.
-9. `parseProject` rejects a document violating any of the above.
-10. Adding a character to `assets.characters` requires **no** change to any code in
-    `core/` — asserted by rendering and operating on a synthetic puppet character.
+5. Every `DialogueLine.actorId` resolves to a `SceneActor` in the same scene, or is `null`.
+6. Every `DialogueLine.voiceAudioId` resolves, or is `null`.
+7. Every `Track.targetId` resolves **according to its `kind`**: an actor id for `actor`,
+   a prop id for `prop`, the literal `'camera'` for `camera`, a line id for `dialogue`, an
+   `AudioDef.id` for `audio`.
+8. Every `Clip.audioId` and `Clip.dialogueLineId` resolves, or is `null`.
+9. Every `Episode.sceneIds` entry resolves, in order, without duplicates.
+
+**Timing is in range:**
+
+10. Clip `start` is not negative and `duration` is positive.
+11. `clip.start + clip.duration <= scene.duration` (within a 1e-6 tolerance).
+12. Keyframes are sorted ascending by time and each falls inside its own clip.
+
+**Ids are unique**, because they are the join keys for the whole document:
+
+13. No duplicate `SceneActor.id` or `DialogueLine.id` within a scene.
+14. No duplicate asset id **across** all six asset collections, not merely within one —
+    a repeat between a pose and an expression would make lookups ambiguous.
+15. No duplicate `CameraPreset.id`, and every preset's camera `x`, `y`, `zoom` and
+    `rotation` is a finite number. A non-finite value renders as a blank frame and the
+    renderer would not complain, so it is caught at validation instead.
+
+**A drawable project is drawable:**
+
+16. A project with at least one scene needs at least one character and one environment.
+    A project with **no** scenes may have an empty library — that is what `createProject`
+    returns, and refusing it meant a newly created project saved fine and was then
+    quarantined as unreadable the first time anyone opened it, leaving a record in the list
+    that could never be opened again.
+
+`parseProject` rejects a document violating any of the above.
+
+Two things are asserted elsewhere, not here:
+
+- **RULE 3** — adding a character to `assets.characters` requires no change to any code in
+  `core/`. `src/data/rule3.test.ts` renders and operates on a synthetic puppet character
+  to prove it.
+- **The shape of a library.** `src/core/document/invariants.test.ts` covers the
+  library-population rules in item 16 and the unknown-environment case. The other rules
+  above are exercised through `parseProject` tests in `src/core/io/projectIo.test.ts` and
+  the document-ops suites, not by a dedicated test per rule.

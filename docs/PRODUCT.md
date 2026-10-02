@@ -77,9 +77,19 @@ IDEA -> SCRIPT -> EPISODE BREAKDOWN -> SCENE BREAKDOWN -> ASSET SELECTION
      -> PREVIEW -> EDIT -> RENDER -> PUBLISH
 ```
 
-MVP scope ends at **STAGING → DIALOGUE → ANIMATION → CAMERA → PREVIEW → EXPORT**
-for a single scene. The stages before and after are represented in the data model
+MVP scope ends at **STAGING → DIALOGUE → ANIMATION → CAMERA → AUDIO → PREVIEW →
+EDIT → EXPORT**. The stages before and after are represented in the data model
 so they can be added without a migration.
+
+**The unit of work is the episode, not the scene.** Phase 10 made playback run the cut
+sequentially and Phase 12 made export take an episode, so a scene is a shot inside a
+delivered sequence rather than the thing that gets shipped. `docs/MVP.md` keeps the
+single pilot scene as the acceptance test, because one scene staged properly exercises
+every mechanism in the chain — but what the tool produces is `EP001`.
+
+One part of that chain is not delivered: **EXPORT yields a PNG sequence and a WAV, not
+a video file.** `docs/adr/001-video-encoding.md` records why no muxer is present. The
+milestone is otherwise met.
 
 ## 7. FIRST TECHNICAL MILESTONE
 
@@ -88,7 +98,9 @@ so they can be added without a migration.
 
 Pilot scene: **EP001 "RENT IS DUE"**, scene 1, `NIA'S APARTMENT`. Nia on the couch.
 Kito enters. Four lines of dialogue. That is the acceptance test for the entire
-MVP. If that scene can be staged, timed, previewed and exported, the system works.
+MVP. If that scene can be staged, timed, previewed and exported, the system works —
+and `docs/MVP.md` §4 is the checklist that decides it, with the one unmet item named
+rather than glossed.
 
 ## 8. THE PRODUCT IS NOT
 

@@ -19,8 +19,14 @@ Nia sits on the couch. Kito enters through the door anchor. Nia reacts.
 | 3 | NIA | "You owe me rent." |
 | 4 | KITO | "...the empire is still in development." |
 
-If this scene can be **staged, timed, previewed at speed, and exported to a video
+If this scene can be **staged, timed, previewed at speed, and exported to a playable
 file**, the system works. Everything else is expansion.
+
+"Playable file" is doing real work in that sentence, and it is the one part of the
+milestone that is not met. What ships today is a PNG sequence plus a WAV mixdown: a
+frame-accurate, shareable result that any tool can turn into a video, but not a video
+this application produces. `docs/adr/001-video-encoding.md` records the decision not to
+take a browser-dependent `MediaRecorder` path.
 
 ---
 
@@ -41,25 +47,24 @@ user can actually operate. A capability is only `implemented` when both are true
 | 7 | Move and scale characters | done | none | `setActorTransform` / anchor binding exist |
 | 8 | Change character pose | done | none | `setActorPose` exists |
 | 9 | Change character expression | done | none | `setActorExpression` exists |
-| 10 | Add dialogue lines | done | none | `addDialogueLineWithCue` exists |
-| 11 | Place dialogue on the timeline | done | none | Timing lives on the clip, by design |
-| 12 | Basic timeline playback | done | none | One store clock drives stage, transport, and timeline playhead |
+| 10 | Add dialogue lines | done | done | `DialoguePanel` adds a line at the playhead, with its cue on the dialogue lane |
+| 11 | Place dialogue on the timeline | done | done | "Add clip at playhead" on the dialogue lane; timing lives on the clip, by design |
+| 12 | Basic timeline playback | done | done | Transport play/pause and scrubber, plus spacebar. One store clock drives stage, transport, and timeline playhead |
 | 13 | Basic camera controls | done | done | Keyframed moves render; rest framing is authored numerically; seeded shot presets apply in one undoable step; a selection can be framed to fit |
 | 14 | Basic animation keyframes | done | done | Add/move/delete on the timeline; keyframes travel with moves and start trims; an end trim cuts them |
 | 15 | Save project | done | done | IndexedDB persists; `.zanza.json` import/export from the browser, plus Ctrl/Cmd+S |
 | 16 | Load project | done | done | Hydrates on start, re-validates and migrates on read; an unreadable record is quarantined and reported, not overwritten |
 | 17 | Undo / redo | done | done | One `commit()` path; one step per drag/gesture; bound to Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z |
 | 18 | Preview scene | done | done | Play/pause, a scrubber, and spacebar; episode-sequential playback across the whole cut, or a scene loop on demand |
-| 19 | Export a basic scene result | none | none | **Not started.** No PNG still, no WebM. Phase 12 |
+| 19 | Export a basic scene result | done | done | A cut exports to a PNG sequence at the episode's authored size plus one continuous 16-bit/48 kHz stereo WAV mixdown, with subtitles burned in. **No single-file video** — see check 8 and `docs/adr/001-video-encoding.md` |
+| 20 | Attach a recording to an audio slot | done | done | `AudioSlotPanel` stores the bytes in the media store and sets `srcKind: 'local'` |
+| 21 | Put a scene in a cut, and a sound in a scene | done | done | From the editor, both undoable. Refuses an audio slot with no file rather than placing silence |
 
-The MVP gate is not met. Item 19 needs the Phase 12 exporter, and the rows with a
-`none` in the UI column are Phase 12/13 work; see `docs/ROADMAP.md`.
-
-**Known gap in Phase 11, stated rather than implied.** The `media` store and
-`AudioDef.srcKind` exist and the audio engine reads them, but there is still no UI for
-attaching a file to an audio slot — that was Phase 11 work and it has since shipped as
-`AudioSlotPanel`, so a slot can now hold a real recording. `srcKind: 'local'` is reachable
-from the editor, not just implemented at the store and engine level.
+The MVP gate is **not met**, and the reason is narrow: check 8 wants a playable video
+file, and no muxer is present. Rows 7, 8 and 9 still have no UI — the operations exist
+and are tested, and an actor can be placed, posed and expressioned through the seed
+project and the timeline, but there is no per-actor inspector to drag, pose or
+expression from. That is the honest state of those three.
 
 ---
 
@@ -116,20 +121,30 @@ npm run build      # succeeds
 Check 10 is the load-bearing one. If adding a character requires a code change, the
 architecture has failed, regardless of whether the other checks pass.
 
-**Current status: not met.** The four build gates pass. Checks 9 and 12 are Phase 11 and
-are automated in `src/core/io/projectIo.test.ts` and
-`src/state/editorStore.lifecycle.test.ts` respectively. Check 3 (spacebar), 4 (undo),
-10 (RULE 3) and 11 (episode playback) are implemented and automated. Checks 1, 2, 5, 6
-and 7 are implemented and have been walked in a browser at 1920×1080 by the Phase 11
-acceptance run. Check 8 is the one that does not pass, and it is still the only one: Phase
-12's gate is deliberately a PNG sequence plus a mixdown rather than a video file, so a
-playable video remains unbuilt and is reported here as a gap rather than claimed. What
-Phase 12 does deliver is the closest thing to a check 8 the architecture allows without a
-codec — a cut exports to 288 authored-size PNGs named in playback order, and to one
-continuous 12.000s WAV — verified in Chrome at 47/47 checks. Check 10 is the one the design
-is built for, and it is automated in `src/data/rule3.test.ts`: an unknown character is
-added to the production project, staged, keyed, posed, expressioned, and rendered, with
+**Current status: not met, on check 8 alone.** The four build gates pass — lint clean,
+typecheck clean, 744 tests green across 51 files, build succeeds.
+
+*Automated.* Check 9 (round-trip the project JSON) in `src/core/io/projectIo.test.ts`.
+Check 12 (no history or selection bleed between projects) in
+`src/state/editorStore.lifecycle.test.ts`. Check 3 (spacebar), 4 (undo/redo), 10 (RULE 3)
+and 11 (episode playback) are implemented and automated. Check 10 is the one the design
+is built for: `src/data/rule3.test.ts` adds an unknown character to the production
+project, stages it, keys it, poses it, gives it an expression and renders it, with
 `validateProject` clean throughout and no `core/` file touched.
+
+*Walked in a real browser.* Checks 1, 2, 5, 6 and 7 were walked at 1920×1080 by the
+Phase 11 acceptance run (44/44). Phase 12's export was walked at 1920×1080 (47/47): a cut
+exports to 288 PNGs at the episode's authored 1920×1080, correctly ordered and non-empty,
+the first and last of which decode to non-blank images, and to one continuous 12.000s WAV
+with no silence and no clipping. Cancellation works and export does not mutate the
+project. Phase 11's migration path was walked separately (35/35).
+
+*Not passing.* Check 8 wants a playable video file. Phase 12's gate is deliberately a PNG
+sequence plus a mixdown rather than a video, so this remains unbuilt and is reported as a
+gap rather than claimed. Check 4's drag leg is the other thing no automated run covers:
+undo and redo are tested through the store, and the browser run confirms the keystrokes
+and the timeline drag, but no script drives a pointer drag on the stage, because there is
+still no per-actor drag handle to drag.
 
 ---
 

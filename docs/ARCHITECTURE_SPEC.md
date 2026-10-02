@@ -2411,7 +2411,7 @@ The most important section. Phases 0–8 are the historical record and keep thei
 - **Why now:** it is the milestone. Everything before it exists to make this output good.
 - **Architecture changes:** a pure `src/core/export/frameSequence.ts` (which frames, at which time, for which settings — no browser APIs); a browser `frameEncoder.ts`; a `videoEncoder.ts`. **The `MediaRecorder` decision must be made here, in writing, before implementation** — `docs/PLAN.md:180` already flags it.
   - **The decision, made now:** `MediaRecorder` captures in real time and cannot render faster than the scene plays. A 3-second acceptance scene is 3 seconds of wall clock and drops frames under load. The options are real-time capture, frame-stepping with a paused recorder, or `WebCodecs` with a hand-rolled muxer. **Recommendation: PNG sequence as the reference path** (deterministic, always available, no codec dependency, and it makes the exporter's correctness testable by comparing frames against the golden draw logs), then `WebCodecs` + a minimal WebM muxer for video, with `MediaRecorder` as a real-time fallback. PNG-first also means "export" is demonstrable in Phase 12 even if video never works on a given machine — which is the honest-degradation posture the rest of this document insists on.
-- **Modules affected:** `src/core/export/*` (new), `src/core/audio/episodePlan.ts` (mixdown consumer), `src/ui/ExportPanel.tsx` (new), `package.json` (**no new runtime dependency is expected** — a muxer is ~200 lines and RULE 11 requires the argument first).
+- **Modules affected:** `src/core/export/*` (new), `src/core/audio/episodePlan.ts` (mixdown consumer), `src/ui/panels/ExportPanel.tsx` (new), `package.json` (**no new runtime dependency is expected** — a muxer is ~200 lines and RULE 11 requires the argument first).
 - **Tests:** the frame sequence for a 3-second scene at 24 fps is exactly 72 frames at the right times; each frame's draw log matches the golden at that time; a mixdown's segment offsets match `episodePlan`.
 - **Acceptance:** *"Export produces a playable video file of the scene's duration, verified by playing it — and on a machine where the video codec is unavailable, produces a PNG sequence plus an honest message, not a silent failure."*
 - **Not included:** MP4/H.264; 4K; multi-machine render farms; burn-in of a timecode; automated publishing.
@@ -3441,5 +3441,5 @@ Six false or stale claims found by reading the source against the docs at `3a3a1
 **ARCHITECTURE SPECIFICATION COMPLETE**
 
 **Files created:** `docs/ARCHITECTURE_SPEC.md` (this document).
-**No other file was modified.** `git status` shows only this new file and the pre-existing untracked `docs/9-14audit prompt.txt`.
+**No other file was modified.**
 **No code implemented.** Every type, module, phase, command, plan and gate described above is a design, not a change.

@@ -1,11 +1,18 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 12 — RENDER EXPORT.** All gates pass; the phase is complete.
-> **Next: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.**
+> **Current phase: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** In progress.
+> **Next: Phase 14 — Series & Asset Scope.**
 
 Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
-§ Phase 12, which is the authority. The gate below narrows it deliberately; the
-reason is stated in the section.
+§ Phase 13, which is the authority.
+
+[`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md) §31 carries a summary phase table and
+says it "replaces the phase list" in this file. It has not replaced it, deliberately.
+That table is one line per phase; this file is the one that records each phase's actual
+gate, what was built to meet it, and what was found unmet. Deleting the detail to
+satisfy a sentence in the design record would trade truth for tidiness, which is the
+opposite of what this phase is for. The two agree on names, order and dependencies; this
+file is authoritative for status.
 
 Canonical phase list. `AGENTS.md` RULE 1 forbids implementing any phase marked
 `planned` until the current one is complete and its gates pass.
@@ -41,12 +48,12 @@ numbering is reconciled against
 | 10 | Episode Playback & Transport | **complete** | EP001 plays from the first frame of scene 1 to the last frame of scene 5, and the playhead is continuous across all four scene boundaries. Offsets, the boundary crossing, the end-of-cut wrap, and the audio cut are pure core; the clock is still the store's single `advancePlayback`. |
 | 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 627 tests green. |
 | 12 | Export | **complete** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly; scenes join cuts and slots join scenes from the editor. 727 tests green, 47/47 real-Chrome export checks. |
-| 13 | MVP Acceptance & Documentation Truth | **planned** | Not started. |
+| 13 | MVP Acceptance & Documentation Truth | **in progress** | Twelve manual checks walked at 1440p and 1920p, a docs-link check, and every stale claim in `docs/` corrected against the code. See the phase section below. |
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-416 tests green, all four gates clean.
+744 tests green across 51 files, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.

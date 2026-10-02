@@ -255,10 +255,10 @@ check that the assertions were the right ones. An independent pass can.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Timeline playhead and stage clock disagree | Playback is unusable, and the bug is intermittent | **Resolved** — the store owns time; both read it |
-| `MediaRecorder` cannot render faster than real time | Export is unreliable or drops frames | Decide the approach during Phase 12 design, with the 3s scene as the test case |
+| `MediaRecorder` cannot render faster than real time | Export is unreliable or drops frames | **Decided.** `docs/adr/001-video-encoding.md`: no muxer, no `MediaRecorder`. Export is a PNG sequence plus a WAV mixdown |
 | Audio assets have no recordings | Playback is silent in the demo | Report missing recordings honestly; content is a production task, not a code task |
 | UI is built on core that hides defects | Defects surface late, when they are expensive | Review pass at every gate, as above |
-| No lint rule enforces the layering | `core` could start importing `ui` or `data` | `AGENTS.md` §3 requires a rule or a review. **Currently neither exists.** See below. |
+| No lint rule enforces the layering | `core` could start importing `ui` or `data` | `AGENTS.md` §3 requires a rule or a review. **Still neither exists.** See below. |
 | Scope creep into the renderer | A drawing tool starts appearing | The stage is a viewport, not a paint surface. This is not negotiable. |
 
 ### Known gap: layering is unenforced
@@ -268,9 +268,18 @@ review must catch any upward import". Today **neither exists** —
 `eslint.config.js` has no boundary rule, so nothing but reviewer diligence keeps
 `src/core` free of `ui`, `state`, and `data`.
 
-This is the cheapest high-value item in the plan and it is not scheduled. It should
-be done before Phase 7, because Phase 7 is the first phase that will tempt someone to
-import a store hook into a core module to get the playhead.
+Two things are worth being precise about. First, this has been true since Phase 0, and
+it has survived thirteen phases: the discipline has held, so the gap is a missing
+*guarantee* rather than an observed defect. Second, the original note said this should be
+done "before Phase 7, because Phase 7 is the first phase that will tempt someone to
+import a store hook into a core module" — Phase 7 is long finished and the temptation
+did not materialise, which is evidence about the reviewers rather than about the rule.
+
+It remains the cheapest high-value item outstanding. The test that would enforce it by
+walking the import graph, `src/arch/layering.test.ts`, **does not exist**; it is named as
+planned in `docs/ARCHITECTURE_SPEC.md`, and `src/arch/` currently holds only the
+docs-link check. Until it does, treat the arrow in `docs/ARCHITECTURE.md` §9 as a
+convention this project keeps by hand, not a property the build verifies.
 
 ---
 

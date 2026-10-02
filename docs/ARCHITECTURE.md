@@ -23,10 +23,12 @@ with no hidden accumulated state. That is only possible if rendering is a pure
 function of `(document, sceneId, time)`.
 
 ```
-renderScene(ctx, project, scene, time) -> void
+renderScene(ctx, project, scene, time, options?) -> void
 ```
 
-No engine, no retained mode, no imperative scene graph.
+No engine, no retained mode, no imperative scene graph. `options` carries the things
+`core` is not allowed to read for itself — viewport size, device pixel ratio, subtitle
+visibility, and any decoded images — because `core` has no `window` to ask.
 
 ---
 
@@ -64,9 +66,14 @@ per rig part, per actor, per frame. A three-character scene allocates a few hund
 short-lived objects per frame, which is immaterial at 60 fps and far below the cost of
 the canvas fills themselves. A scratch-buffer pool is deliberately **not**
 implemented — it would complicate the resolver to remove a cost that measurement has
-not shown to matter. Layers are pre-sorted by `z` when the environment is authored,
-and the render loop skips the frame entirely when nothing has changed. Revisit only if
-profiling a heavy scene justifies it.
+not shown to matter. Layers are pre-sorted by `z` when the environment is authored.
+Revisit only if profiling a heavy scene justifies it.
+
+**The loop does not currently skip idle frames.** `src/ui/Stage.tsx` redraws on every
+`requestAnimationFrame` whenever a project and scene are open, and returns early only
+when there is no project or no scene. A dirty check — compare the scene id, the
+`sceneTime`, and a document revision — would make an idle editor nearly free, and it is
+a small, contained change. It is **not** implemented, so this document does not claim it.
 
 ---
 
@@ -74,16 +81,27 @@ profiling a heavy scene justifies it.
 
 `src/state/editorStore.ts` holds one thing that matters: the **project document**.
 
+The history-relevant part of the store, abridged from the real interface (which also
+carries `sceneId`, `dirty`, the project list, and session status):
+
 ```ts
+export interface HistoryEntry {
+  label: string;
+  project: Project;
+}
+
 interface EditorState {
   project: Project | null;
   past: HistoryEntry[];     // previous project snapshots
   future: HistoryEntry[];   // redo stack
-  selection: Selection;
+  selection: { kind: SelectionKind; id: Id | null };
   playhead: number;
   playing: boolean;
 }
 ```
+
+A `HistoryEntry` is a whole project snapshot plus the label the UI shows in the undo
+menu — not a patch and not a diff.
 
 Every mutation is a pure function in `src/core/document/`:
 
@@ -156,18 +174,31 @@ A character is a **rig**: an ordered list of named parts (slots).
 
 ```
 CharacterDef.rig: PartDef[]     // head, torso, armL, armR, legL, legR, hair, ...
-CharacterDef.restPose: SlotTransforms   // the neutral T-pose-ish rest state
+PartDef.rest:    Transform2D    // the neutral rest transform, per part, relative to its parent
 ```
 
-Three independent override layers are composed at resolve time:
+**The rest state lives on the part, not on the character.** Each `PartDef` carries its
+own `rest` transform, `pivot`, `z`, `parent`, `slot` and `visible`. There is no
+`CharacterDef.restPose` field and no character-wide rest map; a part that is not drawn
+at rest is expressed by a part-level transform, which is what makes a rig composable
+from parts authored independently.
 
-1. **Rest pose** — `CharacterDef.restPose`
+**Four** override layers are composed at resolve time:
+
+1. **Rest** — `PartDef.rest`
 2. **Pose** — `PoseDef.slots` (a *partial* map; only the slots it names)
-3. **Keyframe** — `Clip.keyframes[].props` (may carry a transform and a pose/expression id)
+3. **Expression** — `ExpressionDef.slots` (per-slot shape, colour, transform and alpha)
+4. **Keyframe** — `Clip.keyframes[].props` (may carry a transform and a pose/expression id)
 
-`resolveActor(character, pose, expression, time)` walks the rig once and produces a
-flat draw list. Composition order is `rest <- pose <- keyframe`, with a transform
-stack for nesting (an arm part may itself contain a forearm child).
+Layers 1–3 are composed inside `src/core/render/resolve.ts`; layer 4 is applied by the
+caller in `src/core/render/render.ts` after resolution, because a keyframe may name a
+pose or expression that has to be re-resolved for that time. The effective order is
+therefore `rest <- pose <- expression <- keyframe`, and nothing bypasses it.
+
+`resolveRig(rig, { pose, expression })` walks the rig once and produces a flat draw
+list, with a transform stack for nesting (an arm part may itself contain a forearm
+child). `resolveCharacter(character, options)` is the public entry point that adds the
+character's placement transform and default pose/expression on top.
 
 **Expressions are not keyframed art.** They are per-slot overrides —
 `{ shape?: ShapeId, scale?, rotation?, alpha? }` — plus a mouth shape. This lets a
@@ -175,10 +206,14 @@ smirk be `browL: rotate(-6deg) + mouth: narrow` and reuse across every character
 It also means the app produces a real animated scene with **zero binary art
 assets**, which is what makes the MVP achievable before any artwork exists.
 
-Parts are `ShapeDef`s — vector primitives (`ellipse`, `roundRect`, `path`, `poly`)
-with palette slots. A part may later be swapped for an image via
-`{ kind: 'image', src }`; the renderer already handles both, so replacing vector
-parts with painted art is a data change, not a code change.
+Parts are `ShapeDef`s — the vector primitives `ellipse`, `rect`, `roundRect`, `path`,
+plus `image` for painted art. A part may be authored as vectors today and swapped for
+`{ kind: 'image', src, w, h }` later, because the renderer already implements both
+branches. One caveat, stated so nobody counts on it: nothing in the app supplies the
+`RenderOptions.images` map the image branch reads, and no seed part uses `kind:
+'image'`, so that branch is implemented and reachable through the pure API but is not
+yet exercised by real content. Replacing vector parts with painted art is a data change
+plus an image resolver; it is not a renderer change.
 
 ---
 
@@ -204,38 +239,61 @@ leaves, using that keyframe's `ease`. The **discrete** channels — `poseId`,
 expression should change, not smear between two faces. `ease: 'step'` additionally
 makes motion stepped.
 
-`clampTime()` semantics: a track contributes a value only while
-`clip.start <= t < clip.start + clip.duration`. Before/after a clip, the actor falls
-back to its scene-authored rest state, so deleting a clip can never strand a
-character in an animated position.
+Clip windows are **half-open**: a track contributes a value only while
+`clip.start <= t < clip.start + clip.duration`. There is no `clampTime()` helper by
+that name; the window test lives with the samplers in `src/core/animation/`, and
+`src/core/animation/frame.invariants.test.ts` is what pins the boundary behaviour down.
+Before or after a clip the actor falls back to its scene-authored rest state, so
+deleting a clip can never strand a character in an animated position.
 
 ---
 
 ## 7. PERSISTENCE
 
-`ProjectRepository` is an interface. `IndexedDbProjectRepository` is the only
-implementation and the only place in the codebase that touches IndexedDB.
+`ProjectRepository` is an interface, and `IndexedDbProjectRepository` is its only
+implementation.
 
 ```
 src/core/persistence/repository.ts        // interface + DTOs
-src/core/persistence/indexedDb.browser.ts // implementation
+src/core/persistence/db.browser.ts        // the database schema: one version, one upgrade
+src/core/persistence/indexedDb.browser.ts // the repository implementation
+src/core/persistence/media.browser.ts     // the media store, same database
 ```
 
-Core stays pure because the interface is pure; only the `*.browser.ts` file may use
+`db.browser.ts` is the one place that knows the shape of the local database. The
+project repository and the media store deliberately share it, because splitting the
+schema across two modules is how a database ends up at version 2 with a `media` store
+that only exists if some other module happened to open it first. The `*.browser.ts`
+files in this directory are the only code that opens IndexedDB; `src/state/` imports
+the repository and the availability probe, never the raw API.
+
+Core stays pure because the interface is pure; only the `*.browser.ts` files may use
 browser globals (per RULE 5). A future `HttpProjectRepository` slots in without the
 editor noticing.
 
 Serialization writes `{ formatVersion, project }` and **migrates forward** on load.
-`migrateProject` is an ordered list of `(version) => (doc) => doc`. Adding a field
-means appending a step and bumping the version — old projects keep opening.
+`MIGRATIONS` in `src/core/serialize.ts` is an ordered array of
+`(project, fromVersion) => project`; index *i* upgrades a project from version *i+1* to
+*i+2*. There is one step today — v1 to v2, which backfills the fields v2 added and
+refuses to guess where a guess would be wrong. Adding a field means appending a step and
+bumping `CURRENT_FORMAT_VERSION`; old projects keep opening. `src/core/io/projectIo.ts`
+refuses to write a file it could not reopen, so the ladder and the writer cannot drift
+apart silently.
 
 **Media is not embedded.** The project JSON references audio by `AudioDef.id`/`src`;
-binary blobs live in IndexedDB. A `.zanza.json` file is diffable and versionable,
-which is the point of a structured project format.
+binary blobs live in the `media` store in the same IndexedDB database. A
+`.zanza.json` file is diffable and versionable, which is the point of a structured
+project format.
 
-Autosave debounces 800 ms after the last commit and also flushes on
-`visibilitychange`. On boot the store loads the last project, or seeds the
-ZANZA demo project if the database is empty.
+Autosave debounces 800 ms after the last commit and also flushes on `pagehide` and
+`visibilitychange` (`src/state/autosaveLifecycle.browser.ts`), so a tab closed or
+backgrounded within the debounce window does not lose the last edit.
+
+**Boot does not auto-open or auto-seed anything.** On launch the app shows the project
+browser; the user opens, imports, or creates a project. The ZANZA demo project exists
+as `SEED_PROJECT` in `src/data/seed.ts` and is the fixture the tests run against, but
+the app does not write it into a fresh database. That is deliberate — a tool that
+silently invents a project in your storage is a tool you have to go clean up.
 
 ---
 
@@ -243,12 +301,15 @@ ZANZA demo project if the database is empty.
 
 The renderer is pure, so it is unit-testable with a **recording canvas context**
 (`src/test/recordingContext.ts`) that logs draw calls. That lets us assert *what was
-drawn* — draw order, that Kito is occluded by the foreground, that the camera
-applied a zoom — without a GPU, a browser, or a snapshot library.
+drawn* — draw order, that a camera zoom changed the emitted transform, that an
+expression swapped a part's shape — without a GPU, a browser, or a snapshot library.
+Draw-order assertions are how layer and `z` regressions get caught; a named
+character being occluded by a foreground layer is a scene-specific expectation and is
+not a test that exists today.
 
 The single most valuable test in the repo is the **determinism test**:
 `renderScene` at the same `(scene, time)` must produce an identical draw-command
-log. If that ever fails, export is broken. See `src/core/render/render.test.ts`.
+log. If that ever fails, export is broken. See `src/data/render.test.ts`.
 
 ---
 
@@ -261,11 +322,22 @@ ui  ->  state  ->  core  ->  (nothing)
 - `core` imports no React, no DOM globals, no Zustand, and no `data/`.
 - `state` imports `core` and may use browser APIs inside `.browser.ts` files.
 - `ui` imports `state` and `core` types. UI components never mutate the project.
-- `data` imports `core` types only. `data` is the only place ZANZA canon lives.
+- `data` imports from `core` — mostly types, but also real values such as the shape
+  constructors in `src/core/render/shapes.ts` and the factories in
+  `src/core/document/factories.ts`. `data` is the only place ZANZA canon lives, and it
+  is still downstream of `core`, so the arrow above is unchanged. What the rule forbids
+  is the reverse: `core` importing content.
 
-Content-agnosticism is tested directly: a test seeds a synthetic character
-`"test.puppet"` and asserts the renderer and selectors handle it identically to
-Nia. That is RULE 3 made mechanical.
+**This rule is a review convention, not an enforced one.** Nothing in the build fails
+when a `core` file reaches upward — there is no lint rule or import-boundary test for
+it. `src/arch/layering.test.ts`, which would enforce it, is listed as planned in
+`docs/ARCHITECTURE_SPEC.md` and does not exist yet. Treat the arrow as the rule and the
+absence of a gate as the known gap, not as permission.
+
+Content-agnosticism, by contrast, **is** tested directly:
+`src/data/rule3.test.ts` seeds a synthetic character `char.synthetic_tester` and
+asserts the renderer and selectors handle it identically to the seed cast. That is
+RULE 3 made mechanical.
 
 ---
 
@@ -273,12 +345,14 @@ Nia. That is RULE 3 made mechanical.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Vector art looks crude | Poor perceived quality | Palette + palette-slot theming; swap to image parts per part, no code change |
+| Vector art looks crude | Poor perceived quality | Palette + palette-slot theming; swap to image parts per part, no renderer change |
 | Snapshot history memory | Cap memory | Hard cap at 100; documents are small JSON |
-| `MediaRecorder` WebM export | Chrome/Firefox support differs, no MP4 | Feature-detect and report honestly; PNG-sequence fallback is planned |
+| No single-file video output | Nothing to upload to a social platform | **Not built, and stated as such.** Export is a PNG sequence plus a WAV mixdown. `docs/adr/001-video-encoding.md` records why no muxer is present; `MediaRecorder` is a browser-dependent WebM path and is deliberately not taken |
 | No lip sync | Dialogue looks static | Mouth shapes swap per line; real phoneme sync is a later phase |
 | Single user, no cloud | Can't collaborate | Repository interface is the seam; no editor code assumes local storage |
-| No audio assets ship | Export is video-only | Audio pipeline is real and exercised by tests with generated tones; sample audio is a content task |
+| No audio assets ship | Exported mixdown is silent or near-silent | The audio pipeline is real and tested with synthesised buffers, but the seed content has no real audio, so a fresh export is silent unless audio is attached. Shipping sample audio is a content task, not an engineering one |
+| No dirty check on the stage loop | Idle editor redraws at 60 fps | Accepted for now; the cost is a few hundred allocations and a handful of fills per frame, and the fix is a small change isolated to `src/ui/Stage.tsx` |
+| Layer rule is unenforced | An upward import could land unnoticed | Review convention plus the plan to add `src/arch/layering.test.ts`. Named here as a gap rather than presented as a guarantee |
 
 **Honest status labels** are used throughout the docs and UI: *implemented*,
 *prototype*, *placeholder*, *planned*. A greyed-out button is labelled *planned*,
@@ -294,5 +368,6 @@ React re-renders panels on state change; the canvas redraws independently at dis
 refresh. A 60 fps playhead would otherwise cause 60 React renders/second of the
 whole panel tree.
 
-The loop skips the frame entirely when nothing is animating and the playhead has
-not changed, so an idle editor costs no CPU. React owns chrome; the loop owns pixels.
+The loop draws every frame while a scene is open, so an idle editor currently
+redraws at display refresh. React owns chrome; the loop owns pixels. See §2 for why
+there is no dirty check yet.
