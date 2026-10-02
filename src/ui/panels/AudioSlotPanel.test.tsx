@@ -67,7 +67,8 @@ describe('an empty slot', () => {
         project={projectWith(emptySlot)}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByTestId('audio-no-file')).toBeInTheDocument();
@@ -79,7 +80,8 @@ describe('an empty slot', () => {
         project={projectWith(emptySlot)}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     const clear = await screen.findByRole('button', { name: 'Clear audio for Room tone' });
@@ -92,7 +94,8 @@ describe('an empty slot', () => {
         project={projectWith(emptySlot)}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     const play = await screen.findByRole('button', { name: 'Play Room tone' });
@@ -109,7 +112,8 @@ describe('an attached slot', () => {
         project={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByText('room-tone.wav')).toBeInTheDocument();
@@ -126,7 +130,8 @@ describe('an attached slot', () => {
         project={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByRole('button', { name: 'Play Room tone' })).toBeEnabled();
@@ -142,6 +147,7 @@ describe('an attached slot', () => {
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(async () => false)}
+        onPlaceInScene={vi.fn()}
       />,
     );
     const play = await screen.findByRole('button', { name: 'Play Room tone' });
@@ -160,7 +166,8 @@ describe('an attached slot', () => {
         project={attached}
         onAttach={vi.fn()}
         onClear={onClear}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     (await screen.findByRole('button', { name: 'Clear audio for Room tone' })).click();
@@ -180,7 +187,8 @@ describe('a slot whose media is missing from storage', () => {
         project={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByTestId('audio-missing-media')).toBeInTheDocument();
@@ -194,7 +202,8 @@ describe('a slot whose media is missing from storage', () => {
         project={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByRole('button', { name: 'Clear audio for Room tone' })).toBeEnabled();
@@ -208,7 +217,8 @@ describe('the panel in other states', () => {
         project={null}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -221,7 +231,8 @@ describe('the panel in other states', () => {
         project={{ assets: { audio: [] } }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(project.assets.audio).toHaveLength(1); // the starter declares one
@@ -239,7 +250,8 @@ describe('the panel in other states', () => {
         project={{ assets: { audio: many } }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
-        onPreview={vi.fn()}
+        onPreview={vi.fn(() => Promise.resolve(true))}
+        onPlaceInScene={vi.fn()}
       />,
     );
     expect(await screen.findByText('Room tone')).toBeInTheDocument();

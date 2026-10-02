@@ -19,7 +19,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { createScene, createProject } from '../core/document/factories';
 import { setSceneDuration } from '../core/document/projectOps';
 import { SEED_PROJECT } from '../data/seed';
-import { useEditor } from './editorStore';
+import { attachAudioMedia } from '../core/document/projectOps';
+import { useEditor, episodeExportTarget } from './editorStore';
 import type { Project } from '../core/types';
 
 // jsdom has no IndexedDB, so the repository is stubbed. `vi.mock` is hoisted above
@@ -596,5 +597,277 @@ describe('editorStore episode playback', () => {
     // not.
     useEditor.getState().advancePlayback(1e6);
     expect(useEditor.getState().playhead).toBeLessThanOrEqual(TOTAL);
+  });
+});
+
+/**
+ * Building a cut, which is the only way a scene becomes exportable.
+ *
+ * The episode is the exporter's unit, so this pair of actions is the whole difference
+ * between a project you can export and one you cannot. Both go through `commit`, so both are
+ * undoable — a mis-click on a cut list should never cost more than one step back.
+ */
+describe('editorStore episodes', () => {
+  beforeEach(reset);
+
+  /** The cut of the episode just created, located by the id the action handed back. */
+  function newCut(episodeId: string | null): string[] {
+    if (episodeId === null) throw new Error('episode not created');
+    const found = currentProject().episodes.find((e) => e.id === episodeId);
+    if (!found) throw new Error(`episode ${episodeId} is not in the document`);
+    return found.sceneIds;
+  }
+
+  it('creates an episode and hands back its id', () => {
+    const id = useEditor.getState().createEpisode('Cut 002');
+    expect(id).not.toBeNull();
+    // The seed already has an episode, so the new one is located by id rather than by
+    // position — a test that assumed index 0 would pass for the wrong reason.
+    expect(currentProject().episodes.map((e) => e.title)).toContain('Cut 002');
+    expect(currentProject().episodes.some((e) => e.id === id)).toBe(true);
+  });
+
+  it('returns no id when there is no project to add an episode to', () => {
+    useEditor.setState({ project: null });
+    expect(useEditor.getState().createEpisode('Cut 002')).toBeNull();
+  });
+
+  it('puts a scene into the episode', () => {
+    const scene = currentProject().scenes[1];
+    if (!scene) throw new Error('Seed project needs a second scene');
+    const episodeId = useEditor.getState().createEpisode('Cut 002');
+
+    useEditor.getState().addSceneToEpisode(scene.id, episodeId ?? '');
+
+    expect(newCut(episodeId)).toEqual([scene.id]);
+  });
+
+  it('undoes putting a scene into the episode', () => {
+    const scene = currentProject().scenes[1];
+    if (!scene) throw new Error('Seed project needs a second scene');
+    const episodeId = useEditor.getState().createEpisode('Cut 002');
+
+    useEditor.getState().addSceneToEpisode(scene.id, episodeId ?? '');
+    useEditor.getState().undo();
+
+    expect(newCut(episodeId)).toEqual([]);
+  });
+
+  it('appends rather than replacing, so the cut keeps its order', () => {
+    const [first, second] = currentProject().scenes;
+    if (!first || !second) throw new Error('Seed project needs two scenes');
+    const episodeId = useEditor.getState().createEpisode('Cut 002');
+    const id = episodeId ?? '';
+
+    useEditor.getState().addSceneToEpisode(first.id, id);
+    useEditor.getState().addSceneToEpisode(second.id, id);
+
+    expect(newCut(episodeId)).toEqual([first.id, second.id]);
+  });
+
+  it('records nothing when the scene is already in the cut', () => {
+    const scene = currentProject().scenes[1];
+    if (!scene) throw new Error('Seed project needs a second scene');
+    const episodeId = useEditor.getState().createEpisode('Cut 002');
+    const id = episodeId ?? '';
+    useEditor.getState().addSceneToEpisode(scene.id, id);
+
+    const depth = useEditor.getState().past.length;
+    useEditor.getState().addSceneToEpisode(scene.id, id);
+
+    // A history entry that undoes nothing is worse than none: the user presses undo and the
+    // cut appears unchanged, so they press it again and lose real work.
+    expect(useEditor.getState().past.length).toBe(depth);
+    expect(newCut(episodeId)).toEqual([scene.id]);
+  });
+
+  it('refuses an episode that is not in the document', () => {
+    const scene = currentProject().scenes[1];
+    if (!scene) throw new Error('Seed project needs a second scene');
+    const depth = useEditor.getState().past.length;
+
+    useEditor.getState().addSceneToEpisode(scene.id, 'episode.nope');
+
+    expect(useEditor.getState().status).toBe('error');
+    expect(useEditor.getState().past.length).toBe(depth);
+  });
+});
+
+/**
+ * Putting a slot into the scene, which is the difference between a recording that exists and
+ * a sound the cut plays.
+ *
+ * The defect this exists to prevent is silent and total: with no clip, an episode full of
+ * attached audio exports a WAV of the right length containing nothing, and every layer above
+ * reports success. The seed's slots are all fileless, so these tests attach a synthetic
+ * reference rather than relying on the demo's silence.
+ */
+describe('editorStore audio placement', () => {
+  // Slots the seed does not already place in the first scene, so "not yet in the scene" is a
+  // real starting state rather than a claim about the demo project.
+  const SLOT = 'audio.ambience.street';
+  const oneShot = 'audio.sfx.door_open';
+
+  /** The open scene's audio clips, as `audioPlan` will read them. */
+  function placedClips(audioId: string): { duration: number; start: number }[] {
+    const scene = currentProject().scenes.find((s) => s.id === useEditor.getState().sceneId);
+    if (!scene) throw new Error('no open scene');
+    return scene.tracks
+      .filter((t) => t.kind === 'audio')
+      .flatMap((t) => t.clips)
+      .filter((c) => c.audioId === audioId)
+      .map((c) => ({ duration: c.duration, start: c.start }));
+  }
+
+  function attach(audioId: string, duration: number): void {
+    useEditor.setState({
+      project: attachAudioMedia(currentProject(), audioId, `media_${audioId}`, duration),
+    });
+  }
+
+  beforeEach(() => {
+    reset();
+    const scene = currentProject().scenes[0];
+    if (!scene) throw new Error('Seed project needs a scene');
+    useEditor.setState({ sceneId: scene.id, playbackMode: 'scene-wrap' });
+  });
+
+  it('reports a slot with no clip as not in the scene', () => {
+    expect(useEditor.getState().audioSlotIsPlacedInScene(SLOT)).toBe(false);
+  });
+
+  it('places an ambience slot for the length of the scene', () => {
+    const scene = currentProject().scenes[0];
+    if (!scene) throw new Error('Seed project needs a scene');
+    attach(SLOT, 2);
+
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+
+    // Ambience loops inside its window, so the window is the whole scene and the 2s file
+    // repeats to fill it. Clipping it to 2s would make a bed that stops in a 12s scene.
+    expect(placedClips(SLOT)).toEqual([{ start: 0, duration: scene.duration }]);
+    expect(useEditor.getState().audioSlotIsPlacedInScene(SLOT)).toBe(true);
+  });
+
+  it('places a one-shot for its measured length rather than the scene length', () => {
+    const scene = currentProject().scenes[0];
+    if (!scene) throw new Error('Seed project needs a scene');
+    expect(scene.duration).toBeGreaterThan(3);
+    attach(oneShot, 1.5);
+
+    useEditor.getState().placeAudioSlotInScene(oneShot);
+
+    expect(placedClips(oneShot)).toEqual([{ start: 0, duration: 1.5 }]);
+  });
+
+  it('refuses a slot with no file behind it', () => {
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+    expect(placedClips(SLOT)).toEqual([]);
+    expect(useEditor.getState().status).toBe('error');
+  });
+
+  it('refuses a one-shot whose length was never measured', () => {
+    // A window guessed at 0 is a clip that either plays nothing or plays something the
+    // operator did not choose. Neither is an acceptable answer.
+    attach(oneShot, 0);
+    useEditor.getState().placeAudioSlotInScene(oneShot);
+    expect(placedClips(oneShot)).toEqual([]);
+    expect(useEditor.getState().status).toBe('error');
+  });
+
+  it('undoes the placement', () => {
+    attach(SLOT, 2);
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+    useEditor.getState().undo();
+    expect(placedClips(SLOT)).toEqual([]);
+  });
+
+  it('places the same slot only once, however many times it is asked', () => {
+    attach(SLOT, 2);
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+    const depth = useEditor.getState().past.length;
+
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+
+    // A doubled bed is the kind of mistake nobody notices until the export is mixed, and
+    // the record that undoes nothing is how it survives an undo.
+    expect(placedClips(SLOT)).toHaveLength(1);
+    expect(useEditor.getState().past.length).toBe(depth);
+  });
+
+  it('places into whichever scene is open, not the first one', () => {
+    const second = currentProject().scenes[1];
+    if (!second) throw new Error('Seed project needs a second scene');
+    attach(SLOT, 2);
+    useEditor.setState({ sceneId: second.id });
+
+    useEditor.getState().placeAudioSlotInScene(SLOT);
+
+    const first = currentProject().scenes[0];
+    const firstClips =
+      first?.tracks.filter((t) => t.kind === 'audio').flatMap((t) => t.clips).filter((c) => c.audioId === SLOT) ?? [];
+    expect(firstClips).toEqual([]);
+    expect(placedClips(SLOT)).toHaveLength(1);
+  });
+});
+
+/**
+ * The exporter reads the transport from the other side: its position has to be on the
+ * episode clock even when the playhead is on the scene clock.
+ *
+ * Getting this wrong is silent. The panel would still draw, still produce the right number
+ * of frames, and still write files — it would just export scene one over and over, or
+ * export the wrong half of the cut, and nothing in the file says so.
+ */
+describe('episodeExportTarget', () => {
+  const SECOND = SEED_PROJECT.scenes[1];
+  if (!SECOND) throw new Error('Seed project needs a second scene');
+
+  it('reports no target when there is no project or no episode', () => {
+    expect(episodeExportTarget(null, 'scene-wrap', '', 0)).toEqual({ episodeId: null, episodeTime: 0 });
+    const noEpisode = createProject('No episode');
+    expect(episodeExportTarget(noEpisode, 'scene-wrap', '', 0)).toEqual({
+      episodeId: null,
+      episodeTime: 0,
+    });
+  });
+
+  it('passes the playhead through in episode-advance mode', () => {
+    const target = episodeExportTarget(SEED_PROJECT, 'episode-advance', SECOND.id, 7);
+    expect(target.episodeId).toBe(SEED_PROJECT.episodes[0]?.id);
+    expect(target.episodeTime).toBeCloseTo(7, 6);
+  });
+
+  it('offsets a scene-local playhead by where the scene starts in the cut', () => {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project needs a first scene');
+    const sceneLocal = episodeExportTarget(SEED_PROJECT, 'scene-wrap', SECOND.id, 0);
+    const episodeLocal = episodeExportTarget(SEED_PROJECT, 'episode-advance', SECOND.id, 0);
+
+    // The whole point: the same playhead means two different instants, and the exporter
+    // must be told the later one. Scene one is 12s in the seed, so the second scene's local
+    // zero is not the episode's zero.
+    expect(sceneLocal.episodeTime).toBeCloseTo(first.duration, 6);
+    expect(sceneLocal.episodeTime).not.toBeCloseTo(episodeLocal.episodeTime, 3);
+  });
+
+  it('clamps a scene playhead to that scene, not to the cut', () => {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project needs a first scene');
+    const past = episodeExportTarget(SEED_PROJECT, 'scene-wrap', SECOND.id, 9999);
+    expect(past.episodeTime).toBeCloseTo(first.duration + SECOND.duration, 6);
+  });
+
+  it('never reports a position past the end of the episode', () => {
+    const episode = SEED_PROJECT.episodes[0];
+    if (!episode) throw new Error('Seed project needs an episode');
+    const expected = episode.sceneIds.reduce((total, id) => {
+      const scene = SEED_PROJECT.scenes.find((s) => s.id === id);
+      if (!scene) throw new Error(`Seed episode references missing scene ${id}`);
+      return total + scene.duration;
+    }, 0);
+
+    const target = episodeExportTarget(SEED_PROJECT, 'episode-advance', SECOND.id, 9999);
+    expect(target.episodeTime).toBeCloseTo(expected, 6);
   });
 });

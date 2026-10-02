@@ -6,8 +6,8 @@
  * not logic.
  */
 
-import { useEffect, useMemo } from 'react';
-import { useEditor } from '../state/editorStore';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useEditor, episodeExportTarget } from '../state/editorStore';
 import { bindFlushToPageLifecycle } from '../state/autosaveLifecycle.browser';
 import { ProjectBrowser } from './ProjectBrowser';
 import { Stage } from './Stage';
@@ -19,6 +19,7 @@ import { IssuePanel } from './panels/IssuePanel';
 import { Timeline } from './panels/Timeline';
 import { CameraPanel } from './panels/CameraPanel';
 import { DialoguePanel } from './panels/DialoguePanel';
+import { ExportPanel } from './panels/ExportPanel';
 
 /**
  * True when a keystroke belongs to whatever the user is typing into.
@@ -46,14 +47,25 @@ export function App(): React.JSX.Element {
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
   const createScene = useEditor((s) => s.createScene);
+  const createEpisode = useEditor((s) => s.createEpisode);
+  const addSceneToEpisode = useEditor((s) => s.addSceneToEpisode);
   const closeProject = useEditor((s) => s.closeProject);
   const duplicateOpenProject = useEditor((s) => s.duplicateOpenProject);
   const attachAudioFile = useEditor((s) => s.attachAudioFile);
   const clearAudioFile = useEditor((s) => s.clearAudioFile);
   const previewAudio = useEditor((s) => s.previewAudio);
+  const placeAudioSlotInScene = useEditor((s) => s.placeAudioSlotInScene);
+  const isAudioSlotPlaced = useEditor((s) => s.audioSlotIsPlacedInScene);
   const status = useEditor((s) => s.status);
   const statusMessage = useEditor((s) => s.statusMessage);
   const clearStatus = useEditor((s) => s.clearStatus);
+  const showSubtitles = useEditor((s) => s.showSubtitles);
+  // The exporter's position is derived from four store values, so it is computed from them
+  // here rather than selected. `useEditor((s) => s.exportTarget())` would return a fresh
+  // object every read, and a selector whose result is never referentially equal re-renders
+  // `useSyncExternalStore` until React reports "maximum update depth exceeded".
+  const playbackMode = useEditor((s) => s.playbackMode);
+  const playhead = useEditor((s) => s.playhead);
 
   // Fit the stage to the viewport rather than tracking it per-pixel: a resize
   // handler that re-renders on every mousemove during a window drag is wasted work.
@@ -108,6 +120,37 @@ export function App(): React.JSX.Element {
     const found = project.scenes.find((s) => s.id === sceneId);
     return found ?? project.scenes[0] ?? null;
   }, [project, sceneId]);
+
+  // Declared after `scene` so it can name the scene actually on the stage — the store's
+  // `sceneId` may be stale, and `scene` is the one the stage and the transport agree on.
+  const openSceneId = scene?.id ?? sceneId;
+  const exportTarget = useMemo(
+    () => episodeExportTarget(project, playbackMode, openSceneId, playhead),
+    [project, playbackMode, openSceneId, playhead],
+  );
+
+  /**
+   * Make a cut containing the scene the button was clicked on.
+   *
+   * The scene is added as part of the same gesture, because the click came from that scene's
+   * own membership menu and an empty episode is not what anyone opening it wanted. The button
+   * says so, and the pair is still two commits, so undo takes them back one at a time.
+   *
+   * The scene comes in as an argument because the menu hangs off every row. Reading the open
+   * scene from the store instead would build the cut out of whatever is on stage, which is
+   * not the row that was clicked.
+   */
+  const promptNewEpisode = useCallback(
+    (sceneId: string): void => {
+      if (!project) return;
+      const next = project.episodes.length + 1;
+      const title = window.prompt('Episode title', `Episode ${String(next).padStart(3, '0')}`);
+      if (title === null || title.trim() === '') return;
+      const created = createEpisode(title.trim());
+      if (created !== null) addSceneToEpisode(sceneId, created);
+    },
+    [project, createEpisode, addSceneToEpisode],
+  );
 
   // No project open is a first-class state, not an error: this is a multi-project
   // workspace, and the browser is what you are looking at between projects. Rendering
@@ -212,6 +255,9 @@ export function App(): React.JSX.Element {
             activeSceneId={scene.id}
             onSelect={setScene}
             onCreate={createScene}
+            episodes={project.episodes}
+            onAddToEpisode={addSceneToEpisode}
+            onCreateEpisode={promptNewEpisode}
           />
           <CameraPanel />
           <DialoguePanel />
@@ -221,6 +267,14 @@ export function App(): React.JSX.Element {
             onAttach={attachAudioFile}
             onClear={clearAudioFile}
             onPreview={previewAudio}
+            onPlaceInScene={placeAudioSlotInScene}
+            isPlaced={isAudioSlotPlaced}
+          />
+          <ExportPanel
+            project={project}
+            episodeId={exportTarget.episodeId}
+            currentTime={exportTarget.episodeTime}
+            subtitles={showSubtitles}
           />
         </aside>
 

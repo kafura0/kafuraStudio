@@ -26,6 +26,17 @@ export interface AudioSlotPanelProps {
   onAttach: (audioId: Id, file: File) => Promise<void>;
   onClear: (audioId: Id) => void;
   onPreview: (audioId: Id) => Promise<boolean>;
+  /**
+   * Put the slot into the open scene.
+   *
+   * Separate from attaching because they are separate facts. A slot with bytes is a
+   * recording that exists; a slot with a clip is a sound the scene plays. Only the second
+   * reaches the engine and the mixdown, and the panel offers both rather than pretending one
+   * implies the other.
+   */
+  onPlaceInScene: (audioId: Id) => void;
+  /** True when this slot is already placed in the open scene, so the button can say so. */
+  isPlaced?: (audioId: Id) => boolean;
 }
 
 export function AudioSlotPanel({
@@ -33,6 +44,8 @@ export function AudioSlotPanel({
   onAttach,
   onClear,
   onPreview,
+  onPlaceInScene,
+  isPlaced,
 }: AudioSlotPanelProps): React.JSX.Element | null {
   const [present, setPresent] = useState<Map<Id, MediaMeta>>(new Map());
   /**
@@ -116,6 +129,8 @@ export function AudioSlotPanel({
               onAttach={onAttach}
               onClear={onClear}
               onPreview={onPreview}
+              onPlaceInScene={onPlaceInScene}
+              isPlaced={isPlaced?.(def.id) ?? false}
             />
           );
         })}
@@ -138,6 +153,9 @@ interface AudioSlotRowProps {
   onAttach: (audioId: Id, file: File) => Promise<void>;
   onClear: (audioId: Id) => void;
   onPreview: (audioId: Id) => Promise<boolean>;
+  onPlaceInScene: (audioId: Id) => void;
+  /** The open scene already carries a clip for this slot. */
+  isPlaced: boolean;
 }
 
 function AudioSlotRow({
@@ -147,6 +165,8 @@ function AudioSlotRow({
   onAttach,
   onClear,
   onPreview,
+  onPlaceInScene,
+  isPlaced,
 }: AudioSlotRowProps): React.JSX.Element {
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -264,6 +284,23 @@ function AudioSlotRow({
           className="rounded border border-ink-700 px-1.5 py-0.5 text-[10px] text-ink-400 hover:bg-ink-800 disabled:opacity-50"
         >
           Clear
+        </button>
+        {/*
+          The scene button reads "In scene" once the clip exists, because a live-looking
+          button that does nothing on the second click is how a sound gets doubled in an
+          export without anyone deciding to double it.
+        */}
+        <button
+          type="button"
+          disabled={busy || def.src === null || isPlaced}
+          onClick={() => {
+            onPlaceInScene(def.id);
+            setMessage(null);
+          }}
+          aria-label={`${isPlaced ? 'Already in' : 'Add'} ${def.name} to the open scene`}
+          className="rounded border border-ink-700 px-1.5 py-0.5 text-[10px] text-ink-200 hover:bg-ink-800 disabled:opacity-50"
+        >
+          {isPlaced ? 'In scene' : 'Add to scene'}
         </button>
       </div>
 

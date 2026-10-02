@@ -22,10 +22,12 @@ import {
   addEpisode,
   attachAudioMedia,
   createSceneInProject,
+  addSceneToEpisode as addSceneToEpisodeOp,
   deleteScene as deleteSceneOp,
   detachAudioMedia,
   touch,
 } from '../core/document/projectOps';
+import { addSimpleClip } from '../core/document/trackOps';
 import { starterAssetLibrary } from '../data/starter';
 import { duplicateProject, importProject } from '../core/io/projectIo';
 import { ProjectParseError } from '../core/serialize';
@@ -163,6 +165,16 @@ export interface EditorState {
    * re-deriving the mapping.
    */
   playbackPosition: () => { sceneId: Id; sceneTime: number };
+  /**
+   * The active episode and the episode-clock time of the current playhead.
+   *
+   * The exporter samples episode time, not scene time, and the two are not the same
+   * number: in `scene-wrap` the playhead counts from the start of the open scene, so
+   * handing it straight to the exporter would export the *first* scene's worth of frames
+   * for every scene the user was looking at. This is the one place that knows the
+   * conversion, which is why the panel asks for it rather than reading `playhead`.
+   */
+  exportTarget: () => { episodeId: Id | null; episodeTime: number };
   select: (kind: SelectionKind, id: Id | null) => void;
 
   /* --- history --- */
@@ -244,8 +256,22 @@ export interface EditorState {
    * that is disabled on every project the user just created.
    */
   createScene: (name: string, environmentId?: Id) => void;
-  /** Add an episode. Episodes are containers for scenes, so this is safe on an empty project. */
-  createEpisode: (title: string) => void;
+  /**
+   * Add an episode, and return its id.
+   *
+   * The id comes back because the caller nearly always wants to put something in the cut it
+   * just made, and the alternative — reading the new project's last entry afterwards —
+   * assumes an append order from a place that has no business knowing it.
+   */
+  createEpisode: (title: string) => Id | null;
+  /**
+   * Put a scene into an episode's cut.
+   *
+   * The exporter's unit is the episode, and an episode with no scenes has nothing to
+   * export, so this is the action that makes a scene reachable to Phase 12 at all. It goes
+   * through `commit` like every other document change, so a mis-click on a cut is one undo.
+   */
+  addSceneToEpisode: (sceneId: Id, episodeId: Id) => void;
   /** Delete a scene, and drop it from every episode that referenced it. */
   deleteScene: (sceneId: Id) => void;
 
@@ -262,6 +288,30 @@ export interface EditorState {
    * undo may still need them.
    */
   attachAudioFile: (audioId: Id, file: File) => Promise<void>;
+  /**
+   * Put an audio slot into the open scene, so it is actually heard and mixed.
+   *
+   * Attaching a file gives a slot bytes; it does not make a sound. `audioPlan` reads clips,
+   * and without a clip a slot is a declaration that never reaches the engine or the mixdown
+   * — which is why an episode with attached audio can still export a silent file. This is
+   * the action that closes that gap, and it is why the export panel can be honest about
+   * whether anything was mixed.
+   *
+   * The clip is placed rather than looped by hand: an ambience asset fills the scene, since
+   * `audioPlan` decides looping from the asset's `kind`, and anything else is bounded by the
+   * length the slot actually measured. Repeating the call is a no-op rather than a second
+   * clip, so an operator who clicks twice does not get the sound twice.
+   */
+  placeAudioSlotInScene: (audioId: Id) => void;
+  /**
+   * Whether the open scene already carries a clip for this slot.
+   *
+   * The read side of `placeAudioSlotInScene`, in the store rather than the panel, because
+   * "is this sound in the scene" is a question about the document and the panel is a view.
+   * It is a method rather than derived state so selecting it hands React a stable function,
+   * which is what keeps a panel from re-rendering forever.
+   */
+  audioSlotIsPlacedInScene: (audioId: Id) => boolean;
   /**
    * Forget the media a slot points at, leaving the slot declared but empty.
    *
@@ -327,6 +377,56 @@ let pendingSave: Promise<unknown> = Promise.resolve();
  */
 function activeEpisodeId(project: Project): Id | null {
   return project.episodes[0]?.id ?? null;
+}
+
+/** The episode a panel or exporter acts on, and where on the episode clock it is. */
+export interface ExportTarget {
+  episodeId: Id | null;
+  episodeTime: number;
+}
+
+const NO_EXPORT_TARGET: ExportTarget = { episodeId: null, episodeTime: 0 };
+
+/**
+ * The transport's position expressed on the episode clock, as the exporter needs it.
+ *
+ * A pure function of its arguments rather than a store method, for one reason: the exporter
+ * is a *reader*, and a reader that pulls its inputs out of the store gives React no way to
+ * recompute it when those inputs change. The caller subscribes to the four primitives and
+ * calls this; that keeps the dependency honest and the result memoable, where
+ * `useEditor((s) => s.exportTarget())` would produce a fresh object on every read and spin
+ * `useSyncExternalStore` forever.
+ *
+ * The mapping is the whole point. `playhead` is seconds into the open scene in `scene-wrap`
+ * and seconds into the episode in `episode-advance`, and the exporter always wants the
+ * latter. Handing it the former exports the first scene's worth of frames for every scene
+ * the user was looking at.
+ */
+export function episodeExportTarget(
+  project: Project | null,
+  playbackMode: PlaybackMode,
+  sceneId: Id,
+  playhead: number,
+): ExportTarget {
+  if (project === null) return NO_EXPORT_TARGET;
+  const episodeId = activeEpisodeId(project);
+  if (episodeId === null) return NO_EXPORT_TARGET;
+
+  const projectTimeline = buildEpisodeTimeline(project, episodeId);
+  const duration = projectTimeline?.duration ?? 0;
+
+  if (playbackMode === 'episode-advance') {
+    return { episodeId, episodeTime: clamp(playhead, 0, duration) };
+  }
+
+  // Scene-wrap: where the open scene starts in the cut, plus the local offset.
+  // `timeOfScene` is the same call `setPlaybackMode` makes in the other direction, so the
+  // two cannot disagree about where a scene sits. The scene's own duration is the ceiling,
+  // because a scene-wrap playhead is scrubbed against that scene and can legitimately sit
+  // on its final frame.
+  const offset = timeOfScene(projectTimeline, sceneId);
+  const sceneDuration = project.scenes.find((s) => s.id === sceneId)?.duration ?? 0;
+  return { episodeId, episodeTime: Math.min(offset + clamp(playhead, 0, sceneDuration), duration) };
 }
 
 /** A message a person can act on, from an unknown thrown value. */
@@ -493,6 +593,11 @@ export const useEditor = create<EditorState>((set, get) => {
       return { sceneId: position.sceneId, sceneTime: position.sceneTime };
     },
 
+    exportTarget: () => {
+      const state = get();
+      return episodeExportTarget(state.project, state.playbackMode, state.sceneId, state.playhead);
+    },
+
     advancePlayback: (dt) => {
       const state = get();
       if (!state.playing || dt <= 0 || state.project === null) return;
@@ -565,8 +670,29 @@ export const useEditor = create<EditorState>((set, get) => {
 
     createEpisode: (title) => {
       const state = get();
+      if (state.project === null) return null;
+      const next = addEpisode(state.project, title);
+      const created = next.episodes[next.episodes.length - 1];
+      if (!created) return null;
+      state.commit(next, `add episode "${title}"`);
+      return created.id;
+    },
+
+    addSceneToEpisode: (sceneId, episodeId) => {
+      const state = get();
       if (state.project === null) return;
-      state.commit(addEpisode(state.project, title), `add episode "${title}"`);
+      const episode = state.project.episodes.find((e) => e.id === episodeId);
+      if (!episode) {
+        set({ status: 'error', statusMessage: 'That episode no longer exists.' });
+        return;
+      }
+      // `addSceneToEpisode` is idempotent, so a second click must not record a history step
+      // that undoes nothing — the same rule every other no-op mutation follows.
+      if (episode.sceneIds.includes(sceneId)) return;
+      state.commit(
+        addSceneToEpisodeOp(state.project, episodeId, sceneId),
+        `add scene to episode "${episode.title}"`,
+      );
     },
 
     deleteScene: (sceneId) => {
@@ -580,6 +706,68 @@ export const useEditor = create<EditorState>((set, get) => {
       if (state.sceneId === sceneId) {
         set({ sceneId: next.scenes[0]?.id ?? '', playhead: 0, selection: { kind: null, id: null } });
       }
+    },
+
+    audioSlotIsPlacedInScene: (audioId) => {
+      const state = get();
+      if (state.project === null) return false;
+      const scene = state.project.scenes.find((s) => s.id === state.sceneId);
+      if (!scene) return false;
+      return scene.tracks.some((t) => t.kind === 'audio' && t.clips.some((c) => c.audioId === audioId));
+    },
+
+    placeAudioSlotInScene: (audioId) => {
+      const state = get();
+      if (state.project === null) return;
+      const def = state.project.assets.audio.find((a) => a.id === audioId);
+      if (!def) {
+        set({ status: 'error', statusMessage: 'That audio slot no longer exists.' });
+        return;
+      }
+      const scene = state.project.scenes.find((s) => s.id === state.sceneId);
+      if (!scene) {
+        set({ status: 'error', statusMessage: 'Open a scene before adding audio to it.' });
+        return;
+      }
+      if (def.src === null) {
+        set({
+          status: 'error',
+          statusMessage: `"${def.name}" has no file yet, so there is nothing to place.`,
+        });
+        return;
+      }
+
+      // Ambience fills the scene because the engine loops it inside the clip window. Anything
+      // else plays once, so its window is its measured length — and a slot whose length was
+      // never measured has no honest window to give it.
+      const length = def.kind === 'ambience' ? scene.duration : def.duration;
+      if (length <= 0) {
+        set({
+          status: 'error',
+          statusMessage: `"${def.name}" has no measured length, so its placement would be a guess.`,
+        });
+        return;
+      }
+
+      // Already placed means already decided. The length of a placed clip is a timing
+      // choice, and the timeline is where timing choices are made and undone; second-guessing
+      // it here would silently rewrite a decision the operator can see.
+      const placed = scene.tracks.some((t) =>
+        t.kind === 'audio' && t.clips.some((c) => c.audioId === audioId),
+      );
+      if (placed) return;
+
+      const { project: next } = addSimpleClip(
+        state.project,
+        scene.id,
+        'audio',
+        audioId,
+        def.name,
+        0,
+        length,
+        { audioId },
+      );
+      state.commit(next, `place audio "${def.name}"`);
     },
 
     attachAudioFile: async (audioId, file) => {
