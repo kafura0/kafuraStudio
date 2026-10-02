@@ -81,24 +81,29 @@ Concretely:
 
 - The exporter's deliverable is the PNG sequence and the mixdown. Both are complete,
   verifiable, and codec-free, and they are what `ExportPanel` offers as the export.
-- Video is offered as an extra when the browser can do it, labelled as best-effort, and
-  never required for the export to be considered done. It is a convenience for a person
-  who wants to hand someone one file, not the artifact the phase is judged on.
-- `MediaRecorder`'s real-time cost is accepted for that convenience, and stated in the UI
-  rather than hidden. A user who exports 38 seconds of video waits 38 seconds, and the
-  panel shows a progress bar while it happens.
+- Video is **not built in this phase**, and the panel says so in as many words: the
+  capability list carries `unavailable video-webm` with this ADR as its reason, and there is
+  no video control to click. An earlier draft of this ADR treated the `MediaRecorder` path as
+  a best-effort extra that the panel would offer; it was not built, and a decision record
+  that implies otherwise is worse than no record (RULE 9).
+- `MediaRecorder` remains the honest first choice *if* one-file video is ever wanted, on the
+  grounds that it needs no new dependency. Its cost is that it records in real time — a user
+  exporting 38 seconds of video waits 38 seconds — so it belongs behind the PNG sequence,
+  not in front of it.
 - No WebCodecs code, no muxer, and no new dependency in this phase.
 
 ## Consequences
 
 - `ExportFormat` already has `'webm' | 'png-sequence'`, and the PNG sequence is what ships
-  as the primary. The `'webm'` member is not used by the panel yet, and a half-implemented
-  enum member that nothing sets would be a placeholder, so it is left alone here rather
-  than wired to a path that does not exist.
+  as the primary. The `'webm'` member is not used by the panel, and a half-implemented enum
+  member that nothing sets would be a placeholder, so it is left alone here rather than wired
+  to a path that does not exist.
 - When a real video export is wanted later, this ADR is the thing to revisit. The two
   honest routes are then: accept the dependency and use `webm-muxer`, or write the muxer
-  and test it against files other players must read. Both are bigger than Phase 12, and
-  the PNG-plus-WAV route means the project is not blocked until they are done.
+  and test it against files other players must read. `MediaRecorder` sits ahead of both when
+  real-time recording is acceptable, and behind both when it is not. All three are bigger
+  than Phase 12, and the PNG-plus-WAV route means the project is not blocked until one is
+  done.
 - MVP check 8 ("export produces a playable video file") stays unmet until video is built
   and verified. It is reported as a gap rather than claimed. A `MediaRecorder` path that
   was never run in a real browser would not close it, and the panel's capability reporting

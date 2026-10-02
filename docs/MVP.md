@@ -121,9 +121,12 @@ are automated in `src/core/io/projectIo.test.ts` and
 `src/state/editorStore.lifecycle.test.ts` respectively. Check 3 (spacebar), 4 (undo),
 10 (RULE 3) and 11 (episode playback) are implemented and automated. Checks 1, 2, 5, 6
 and 7 are implemented and have been walked in a browser at 1920×1080 by the Phase 11
-acceptance run. Check 8 is the one that does not pass: Phase 12's gate is deliberately a
-PNG sequence plus a mixdown rather than a video file, so a playable video remains
-unbuilt and is reported here as a gap rather than claimed. Check 10 is the one the design
+acceptance run. Check 8 is the one that does not pass, and it is still the only one: Phase
+12's gate is deliberately a PNG sequence plus a mixdown rather than a video file, so a
+playable video remains unbuilt and is reported here as a gap rather than claimed. What
+Phase 12 does deliver is the closest thing to a check 8 the architecture allows without a
+codec — a cut exports to 288 authored-size PNGs named in playback order, and to one
+continuous 12.000s WAV — verified in Chrome at 47/47 checks. Check 10 is the one the design
 is built for, and it is automated in `src/data/rule3.test.ts`: an unknown character is
 added to the production project, staged, keyed, posed, expressioned, and rendered, with
 `validateProject` clean throughout and no `core/` file touched.

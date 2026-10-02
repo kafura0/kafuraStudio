@@ -1,6 +1,6 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 12 — RENDER EXPORT.**
+> **Current phase: Phase 12 — RENDER EXPORT.** All gates pass; the phase is complete.
 > **Next: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.**
 
 Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
@@ -40,7 +40,7 @@ numbering is reconciled against
 | 9 | Camera Authoring | **complete** | Rest camera and keyframed moves resolve and render. A camera panel authors rest framing numerically, applies any of the seeded shot presets in one undoable step, and frames a selection to fit. `frameBounds` inverts the renderer's own camera transform, and an invariant test holds the two to each other. |
 | 10 | Episode Playback & Transport | **complete** | EP001 plays from the first frame of scene 1 to the last frame of scene 5, and the playhead is continuous across all four scene boundaries. Offsets, the boundary crossing, the end-of-cut wrap, and the audio cut are pure core; the clock is still the store's single `advancePlayback`. |
 | 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 627 tests green. |
-| 12 | Export | **in progress** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly. |
+| 12 | Export | **complete** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly; scenes join cuts and slots join scenes from the editor. 727 tests green, 47/47 real-Chrome export checks. |
 | 13 | MVP Acceptance & Documentation Truth | **planned** | Not started. |
 
 ### What exists today
@@ -188,7 +188,7 @@ view, per-scene audio offsets authored by hand.
 
 ---
 
-## PHASE 12 — RENDER EXPORT (in progress)
+## PHASE 12 — RENDER EXPORT (complete)
 
 Export is not "encode a video". It is: decide the frame list, prove the renderer draws
 each of those frames correctly, and only then involve a codec. PNG-first is deliberate —
@@ -238,9 +238,42 @@ path built to be replaced later.
       decides that the PNG sequence and the mixdown are the deliverable, with
       `MediaRecorder` available as a best-effort extra. No WebCodecs code, no muxer, no
       new dependency
-- [ ] `ExportPanel` with honest capability reporting and progress — **not built**.
-      Reports what *this* browser can actually do, per the risk register's
-      "Feature-detected and reported honestly; PNG still always available"
+- [x] `ExportPanel` with honest capability reporting and progress — **done**,
+      `src/ui/panels/ExportPanel.tsx`. It reports what *this* browser can actually do, per
+      the risk register's "Feature-detected and reported honestly; PNG still always
+      available": video is listed as unavailable with the ADR as its reason rather than
+      hidden, and the PNG and mixdown paths are each named in the result. The result
+      sentence is `describeResult` in `src/ui/panels/exportResult.ts`, and its three
+      branches are the three things an export can be. The one worth fussing over is
+      silence: a cut with no audio in it mixes to a valid WAV of the right length containing
+      nothing, so it is reported as **silent** and never as a `0-segment` success
+- [x] A scene can be put into a cut from the editor — **done**. Export reads an episode, so
+      a scene in no episode is a scene that cannot be exported at all, and until this
+      existed the cut was only reachable by editing JSON. `SceneList` states each scene's
+      membership, offers the cuts it is not in, and can start a new cut containing the scene
+      the click came from. `createEpisode` and `addSceneToEpisode` are undoable store
+      actions, and the second is idempotent: adding a scene that is already in the cut
+      records no history step, because a step that undoes nothing is how real work gets
+      lost to an undo
+- [x] A sound can be put into the scene, not just into the library — **done**.
+      `placeAudioSlotInScene` and `AudioSlotPanel`'s "Add to scene". Attaching a file and
+      playing a sound in a scene are separate facts and only the second one reaches the
+      engine and the mixdown. Ambience fills the scene because the engine loops it inside
+      the clip window; a one-shot gets its measured length, and a slot with no measured
+      length is refused rather than given a guessed window. Placing a slot that is already
+      placed does nothing
+- [x] The frame size comes from the episode — **done**. An episode is the unit being
+      exported and it carries its own `renderSettings`, so those decide the frame's
+      dimensions, exactly as `frameSequence` already takes fps from the episode. Reading
+      the *project's* settings here would let a cut re-specified for delivery come out at
+      the project's authoring resolution, with nothing on screen but a file size to say so
+- [x] Gate verified in a real browser — **done**. `47/47` checks in Chrome (not Chromium, not
+      a headless shortcut): a fresh project, a cut, 288 frames at 1920x1080, progress
+      advancing in 51 distinct steps, every frame offered as a real non-empty PNG named in
+      playback order from a zero-padded index, the first and last frames decoded back and
+      confirmed drawn rather than blank, and a 12.000s 16-bit stereo 48kHz WAV at peak 0.500
+      — audible, not silence, and not clipping. Cancellation stops and offers nothing. No
+      console errors. The two earlier suites still pass: 44/44 and 35/35
 
 Gate: *"every frame of the export is provably the frame the stage already drew, and the
 episode plays back as one continuous audio mixdown."*
