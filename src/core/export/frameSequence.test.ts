@@ -21,15 +21,15 @@ describe('frameSequence', () => {
     const episode = firstEpisode(project);
     const empty: Episode = { ...episode, sceneIds: [] };
 
-    expect(frameSequence(undefined, empty, project)).toEqual([]);
-    expect(frameSequence(undefined, episode, project).length).toBeGreaterThan(0);
+    expect(frameSequence({ project }, empty)).toEqual([]);
+    expect(frameSequence({ project }, episode).length).toBeGreaterThan(0);
   });
 
   it('returns an empty sequence for a non-positive fps instead of looping forever', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
-    expect(frameSequence({ fps: 0 }, episode, project)).toEqual([]);
-    expect(frameSequence({ fps: -30 }, episode, project)).toEqual([]);
+    expect(frameSequence({ project, fps: 0 }, episode)).toEqual([]);
+    expect(frameSequence({ project, fps: -30 }, episode)).toEqual([]);
   });
 
   it('returns an empty sequence for a cut with no playable scenes', () => {
@@ -39,14 +39,14 @@ describe('frameSequence', () => {
       ...episode,
       sceneIds: ['scene.does-not-exist'],
     };
-    expect(frameSequence(undefined, missing, project)).toEqual([]);
+    expect(frameSequence({ project }, missing)).toEqual([]);
   });
 
   it('starts at zero and keeps every frame strictly inside the cut', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
     const duration = seedDuration(project);
-    const frames = frameSequence(undefined, episode, project);
+    const frames = frameSequence({ project }, episode);
 
     expect(frames.length).toBeGreaterThan(0);
     expect(frames[0]?.index).toBe(0);
@@ -65,7 +65,7 @@ describe('frameSequence', () => {
     const duration = seedDuration(project);
 
     for (const fps of [8, 12, 24, 30]) {
-      const frames = frameSequence({ fps }, episode, project);
+      const frames = frameSequence({ project, fps }, episode);
       const last = frames[frames.length - 1];
       if (!last) throw new Error('no frames');
 
@@ -80,7 +80,7 @@ describe('frameSequence', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
     const fps = 12;
-    const frames = frameSequence({ fps }, episode, project);
+    const frames = frameSequence({ project, fps }, episode);
 
     for (let i = 1; i < frames.length; i++) {
       const prev = frames[i - 1];
@@ -97,7 +97,7 @@ describe('frameSequence', () => {
     // boundary case is exercised without float slop deciding the count.
     const duration = seedDuration(project);
     const fps = 12;
-    const frames = frameSequence({ fps }, episode, project);
+    const frames = frameSequence({ project, fps }, episode);
     expect(frames.length).toBe(Math.ceil(duration * fps));
     expect(frames[frames.length - 1]?.time).toBeCloseTo(
       (frames.length - 1) / fps,
@@ -108,8 +108,8 @@ describe('frameSequence', () => {
   it('rejects a non-finite fps rather than producing NaN times', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
-    expect(frameSequence({ fps: Number.NaN }, episode, project)).toEqual([]);
-    expect(frameSequence({ fps: Number.POSITIVE_INFINITY }, episode, project)).toEqual([]);
+    expect(frameSequence({ project, fps: Number.NaN }, episode)).toEqual([]);
+    expect(frameSequence({ project, fps: Number.POSITIVE_INFINITY }, episode)).toEqual([]);
   });
 
   it('produces exactly ceil(duration * fps) frames and never overshoots', () => {
@@ -118,7 +118,7 @@ describe('frameSequence', () => {
     const duration = seedDuration(project);
 
     for (const fps of [1, 8, 12, 24, 30, 60]) {
-      const frames = frameSequence({ fps }, episode, project);
+      const frames = frameSequence({ project, fps }, episode);
       expect(frames.length).toBe(Math.ceil(duration * fps));
       for (const frame of frames) {
         expect(frame.time).toBeGreaterThanOrEqual(0);
@@ -132,7 +132,7 @@ describe('frameSequence', () => {
     const episode = firstEpisode(project);
     const duration = seedDuration(project);
     const fps = 12;
-    const frames = frameSequence({ fps }, episode, project);
+    const frames = frameSequence({ project, fps }, episode);
 
     frames.forEach((frame, i) => {
       expect(frame.index).toBe(i);
@@ -144,14 +144,14 @@ describe('frameSequence', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
     const fps = episode.renderSettings.fps;
-    const frames = frameSequence(undefined, episode, project);
+    const frames = frameSequence({ project }, episode);
     expect(frames.length).toBe(Math.ceil(seedDuration(project) * fps));
   });
 
   it('increases time strictly monotonically', () => {
     const project = SEED_PROJECT;
     const episode = firstEpisode(project);
-    const frames = frameSequence({ fps: 24 }, episode, project);
+    const frames = frameSequence({ project, fps: 24 }, episode);
     for (let i = 1; i < frames.length; i++) {
       const prev = frames[i - 1];
       const curr = frames[i];

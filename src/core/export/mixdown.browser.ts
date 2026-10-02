@@ -135,7 +135,7 @@ export async function mixdownEpisode(
 
   const buffer = await context.startRendering();
   const bytes = encodeWav(buffer);
-  const blob = new Blob([bytes], { type: MIXDOWN_MIME });
+  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: MIXDOWN_MIME });
 
   return { buffer, blob, placed, missing };
 }
@@ -183,7 +183,7 @@ async function placePlacement(
 
   const source = context.createBufferSource();
   source.buffer = buffer;
-  source.loop = segment.loop;
+  source.loop = placement.loop;
 
   const gain = context.createGain();
   // Linear gain straight from the clip, exactly as the live engine applies it, so a

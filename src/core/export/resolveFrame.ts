@@ -40,14 +40,21 @@ export function exportTimeline(project: Project, episodeId: Id): EpisodeTimeline
   return flattenCut(project, episode);
 }
 
-/** Resolve one frame of an episode to a scene and a scene-local time. */
+/**
+ * Resolve one frame of an episode to a scene and a scene-local time.
+ *
+ * The `project` argument is gone: everything needed is already inside the flattened cut,
+ * and a parameter a caller has to thread but the body never reads is a parameter that
+ * invites a caller to pass the wrong one. Flattening is the expensive step, so it happens
+ * once in `exportTimeline` and the timeline is threaded instead.
+ */
 export function resolveExportFrame(
-  project: Project,
   timeline: EpisodeTimeline,
   index: number,
   time: number,
 ): ResolvedFrame {
   const position = sceneAtTime(timeline, time);
+  if (!position.scene) throw new Error(`No scene at export time ${time}`);
   return {
     index,
     time,

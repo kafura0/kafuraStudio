@@ -77,7 +77,7 @@ function seedFrame(index: number, time: number): ReturnType<typeof resolveExport
   if (!episode) throw new Error('seed has no episode');
   const timeline = exportTimeline(project, episode.id);
   if (!timeline) throw new Error('seed episode did not flatten');
-  return resolveExportFrame(project, timeline, index, time);
+  return resolveExportFrame(timeline, index, time);
 }
 
 /**
@@ -96,8 +96,8 @@ function firstSubtitledFrame(): ReturnType<typeof resolveExportFrame> {
   const timeline = exportTimeline(project, episode.id);
   if (!timeline) throw new Error('seed episode did not flatten');
 
-  const subtitled = frameSequence(undefined, episode, project)
-    .map((f) => resolveExportFrame(project, timeline, f.index, f.time))
+  const subtitled = frameSequence({ project }, episode)
+    .map((f) => resolveExportFrame(timeline, f.index, f.time))
     .find((f) => activeSubtitle(f.scene, f.sceneTime) !== null);
   if (!subtitled) throw new Error('seed episode has no frame with a visible subtitle');
   return subtitled;
@@ -114,11 +114,11 @@ describe('export draw log equals the stage draw log', () => {
       const timeline = exportTimeline(project, episode.id);
       if (!timeline) throw new Error('seed episode did not flatten');
 
-      const frames = frameSequence(undefined, episode, project);
+      const frames = frameSequence({ project }, episode);
       expect(frames.length).toBeGreaterThan(0);
 
       for (const frame of frames) {
-        const resolved = resolveExportFrame(project, timeline, frame.index, frame.time);
+        const resolved = resolveExportFrame(timeline, frame.index, frame.time);
         expect(drawAsExporter(project, resolved)).toEqual(drawAsStage(project, resolved));
       }
     },
@@ -149,8 +149,8 @@ describe('export draw log equals the stage draw log', () => {
     expect(boundary).toBeDefined();
     if (boundary === undefined) return;
 
-    const justBefore = resolveExportFrame(project, timeline, 0, boundary - 1e-6);
-    const exactly = resolveExportFrame(project, timeline, 1, boundary);
+    const justBefore = resolveExportFrame(timeline, 0, boundary - 1e-6);
+    const exactly = resolveExportFrame(timeline, 1, boundary);
 
     expect(justBefore.scene.id).toBe(timeline.segments[0]?.scene.id);
     expect(exactly.scene.id).toBe(timeline.segments[1]?.scene.id);
@@ -188,5 +188,49 @@ describe('export draw log equals the stage draw log', () => {
     });
 
     expect(drawAsExporter(SEED_PROJECT, spoken)).not.toEqual(halfSize.calls);
+  });
+
+  it('takes the frame size from the episode, not the project', () => {
+    // The episode is the thing being exported and it says what it should look like. A cut
+    // re-rendered at, say, a delivery resolution must not quietly inherit the project's
+    // authoring resolution — the file would come out at the wrong size with nothing on
+    // screen to say so, and the only symptom is a number in a file listing.
+    const episode = SEED_PROJECT.episodes[0];
+    if (!episode) throw new Error('seed has no episode');
+    const CUT_WIDTH = 640;
+    const CUT_HEIGHT = 360;
+    const project: Project = {
+      ...SEED_PROJECT,
+      episodes: [
+        {
+          ...episode,
+          renderSettings: { ...episode.renderSettings, width: CUT_WIDTH, height: CUT_HEIGHT },
+        },
+        ...SEED_PROJECT.episodes.slice(1),
+      ],
+    };
+    const timeline = exportTimeline(project, episode.id);
+    if (!timeline) throw new Error('seed episode did not flatten');
+    const frame = resolveExportFrame(timeline, 0, 0);
+
+    const atCutSize = new RecordingContext();
+    renderScene(atCutSize, project, frame.scene, frame.sceneTime, {
+      width: CUT_WIDTH,
+      height: CUT_HEIGHT,
+      pixelRatio: EXPORT_PIXEL_RATIO,
+      subtitles: EXPORT_SUBTITLES,
+    });
+    const atProjectSize = new RecordingContext();
+    renderScene(atProjectSize, project, frame.scene, frame.sceneTime, {
+      width: project.settings.width,
+      height: project.settings.height,
+      pixelRatio: EXPORT_PIXEL_RATIO,
+      subtitles: EXPORT_SUBTITLES,
+    });
+
+    expect(drawAsExporter(project, frame)).toEqual(atCutSize.calls);
+    // Guard against the assertion above passing for a reason that has nothing to do with
+    // size, such as both logs being empty.
+    expect(atCutSize.calls).not.toEqual(atProjectSize.calls);
   });
 });

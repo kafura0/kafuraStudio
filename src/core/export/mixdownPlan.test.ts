@@ -16,9 +16,9 @@ import { describe, expect, it } from 'vitest';
 import { mixdownPlan } from './mixdownPlan';
 import { mixdownDuration } from './mixdown.browser';
 import { episodeAudioPlan } from '../audio/episodePlan';
-import { createTrack } from '../document/factories';
+import { createClip, createTrack } from '../document/factories';
 import { SEED_PROJECT } from '../../data/seed';
-import type { Episode, Id, Project } from '../../core/types';
+import type { AudioDef, Clip, Episode, Id, Project } from '../../core/types';
 
 function seedEpisode(project: Project): Episode {
   const episode = project.episodes[0];
@@ -46,50 +46,32 @@ function projectWithClip(project: Project, options: { loop?: boolean; gain?: num
   if (!trackId) throw new Error('seed scene has no audio track');
 
   const gain = options.gain ?? 0.5;
+  // A real `Clip`, not an object literal that happens to have the right keys. `Clip` also
+  // carries `keyframes` and `dialogueLineId`, and a spread-built literal that omits them
+  // is a `Clip` only until the type checker is asked. `loop` on the clip is not what makes
+  // a segment loop — `audioPlan` decides from the asset's `kind` — so the loop case is
+  // expressed by the asset below, not here.
+  const clip: Clip = createClip(0, Math.min(2, scene.duration), { audioId, gain });
   const next = project.scenes.map((s) =>
     s.id === scene.id
-      ? {
-          ...s,
-          tracks: s.tracks.map((t) =>
-            t.id === trackId
-              ? {
-                  ...t,
-                  clips: [
-                    ...t.clips,
-                    {
-                      id: 'clip.test',
-                      kind: 'audio' as const,
-                      start: 0,
-                      duration: Math.min(2, s.duration),
-                      gain,
-                      loop: options.loop ?? false,
-                      audioId,
-                    },
-                  ],
-                }
-              : t,
-          ),
-        }
+      ? { ...s, tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t)) }
       : s,
   );
 
+  // Only ambience loops: `audioPlan` reads `kind`, so an `sfx` slot is what makes a
+  // one-shot segment, whatever the clip says.
+  const asset: AudioDef = {
+    id: audioId,
+    name: 'Test Clip',
+    kind: options.loop ? 'ambience' : 'sfx',
+    src: 'media.test-clip',
+    srcKind: 'local',
+    duration: 5,
+    tags: [],
+  };
   const assets = project.assets.audio.some((a) => a.id === audioId)
     ? project.assets.audio
-    : [
-        ...project.assets.audio,
-        {
-          id: audioId,
-          name: 'Test Clip',
-          // `loop` on a clip is not what makes a segment loop: `audioPlan` decides from the
-          // asset's `kind`, and only ambience repeats. So a genuinely looping test segment
-          // means declaring an ambience asset, which is what the option is doing here.
-          kind: options.loop ? ('ambience' as const) : ('sfx' as const),
-          src: 'media.test-clip',
-          srcKind: 'local' as const,
-          duration: 5,
-          tags: [],
-        },
-      ];
+    : [...project.assets.audio, asset];
 
   return {
     project: { ...project, scenes: next, assets: { ...project.assets, audio: assets } },
@@ -158,15 +140,10 @@ describe('mixdownPlan', () => {
     // Put the clip at local 0 of the SECOND scene, where scene and episode clocks differ.
     // A fresh track is added rather than reusing whatever that scene happens to have, so
     // the test does not depend on the seed's track layout.
-    const clip = {
-      id: 'clip.second',
-      kind: 'audio' as const,
-      start: 0,
-      duration: Math.min(2, secondScene.duration),
-      gain: 0.5,
-      loop: false,
+    const clip = createClip(0, Math.min(2, secondScene.duration), {
       audioId: 'audio.second',
-    };
+      gain: 0.5,
+    });
 
     const scenes = project.scenes.map((s) =>
       s.id === secondScene.id
@@ -176,23 +153,20 @@ describe('mixdownPlan', () => {
     const first = project.scenes[0];
     if (!first) throw new Error('seed has no scenes');
 
+    const secondAsset: AudioDef = {
+      id: 'audio.second',
+      name: 'Second Scene Clip',
+      kind: 'sfx',
+      src: 'media.second',
+      srcKind: 'local',
+      duration: 5,
+      tags: [],
+    };
+
     const patched: Project = {
       ...project,
       scenes,
-      assets: {
-        ...project.assets,
-        audio: [
-          ...project.assets.audio,
-          {
-            id: 'audio.second',
-            name: 'Second Scene Clip',
-            src: 'media.second',
-            srcKind: 'local' as const,
-            duration: 5,
-            tags: [],
-          },
-        ],
-      },
+      assets: { ...project.assets, audio: [...project.assets.audio, secondAsset] },
     };
 
     const plan = mixdownPlan(patched, episode.id);

@@ -76,15 +76,24 @@ export function drawExportFrame(
   frame: ResolvedFrame,
   options: ExportImageOptions = {},
 ): void {
+  // The episode is the unit being exported and it carries its own render settings, so they
+  // decide the frame's size. The project settings are what a *scene* is authored at and what
+  // the stage previews; reading them here would let an export quietly come out at a
+  // different resolution from the one its own cut says, with nothing but a file size to
+  // notice it by. `frameSequence` already takes fps from the episode for the same reason.
+  const { width, height } = frame.timeline.episode.renderSettings;
+  // `RenderOptions` is declared with `exactOptionalPropertyTypes`, so a key that may be
+  // absent cannot be passed explicitly as `undefined`. `images` is therefore spread in
+  // only when the caller supplied one, rather than always being set to `undefined`.
   renderScene(ctx, project, frame.scene, frame.sceneTime, {
-    width: project.settings.width,
-    height: project.settings.height,
+    width,
+    height,
     // Export is not a screen. The stage multiplies by the device pixel ratio to stay
     // crisp on a 1920p display; an export is a file of exactly the authored size, so the
     // ratio is 1 and the output is resolution-independent of whoever runs it.
     pixelRatio: 1,
     subtitles: options.subtitles ?? true,
-    images: options.images,
+    ...(options.images ? { images: options.images } : {}),
   });
 }
 
@@ -103,10 +112,13 @@ export async function exportStill(
 ): Promise<ExportedFrame> {
   const timeline = exportTimeline(project, episodeId);
   if (!timeline) throw new Error(`Unknown episode: ${episodeId}`);
+  // Resolved once rather than per frame: the cut is the same for every frame, so re-reading
+  // the episode's size 288 times is 287 chances to disagree with it.
+  const { width, height } = timeline.episode.renderSettings;
 
-  const frame = resolveExportFrame(project, timeline, 0, time);
+  const frame = resolveExportFrame(timeline, 0, time);
 
-  const surface = createSurface(project.settings.width, project.settings.height);
+  const surface = createSurface(width, height);
   if (!surface) throw new Error('Canvas 2D context unavailable');
 
   drawExportFrame(surface.ctx, project, frame, options);
@@ -139,6 +151,7 @@ export async function exportSequence(
 ): Promise<ExportedFrame[]> {
   const timeline = exportTimeline(project, episodeId);
   if (!timeline) throw new Error(`Unknown episode: ${episodeId}`);
+  const { width, height } = timeline.episode.renderSettings;
 
   const out: ExportedFrame[] = [];
   const total = frames.length;
@@ -146,9 +159,9 @@ export async function exportSequence(
   for (const frame of frames) {
     if (options.shouldContinue && !options.shouldContinue()) break;
 
-    const resolved = resolveExportFrame(project, timeline, frame.index, frame.time);
+    const resolved = resolveExportFrame(timeline, frame.index, frame.time);
 
-    const surface = createSurface(project.settings.width, project.settings.height);
+    const surface = createSurface(width, height);
     if (!surface) throw new Error('Canvas 2D context unavailable');
 
     drawExportFrame(surface.ctx, project, resolved, options);

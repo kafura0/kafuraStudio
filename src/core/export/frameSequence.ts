@@ -8,8 +8,18 @@ export interface Frame {
   time: number;
 }
 
-export interface FrameSequenceOptions {
-  /** Frames per second. Defaults to episode.renderSettings.fps */
+export interface FrameSequenceSettings {
+  /**
+   * The document the episode's scenes live in.
+   *
+   * Part of the settings rather than a third positional argument because the spec's
+   * signature is `frameSequence(settings, episode)`: the episode names scenes, and only the
+   * project knows their durations, so a two-argument call that omitted this would have to
+   * look the project up itself and silently fall back to document order — the exact
+   * disagreement with the caller that `flattenCut` exists to prevent.
+   */
+  project: Project;
+  /** Frames per second. Defaults to `episode.renderSettings.fps`. */
   fps?: number;
 }
 
@@ -38,17 +48,13 @@ export interface FrameSequenceOptions {
  *  1.5x, which is why frame count is `ceil(duration * fps)` and frame `i` is at `i / fps`
  *  with no special-casing of the tail.
  */
-export function frameSequence(
-  options: FrameSequenceOptions | undefined,
-  episode: Episode,
-  project: Project,
-): Frame[] {
-  const duration = episodeDuration(flattenCut(project, episode));
+export function frameSequence(settings: FrameSequenceSettings, episode: Episode): Frame[] {
+  const duration = episodeDuration(flattenCut(settings.project, episode));
 
   // A non-finite or non-positive rate has no frame grid to place times on, so it yields
   // nothing rather than throwing. An unresolvable cut has no duration and also yields
   // nothing, which is the honest answer: there is no episode to export yet.
-  const fps = options?.fps ?? episode.renderSettings.fps;
+  const fps = settings.fps ?? episode.renderSettings.fps;
   if (!Number.isFinite(fps) || fps <= 0) return [];
   if (!Number.isFinite(duration) || duration <= 0) return [];
 
