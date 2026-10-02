@@ -898,7 +898,15 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!entry || state.project === null) return;
       set({
         project: entry.project,
-        past: [...state.past, { label: entry.label, project: state.project }].slice(0, HISTORY_LIMIT),
+        // `slice(-HISTORY_LIMIT)`, matching `commit`. `past` is oldest-first, so the cap
+        // gives up the oldest step and keeps the one the user is about to undo.
+        //
+        // This trim is currently unreachable: `commit` already caps `past`, and an
+        // undo/redo pair only ever returns `past` to the size it had before the undo. It
+        // was `slice(0, ...)` - which would have dropped the *newest* step - and that was
+        // wrong rather than merely unused. It is written correctly now so the two paths
+        // cannot drift apart if the history model ever grows a way to overflow.
+        past: [...state.past, { label: entry.label, project: state.project }].slice(-HISTORY_LIMIT),
         future: rest,
         dirty: true,
       });

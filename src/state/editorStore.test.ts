@@ -17,6 +17,7 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { createScene, createProject } from '../core/document/factories';
+import { HISTORY_LIMIT } from '../core/constants';
 import { setSceneDuration } from '../core/document/projectOps';
 import { SEED_PROJECT } from '../data/seed';
 import { attachAudioMedia } from '../core/document/projectOps';
@@ -192,9 +193,71 @@ describe('editorStore history', () => {
     expect(useEditor.getState().future).toHaveLength(0);
   });
 
+  it('gives up the oldest step at the cap, and undo/redo at the cap loses nothing', () => {
+    // `past` is oldest-first: undo reads the last element. The cap bounds memory, so at the
+    // limit it has to give up the *oldest* step, because the newest one is the one the user
+    // is about to press undo for.
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+
+    // Durations are large and distinct: a short one would be rejected as a clip running
+    // past the scene end, and `commit` refuses an invalid document.
+    for (let i = 0; i <= HISTORY_LIMIT; i++) {
+      useEditor
+        .getState()
+        .commit(setSceneDuration(SEED_PROJECT, first.id, 100 + i), `edit ${i}`);
+    }
+
+    // At the cap, the oldest entry is the one that went.
+    expect(useEditor.getState().past).toHaveLength(HISTORY_LIMIT);
+    const oldest = useEditor.getState().past[0]?.label;
+    const newest = useEditor.getState().past[HISTORY_LIMIT - 1]?.label;
+    expect(oldest).toBe('edit 1');
+    expect(newest).toBe(`edit ${HISTORY_LIMIT}`);
+
+    // Undoing and redoing at the cap must not cost a step. The document the redo replaced
+    // has to be back in the stack, or a second undo would skip over it.
+    useEditor.getState().undo();
+    const beforeRedo = currentProject().scenes[0]?.duration;
+    useEditor.getState().redo();
+
+    expect(useEditor.getState().past).toHaveLength(HISTORY_LIMIT);
+    expect(useEditor.getState().past[0]?.label).toBe(oldest);
+    expect(useEditor.getState().past).toContainEqual(expect.objectContaining({ label: newest }));
+
+    useEditor.getState().undo();
+    expect(currentProject().scenes[0]?.duration).toBe(beforeRedo);
+  });
+
+  it('replays a fully unwound history forwards again, in order', () => {
+    // `future` is newest-first and undo re-prepends to it, so the order a redo walk
+    // follows is the order the undos happened in. The cap on `future` is defensive: `past`
+    // is already bounded by `commit`, so at most `HISTORY_LIMIT` undos are reachable and
+    // the trim in `undo` cannot currently fire. This test pins the ordering and the bound
+    // rather than the trim, and would catch a history model that let the stack grow.
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+
+    for (let i = 0; i <= HISTORY_LIMIT; i++) {
+      useEditor
+        .getState()
+        .commit(setSceneDuration(SEED_PROJECT, first.id, 100 + i), `edit ${i}`);
+    }
+    for (let i = 0; i <= HISTORY_LIMIT; i++) useEditor.getState().undo();
+
+    // A label names the state being *left behind*, so the head of `future` is the oldest
+    // surviving step - the first one redo replays - and the tail is the newest undo.
+    expect(useEditor.getState().future).toHaveLength(HISTORY_LIMIT);
+    expect(useEditor.getState().future[0]?.label).toBe('edit 1');
+    expect(useEditor.getState().future[HISTORY_LIMIT - 1]?.label).toBe(`edit ${HISTORY_LIMIT}`);
+
+    // Redoing walks forward from where the undos stopped, rather than jumping to the top
+    // of the stack.
+    useEditor.getState().redo();
+    expect(currentProject().scenes[0]?.duration).toBe(101);
+  });
+
   it('does not record a commit that changes nothing', () => {
-    // An effect or handler may call commit with the document it already has; that
-    // would make undo appear broken.
     useEditor.getState().commit(currentProject(), 'noop');
     expect(useEditor.getState().past).toHaveLength(0);
   });
