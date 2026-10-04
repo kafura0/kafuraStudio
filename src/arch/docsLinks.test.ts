@@ -32,7 +32,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..', '..');
 const DOCS = join(ROOT, 'docs');
@@ -113,16 +113,23 @@ function markdownFiles(dir: string): string[] {
  * is precisely where a reader is most likely to believe them. Globs are skipped, because a
  * glob is a pattern to be searched rather than a file to be opened.
  */
-function referencedPaths(text: string): { path: string; line: number; source: string }[] {
-  const found: { path: string; line: number; source: string }[] = [];
+function referencedPaths(text: string): { path: string; line: number; context: string }[] {
+  const found: { path: string; line: number; context: string }[] = [];
   text.split(/\r?\n/).forEach((raw, index) => {
     // Strip fenced code blocks: a path in a command line is an example, not a claim.
     const line = raw.replace(/```[\s\S]*/, '');
-    for (const match of line.matchAll(/(?<![\w./-])((?:src|docs)\/[A-Za-z0-9_./-]*)/g)) {
+    const matches = [...line.matchAll(/(?<![\w./-])((?:src|docs)\/[A-Za-z0-9_./-]*)/g)];
+    matches.forEach((match, position) => {
       const candidate = match[1] ?? '';
-      if (candidate === '' || candidate.includes('*')) continue;
-      found.push({ path: candidate, line: index + 1, source: line });
-    }
+      if (candidate === '' || candidate.includes('*')) return;
+      // The context is the text between this reference and its neighbours on the same line,
+      // which is the window an absence claim has to land in to count for this path.
+      const previous = matches[position - 1];
+      const start = (previous?.index ?? 0) + (previous?.[1]?.length ?? 0);
+      const next = matches[position + 1];
+      const end = next?.index ?? line.length;
+      found.push({ path: candidate, line: index + 1, context: line.slice(start, end).toLowerCase() });
+    });
   });
   return found;
 }
@@ -131,13 +138,24 @@ function referencedPaths(text: string): { path: string; line: number; source: st
  * Language that turns a path reference into a declaration that the file is *absent*.
  *
  * "See `render.test.ts` for the determinism test" claims a file is there. "`layering.test.ts`
- * would enforce this and does not exist yet" says the opposite, and a document has to be
- * able to name its own gaps - that is most of what an honest status section is for.
+ * does not exist yet" says the opposite, and a document has to be able to name its own gaps
+ * - that is most of what an honest status section is for.
  *
- * The check is deliberately line-scoped rather than document-scoped. Allowing a whole
- * document to opt out would let one honest sentence launder every false claim in it, which
- * is the failure mode this test exists to prevent. The author has to do the work on the
- * line where the path appears, which is also where a reader looks.
+ * The check is scoped to the **text between this path and its neighbours on the line**, not
+ * the line and not the document. Coarser scoping was tried and rejected twice:
+ *
+ * - Document-scoped lets one candid sentence launder a whole file.
+ * - Line-scoped lets one honest caveat excuse every other path beside it, so a false claim
+ *   can hide next to a true one.
+ * - Clause-scoped (splitting on `;` and em-dashes) is tighter still, but it fights ordinary
+ *   writing: "the test that would enforce it does not exist yet; it is `foo.test.ts`" is one
+ *   thought about one file, and the semicolon does not make it two.
+ *
+ * Bounding by the neighbouring path references instead keeps the window as wide as the
+ * author's actual sentence about that path, and no wider. A marker only excuses a path if
+ * it sits in the text immediately around that path, so a document cannot excuse a false
+ * claim by sitting next to an honest one - it has to say, about that path, that it is not
+ * there.
  */
 const ABSENCE_MARKERS = [
   'planned',
@@ -160,13 +178,19 @@ const ABSENCE_MARKERS = [
   'missing',
 ];
 
-/** Whether the line itself declares the path to be absent or planned. */
-function declaresAbsence(reference: { path: string; source: string }): boolean {
-  const line = reference.source.toLowerCase();
-  // The markers are phrases about the document, so only the part of the line that is not
-  // the path itself is searched. Otherwise a file called `missing.test.ts` would vouch for
-  // itself.
-  const withoutPaths = line.replace(/src\/[a-z0-9_./-]*/g, '').replace(/docs\/[a-z0-9_./-]*/g, '');
+/**
+ * Whether the prose immediately around this path declares it absent or planned.
+ *
+ * `context` is the text on the line between this path and its neighbours, so a marker has to
+ * sit next to the path it is excusing. See the note on `ABSENCE_MARKERS` for why the window
+ * is bounded this way rather than by sentence, clause, line or document.
+ */
+function declaresAbsence(reference: { path: string; context: string }): boolean {
+  // The markers are phrases about the document, so the paths themselves are removed before
+  // searching. Otherwise a file called `missing.test.ts` would vouch for itself.
+  const withoutPaths = reference.context
+    .replace(/src\/[a-z0-9_./-]*/g, '')
+    .replace(/docs\/[a-z0-9_./-]*/g, '');
   return ABSENCE_MARKERS.some((marker) => withoutPaths.includes(marker));
 }
 
@@ -257,10 +281,50 @@ describe('the docs point at files that exist', () => {
 
   it('names no path outside the repository', () => {
     // A `src/...` reference is repo-relative by definition. A path that escapes the tree is
-    // a typo, and `existsSync` would answer "no" for the wrong reason.
+    // a typo, and `existsSync` would answer "no" for the wrong reason - which would surface
+    // as a confusing "path does not exist" rather than "you wrote a bad path".
+    //
+    // `path.relative` is the correct containment test. Comparing prefixes looks like it works
+    // and does not: `C:\repo-2` starts with `C:\repo`, so a sibling directory whose name
+    // extends the repository's own would pass a `startsWith(ROOT)` check.
     const escaped = documents
       .flatMap((d) => d.references)
-      .filter((ref) => ref.path.includes('..') || resolve(ROOT, ...ref.path.split('/')).startsWith(sep + 'x'));
-    expect(escaped.map((ref) => ref.path)).toEqual([]);
+      .filter((ref) => {
+        const rel = relative(ROOT, toAbsolute(ref.path));
+        return rel.startsWith('..') || isAbsolute(rel);
+      })
+      .map((ref) => `${ref.path} (line ${ref.line})`);
+    expect(escaped).toEqual([]);
+  });
+
+  it('an absence claim excuses only the path it sits beside', () => {
+    // The regression this guards is subtle enough to be worth pinning. Scoping the absence
+    // markers to the whole line let one honest caveat excuse every other path on that line,
+    // so a document could claim a file exists while the same sentence said a different file
+    // was planned.
+    const line =
+      '`docs/real.md` points at `src/nope.ts`; `docs/also-planned.md` is still planned.';
+    const byPath = (path: string) => {
+      const reference = referencedPaths(line).find((r) => r.path === path);
+      if (reference === undefined) throw new Error(`no reference to ${path} in the fixture`);
+      return reference;
+    };
+
+    // The false claim is on the left, its neighbour's honest marker on the right. The
+    // marker must not carry across.
+    expect(declaresAbsence(byPath('src/nope.ts'))).toBe(false);
+    expect(declaresAbsence(byPath('docs/real.md'))).toBe(false);
+    // The marker is in this path's own window, so it is excused.
+    expect(declaresAbsence(byPath('docs/also-planned.md'))).toBe(true);
+  });
+
+  it('accepts a semicolon-joined sentence about one missing file', () => {
+    // The reason the window is bounded by neighbouring paths rather than by clause
+    // boundaries. This is one thought about one file, and a semicolon does not split it.
+    const line = '`src/arch/layering.test.ts` does not exist yet; it is named as planned.';
+    const reference = referencedPaths(line)[0];
+    if (reference === undefined) throw new Error('no reference parsed from the fixture');
+    expect(reference.path).toBe('src/arch/layering.test.ts');
+    expect(declaresAbsence(reference)).toBe(true);
   });
 });
