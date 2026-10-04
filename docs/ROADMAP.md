@@ -1,6 +1,7 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** In progress.
+> **Current phase: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** Complete — closed as
+> verification, with checks 4 and 8 reported unmet rather than redefined to pass.
 > **Next: Phase 14 — Series & Asset Scope.**
 
 Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
@@ -48,12 +49,57 @@ numbering is reconciled against
 | 10 | Episode Playback & Transport | **complete** | EP001 plays from the first frame of scene 1 to the last frame of scene 5, and the playhead is continuous across all four scene boundaries. Offsets, the boundary crossing, the end-of-cut wrap, and the audio cut are pure core; the clock is still the store's single `advancePlayback`. |
 | 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 627 tests green. |
 | 12 | Export | **complete** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly; scenes join cuts and slots join scenes from the editor. 727 tests green, 47/47 real-Chrome export checks. |
-| 13 | MVP Acceptance & Documentation Truth | **in progress** | Twelve manual checks walked at 1440p and 1920p, a docs-link check, and every stale claim in `docs/` corrected against the code. See the phase section below. |
+| 13 | MVP Acceptance & Documentation Truth | **complete** | Twelve manual checks walked at 1440p and 1920p, a docs-link test added, and every stale claim in `docs/` corrected against the source. Ten of twelve pass; checks 4 and 8 reported unmet rather than redefined. See the phase section below. |
+
+### Phase 13 — MVP Acceptance & Documentation Truth
+
+Scope is [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md) § Phase 13. All three parts are
+done. The phase closed as *verification*, not as an all-green scoreboard, and the note under
+§24.4 of the spec records where it departed from its own brief.
+
+**The acceptance run, at both display sizes.** Chrome, not bundled Chromium. Each suite
+was run at a 2560×1440 viewport and again at 3840×2160:
+
+| Suite | 1440p | 1920p |
+|---|---|---|
+| `browser.mjs` — checks 1, 2, 5, 6, 7, 15–18 | 44/44 | 44/44 |
+| `export-accept.mjs` — check 8's closest available form | 47/47 | 47/47 |
+| `migrate-accept.mjs` — the v1 workspace adoption path | 35/35 | 35/35 |
+
+The larger viewport is not a formality. At 3840×2160 the exported still is still
+1920×1080, because the frame size comes from the episode's `renderSettings` and not from
+the window — which is the Phase 12 fix holding under a display twice the authored size.
+
+**A new test: `src/arch/docsLinks.test.ts`.** Every path a document names must exist, or
+the text beside it has to say the path is planned or absent. It caught two citations of test
+files that had never been written and a spec reference to a panel one directory from where
+Phase 12 put it — and, on the day it was strengthened, a false path in the commit that
+strengthened it. The exemption is scoped to the text between a path and its neighbours,
+because line-scoping let one honest caveat excuse a false claim sitting beside it.
+
+**The documentation, corrected against the source.** `ARCHITECTURE.md`, `DATA_MODEL.md`,
+`MVP.md`, `PLAN.md`, `PRODUCT.md` and this file all carried false claims — most of them
+flattering. `ARCHITECTURE_SPEC.md` Appendix A now carries a resolution table. The ones that
+mattered most were a three-layer override order where there are four, a nonexistent
+`resolveActor` and `clampTime()`, a migration list described as empty that has held a real
+step since Phase 11, and a boot path that never existed.
+
+**The review pass found the docs were wrong about the review pass.** `PLAN.md` claimed no
+lint rule enforced the layering. One does — `local/no-upward-imports` fails the build on an
+upward import, confirmed by hand. The genuinely open edge is `core → data`, which shares a
+tier with `core` and so passes. Both documents now say that instead of denying the rule
+exists, which is what `ARCHITECTURE_SPEC.md` Appendix A had been saying all along.
+
+**Still open, deliberately reported rather than closed:** check 8 (a playable video file)
+cannot pass without a muxer, and `docs/adr/001-video-encoding.md` decided against one. The
+per-actor inspector behind capability rows 7, 8 and 9 does not exist, so check 4's drag leg
+has nothing to drag. Both are Phase 14+ work or a decision to revisit, not documentation
+debt.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-744 tests green across 51 files, all four gates clean.
+746 tests green across 51 files, all four gates clean.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.

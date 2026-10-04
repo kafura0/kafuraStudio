@@ -60,11 +60,11 @@ user can actually operate. A capability is only `implemented` when both are true
 | 20 | Attach a recording to an audio slot | done | done | `AudioSlotPanel` stores the bytes in the media store and sets `srcKind: 'local'` |
 | 21 | Put a scene in a cut, and a sound in a scene | done | done | From the editor, both undoable. Refuses an audio slot with no file rather than placing silence |
 
-The MVP gate is **not met**, and the reason is narrow: check 8 wants a playable video
-file, and no muxer is present. Rows 7, 8 and 9 still have no UI — the operations exist
-and are tested, and an actor can be placed, posed and expressioned through the seed
-project and the timeline, but there is no per-actor inspector to drag, pose or
-expression from. That is the honest state of those three.
+The MVP gate is **not met**, and the two reasons are unrelated. Check 8 wants a playable
+video file and no muxer is present. Check 4's drag leg needs a per-actor inspector, and
+rows 7, 8 and 9 still have no UI — the operations exist and are tested, and an actor can be
+placed, posed and expressioned through the seed project and the timeline, but there is
+nothing on screen to drag, pose or expression from.
 
 ---
 
@@ -121,8 +121,10 @@ npm run build      # succeeds
 Check 10 is the load-bearing one. If adding a character requires a code change, the
 architecture has failed, regardless of whether the other checks pass.
 
-**Current status: not met, on check 8 alone.** The four build gates pass — lint clean,
-typecheck clean, 744 tests green across 51 files, build succeeds.
+**Current status: not met, on checks 4 and 8.** The four build gates pass — lint clean,
+typecheck clean, 746 tests green across 51 files, build succeeds. Ten of the twelve checks
+pass, and the two that do not fail for unrelated reasons: one is a deliberate decision
+about export format, the other is a piece of UI nobody has built yet.
 
 *Automated.* Check 9 (round-trip the project JSON) in `src/core/io/projectIo.test.ts`.
 Check 12 (no history or selection bleed between projects) in
@@ -132,19 +134,44 @@ is built for: `src/data/rule3.test.ts` adds an unknown character to the producti
 project, stages it, keys it, poses it, gives it an expression and renders it, with
 `validateProject` clean throughout and no `core/` file touched.
 
-*Walked in a real browser.* Checks 1, 2, 5, 6 and 7 were walked at 1920×1080 by the
-Phase 11 acceptance run (44/44). Phase 12's export was walked at 1920×1080 (47/47): a cut
-exports to 288 PNGs at the episode's authored 1920×1080, correctly ordered and non-empty,
-the first and last of which decode to non-blank images, and to one continuous 12.000s WAV
-with no silence and no clipping. Cancellation works and export does not mutate the
-project. Phase 11's migration path was walked separately (35/35).
+*Walked in a real browser, at both required display sizes.* Chrome, not bundled
+Chromium and not a headless shortcut. Every suite was run twice, at a 2560×1440
+viewport and at 3840×2160:
 
-*Not passing.* Check 8 wants a playable video file. Phase 12's gate is deliberately a PNG
-sequence plus a mixdown rather than a video, so this remains unbuilt and is reported as a
-gap rather than claimed. Check 4's drag leg is the other thing no automated run covers:
-undo and redo are tested through the store, and the browser run confirms the keystrokes
-and the timeline drag, but no script drives a pointer drag on the stage, because there is
-still no per-actor drag handle to drag.
+| Suite | What it walks | 1440p | 1920p |
+|---|---|---|---|
+| `browser.mjs` | Checks 1, 2, 5, 6, 7, 15–18 | 44/44 | 44/44 |
+| `export-accept.mjs` | Check 8's closest available form, plus cancellation | 47/47 | 47/47 |
+| `migrate-accept.mjs` | The v1 workspace adoption path | 35/35 | 35/35 |
+
+A cut exports to 288 PNGs at the episode's authored 1920×1080 — correctly ordered,
+non-empty, named from a zero-padded index, first and last decoding to non-blank images —
+and to one continuous 12.000s 16-bit stereo 48 kHz WAV at peak 0.500, so neither silent
+nor clipping. Cancellation works and leaves the project alone.
+
+The second viewport earned its keep on one specific point. At 3840×2160 the still is
+still 1920×1080: the frame size comes from the episode's `renderSettings`, not from the
+window. That is the Phase 12 fix holding under a display twice the authored size, which
+is the condition that would have caught it.
+
+*Two checks do not pass, and they fail for different reasons.*
+
+**Check 8** wants a playable video file. Phase 12's gate is deliberately a PNG sequence plus
+a mixdown rather than a video (`docs/adr/001-video-encoding.md`), so this is unbuilt and is
+reported as a gap rather than redefined to pass. `export-accept.mjs` walks the nearest
+available form — 288 correctly ordered frames, a continuous mixdown, cancellation — and it
+passes 47/47 at both display sizes, but that is not a video file and the check stays red.
+
+**Check 4** reads "Drag Nia → undo → she returns. Redo → she returns again." The undo and
+redo half is genuinely covered: `src/state/editorStore.test.ts` pins the ordering and the cap
+through the store, and the browser run confirms Ctrl+Z and Ctrl+Shift+Z reach it. The *drag*
+half cannot be walked, because capability rows 7–9 have no per-actor inspector and so no
+handle to drag. The document operations (`setActorTransform`, `setActorPose`,
+`setActorExpression`) exist and are tested; nothing in the UI calls them yet.
+
+Neither is a documentation debt. Check 8 is a decision to revisit — it needs a muxer, and
+the ADR argues against one. Check 4 needs the inspector, which is the first thing worth
+building after this phase.
 
 ---
 

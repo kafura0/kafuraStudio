@@ -2418,13 +2418,34 @@ The most important section. Phases 0–8 are the historical record and keep thei
 
 **Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH**
 
-- **Objective:** run the ten manual checks in `docs/MVP.md` §4 at 1440p and 1920p, and **make every document tell the truth.** The second half is not optional bookkeeping: six claims are already false (§Appendix A) and the roadmap itself is being replaced by §31.
+- **Objective:** run the manual checks in `docs/MVP.md` §4 at 1440p and 1920p, and **make every document tell the truth.** The second half is not optional bookkeeping: six claims are already false (§Appendix A).
 - **Why it exists:** RULE 9. The audit exists because the docs claimed more than the code delivered, and the honest-status discipline is what makes the Phase 8 classification trustworthy.
 - **Architecture changes:** none. This is a verification and documentation phase, and it is deliberately last in the MVP band — polishing an editor that cannot export is polishing the wrong thing (`docs/PLAN.md:200`).
-- **Modules affected:** `docs/*` (all), `docs/ROADMAP.md` (replaced by §31), `docs/ARCHITECTURE.md` (six corrections), `docs/DATA_MODEL.md` (v1 + delta), `docs/MVP.md` (checklist results).
+- **Modules affected:** `docs/*` (all), `docs/ROADMAP.md`, `docs/ARCHITECTURE.md` (six corrections), `docs/DATA_MODEL.md` (v1 + delta), `docs/MVP.md` (checklist results).
 - **Tests:** no new tests; the existing suite is the regression net. One new: a docs-link check, because `docs/ARCHITECTURE.md` cites a test file that has never existed.
 - **Acceptance:** *"All ten checks pass and are recorded with their results. Every doc claim matches the code. `ROADMAP.md` shows Phase 13 complete, honestly."*
 - **Not included:** visual polish beyond what the checks require; performance work; new features of any kind.
+
+> **As built, Phase 13 departed from this brief in three recorded ways.** Kept here
+> deliberately rather than quietly deleted, because a spec edited to match its own outcome
+> teaches nothing to the next reader.
+>
+> 1. **Twelve checks, not ten.** `docs/MVP.md` §4 grew from ten rows to twelve during Phase 11
+>    (project lifecycle and migration were split out), and the twelve are what was run. The
+>    acceptance above is read against the twelve.
+> 2. **`ROADMAP.md` was not replaced by §31.** §31 is a status table, and the existing
+>    `docs/ROADMAP.md` already was one — with per-phase history, gate criteria, and an honest
+>    record of what did not get built. Replacing it with a table would have deleted the gate
+>    evidence this phase exists to produce. `docs/ROADMAP.md` remains the detailed status
+>    authority; §31 remains the summary. Where the two differ, `docs/ROADMAP.md` wins.
+> 3. **Two checks do not pass, and that is the honest result.** Check 8 wants a playable
+>    video file; Phase 12's gate is a PNG sequence plus a mixdown by explicit decision
+>    (`docs/adr/001-video-encoding.md`), so there is no muxer to call. Check 4 reads "Drag
+>    Nia → undo → she returns", and its drag leg has nothing to drag because the per-actor
+>    inspector behind capability rows 7–9 was never built; the undo/redo half of that check
+>    is genuinely verified. Both are reported unmet rather than redefined to pass, so Phase
+>    13 is complete as *verification* — ten of twelve checks green — and not as proof that
+>    `docs/MVP.md` §4 is fully satisfied.
 
 ### 24.5 Phase 14 — SERIES & ASSET SCOPE
 
@@ -2723,7 +2744,8 @@ Step order within each phase, chosen to minimise rewrites. Each phase's first st
 1. Run the ten checks. Record results honestly, including failures.
 2. Fix what the checks found.
 3. Independent review pass; fix findings with regression tests.
-4. Correct every false doc claim (Appendix A). Replace `ROADMAP.md` with §31.
+4. Correct every false doc claim (Appendix A). Keep `ROADMAP.md` as the detailed status
+   record rather than collapsing it into §31 — see the note under §24.4.
 
 ### Phase 14 — Series & asset scope
 1. `SeriesDef` type + `SeriesRepository` + the `series` store; DB_VERSION 2 → 3. **No behaviour change yet.**
@@ -3127,7 +3149,7 @@ The first ten are content. The eleventh is a fixture id. The twelfth is the F2 c
 | **10** | **Episode Playback & Transport** | EP001 plays end to end | 9 | `episodeTimeline`, `episodePlan`, continuous playhead, spacebar | No |
 | **11** | **Project IO & Session Lifecycle** | Keep work; close Phase 8 | 10 | `Project\|null`, ProjectBrowser, JSON import/export, media store, file attach, **F4 + F5 fixed** | No |
 | **12** | **Export** | Produce a playable file | 10 | PNG still → PNG sequence → video; mixdown; honest codec reporting | No |
-| **13** | **MVP Acceptance & Doc Truth** | Prove it; make the docs honest | 11, 12 | The 10 manual checks; 6 false doc claims corrected; roadmap replaced | No |
+| **13** | **MVP Acceptance & Doc Truth** | Prove it; make the docs honest | 11, 12 | The manual checks; 6 false doc claims corrected; docs-link test added | No |
 | **14** | **Series & Asset Scope** | Make ZANZA the *first* series | 13 | `SeriesDef`, `SceneContext`, v1→v2 migration (render-neutral), SeriesBrowser | No |
 | **15** | **Engine Correctness & Render Performance** | Stop lying; stop being O(n²) | 14 | `RenderIndex`, `scaleY` fix, `mouthSlot`, colour validation, golden fixtures | No |
 | **16** | **Commands, Transactions & Provenance** | A named, atomic seam | 15 | `src/core/commands/`, `applyCommands`, `HistoryEntry`, coverage gate | No |
@@ -3398,6 +3420,32 @@ Six false or stale claims found by reading the source against the docs at `3a3a1
 - `docs/PRODUCT.md:80` says MVP scope ends at EXPORT, while `docs/MVP.md:53` records export as not started. `docs/PRODUCT.md:86` also adds AUDIO to the milestone, which `docs/MVP.md:4` does not.
 
 **The pattern, stated once:** the docs are not wrong about the architecture; they are wrong about *what exists*. `AGENTS.md` RULE 9 asks for honest status labels in code and docs, and the drift is entirely in the second. Phase 13 is therefore a documentation phase with a real gate (G13), not housekeeping.
+
+### Resolution — Phase 13, as closed
+
+The table above is left exactly as the audit found it, because a corrected table destroys
+the evidence that the drift was real. This block records what became true.
+
+| # | Status | What happened |
+|---|---|---|
+| A1 | **Fixed** | `docs/ARCHITECTURE.md` and `docs/DATA_MODEL.md` now both state four layers, `rest ← pose ← expression ← keyframe`, citing `resolve.ts` and `render.ts`. |
+| A2 | **Fixed in code** | `src/state/autosaveLifecycle.browser.ts` binds `visibilitychange` and `pagehide`, the store subscribes, and `src/state/autosave.test.ts` covers both. The unfixable half — `pagehide` cannot await an async IndexedDB write — is now documented as a limitation in the module header rather than glossed. |
+| A3 | **Fixed** | Repointed to `src/data/render.test.ts`. This was the first thing the new docs-link test caught, and it is why the test exists. |
+| A4 | **Fixed** | `docs/ARCHITECTURE.md` now states that `data` imports runtime values from `core/render/shapes`, and says why the seed needs them. |
+| A5 | **Not fixed, documented** | `src/ui/Stage.tsx` still calls `renderScene` on every rAF with no dirty check. Correcting the claim was the honest move; adding the check is a performance phase, not a documentation one. Recorded as risk R6. |
+| A6 | **Corrected, with a caveat** | The unit tests still drive a hand-written fake `AudioPort`; no tone is synthesised in `src/`. What is now true and verified is that the browser acceptance run generates real tones and the exported WAV is checked numerically for length, rate, depth and peak. The docs say exactly that split rather than the old blanket claim. |
+| Lower-severity list | **Fixed** | All corrected against source, including the nonexistent `HistoryEntry`, the `resolveActor` name, the shape-kind list, `clampTime()`'s real home, the second repository implementation, `MIGRATIONS` now being a real ordered array with a v1→v2 step, the dead `options.images` branch, the RULE 3 test's real id, and the `EnvPart`/`CharacterDef.height`/anchor-id errors. |
+| `docs/MVP.md` rows 10–12 | **Fixed** | Undo shortcuts and the dialogue/transport/export UI are recorded as shipped, checked against `src/ui/`. |
+| `docs/PLAN.md` layering gap | **Corrected — the spec was right** | This audit claimed no lint rule existed. One does: `local/no-upward-imports` fails the build on an upward import, verified by hand during Phase 13. The genuinely open edge is `core → data`, which shares a tier with `core` and so passes lint. `docs/PLAN.md` and `docs/ARCHITECTURE.md` now say that instead of denying the rule exists. |
+| `docs/PRODUCT.md` scope | **Fixed** | The milestone ends at EXPORT, AUDIO is in it, and the delivery unit is an episode. |
+
+**One thing the audit did not predict.** Appendix A was written as a list of six errors. The
+Phase 13 pass found roughly forty, and the ones that survived review were not the ones
+flagged: a three-layer override order, a nonexistent `resolveActor`, a `MIGRATIONS` array
+described as empty when it had held a real step since Phase 11, a boot path that never
+existed, and a boot-time seed. A checklist audits the claims it thought to write down. The
+durable defence was not the list — it was `src/arch/docsLinks.test.ts`, which found two
+false citations nobody had written down.
 
 ---
 
