@@ -901,11 +901,13 @@ export const useEditor = create<EditorState>((set, get) => {
         // `slice(-HISTORY_LIMIT)`, matching `commit`. `past` is oldest-first, so the cap
         // gives up the oldest step and keeps the one the user is about to undo.
         //
-        // This trim is currently unreachable: `commit` already caps `past`, and an
-        // undo/redo pair only ever returns `past` to the size it had before the undo. It
-        // was `slice(0, ...)` - which would have dropped the *newest* step - and that was
-        // wrong rather than merely unused. It is written correctly now so the two paths
-        // cannot drift apart if the history model ever grows a way to overflow.
+        // To be precise about why this had no observable effect: the slice runs on every
+        // redo, but today it never has anything to truncate, because `commit` already caps
+        // `past` and an undo/redo pair only returns it to the size it had before the undo.
+        // It was `slice(0, ...)` - which would have dropped the *newest* step, the opposite
+        // end - so it was wrong rather than merely unused, and it would have corrupted
+        // history the moment the model grew a way to overflow. Written correctly so the two
+        // paths cannot drift apart.
         past: [...state.past, { label: entry.label, project: state.project }].slice(-HISTORY_LIMIT),
         future: rest,
         dirty: true,
