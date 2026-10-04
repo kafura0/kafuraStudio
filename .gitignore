@@ -22,3 +22,7 @@ eslint.config.js
 # A dev server started with output redirected to a file leaves a log full of ANSI
 # escapes behind. It is a local artifact, not something to review.
 vite.log
+# An export or migration acceptance run that is not given an explicit download directory
+# resolves Playwright's default against the working directory, which lands a stray
+# `.zanza.json` here. Local artifact, not something to review.
+out/

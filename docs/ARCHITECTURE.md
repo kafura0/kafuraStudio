@@ -328,11 +328,19 @@ ui  ->  state  ->  core  ->  (nothing)
   is still downstream of `core`, so the arrow above is unchanged. What the rule forbids
   is the reverse: `core` importing content.
 
-**This rule is a review convention, not an enforced one.** Nothing in the build fails
-when a `core` file reaches upward — there is no lint rule or import-boundary test for
-it. `src/arch/layering.test.ts`, which would enforce it, is listed as planned in
-`docs/ARCHITECTURE_SPEC.md` and does not exist yet. Treat the arrow as the rule and the
-absence of a gate as the known gap, not as permission.
+**The arrow is enforced for the layers it covers, and blind at one edge.** A custom ESLint
+rule, `local/no-upward-imports` in `eslint.config.js`, fails the build when a file in
+`src/core` reaches up into `src/state` or `src/ui`, or when `src/state` reaches into
+`src/ui`. That one was checked by hand: adding an upward import to a `core` file produces
+`Upward import: "../state/editorStore" jumps from the 1 layer to the 2 layer` as an error.
+
+The blind edge is `core → data`. Both sit at the same tier, so the rule permits it, even
+though `AGENTS.md` §3 says `core` must never import from `data` — and it does not: the
+seeding is one-directional, and a `core` module importing a seed would pass lint. There is
+also no test that walks the import graph; `src/arch/layering.test.ts` does not exist yet and
+is named as planned in `docs/ARCHITECTURE_SPEC.md`, and `src/arch/` holds only the
+docs-link check. Treat the arrow as enforced across the three layers and unverified at
+`core → data`.
 
 Content-agnosticism, by contrast, **is** tested directly:
 `src/data/rule3.test.ts` seeds a synthetic character `char.synthetic_tester` and
