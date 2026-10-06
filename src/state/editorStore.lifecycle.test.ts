@@ -24,7 +24,8 @@ import { validateProject } from '../core/document/invariants';
 import { setSceneDuration } from '../core/document/projectOps';
 import { SEED_PROJECT } from '../data/seed';
 import { useEditor } from './editorStore';
-import type { Project } from '../core/types';
+import type { Project, SeriesDef } from '../core/types';
+import type { SeriesSummary } from '../core/persistence/repository';
 
 /**
  * A repository that actually stores what it is given.
@@ -56,9 +57,57 @@ const repository = vi.hoisted(() => {
   };
 });
 
+/**
+ * A series repository that behaves like the real one.
+ *
+ * It stores documents rather than objects, so a series that could not be read back fails
+ * here as it would in the app, and it hands out the workspace's own seed series: opening a
+ * project that names a series nobody has is a dangling reference, and the store now refuses
+ * it. Without this the file could not open the seed project at all, which is the correct
+ * behaviour being tested rather than a bug in it.
+ */
+const seriesRepository = vi.hoisted(() => {
+  const stored = new Map<string, string>();
+  return {
+    stored,
+    save: vi.fn(async (series: SeriesDef) => {
+      stored.set(series.id, JSON.stringify({ formatVersion: series.formatVersion, series }));
+    }),
+    load: vi.fn(async (id: string): Promise<unknown> => {
+      const raw = stored.get(id);
+      if (raw === undefined) {
+        const { SEED_SERIES } = await import('../data/seed');
+        return id === SEED_SERIES.id ? SEED_SERIES : null;
+      }
+      const { parseSeries } = await import('../core/serialize');
+      return parseSeries(raw);
+    }),
+    list: vi.fn(async (): Promise<SeriesSummary[]> => {
+      const { SEED_SERIES } = await import('../data/seed');
+      const rows = new Map<string, SeriesSummary>();
+      const summarise = (series: SeriesDef): SeriesSummary => ({
+        id: series.id,
+        name: series.name,
+        updatedAt: series.updatedAt,
+        projectCount: null,
+      });
+      // The workspace's own show is always there. `list` has to report it, or an import
+      // that names it cannot find it and creates an empty second copy of the same show.
+      rows.set(SEED_SERIES.id, summarise(SEED_SERIES));
+      for (const raw of stored.values()) {
+        const series = JSON.parse(raw).series as SeriesDef;
+        rows.set(series.id, summarise(series));
+      }
+      return [...rows.values()];
+    }),
+    remove: vi.fn(async () => {}),
+  };
+});
+
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => true,
   IndexedDbProjectRepository: vi.fn(() => repository),
+  IndexedDbSeriesRepository: vi.fn(() => seriesRepository),
 }));
 
 const openProject = (): Project => {
@@ -81,10 +130,15 @@ const reset = (): void => {
   repository.save.mockClear();
   repository.load.mockClear();
   repository.remove.mockClear();
-  repository.list.mockClear();
+repository.list.mockClear();
   repository.loadMostRecent.mockReset();
   repository.loadMostRecent.mockResolvedValue(null);
   repository.list.mockResolvedValue([]);
+  seriesRepository.stored.clear();
+  seriesRepository.save.mockClear();
+  seriesRepository.load.mockClear();
+  seriesRepository.list.mockClear();
+  seriesRepository.remove.mockClear();
   seedStored();
   useEditor.setState({
     project: null,
@@ -420,8 +474,9 @@ describe('delete', () => {
 
 describe('import', () => {
   it('opens an imported project under a new id and a name from the file', async () => {
-    const { exportProject } = await import('../core/io/projectIo');
-    const { text, filename } = exportProject(SEED_PROJECT);
+const { exportProject } = await import('../core/io/projectIo');
+    const { SEED_SERIES } = await import('../data/seed');
+    const { text, filename } = exportProject(SEED_PROJECT, SEED_SERIES);
 
     await useEditor.getState().importProjectText(text, filename);
 

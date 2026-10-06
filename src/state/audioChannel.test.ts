@@ -14,7 +14,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProject, createScene, emptyAssetLibrary } from '../core/document/factories';
 import { addSimpleClip } from '../core/document/trackOps';
 import { resetPlaybackAudio, syncPlaybackAudio } from './audioChannel';
-import type { AudioDef, Project } from '../core/types';
+import { resolveAssets } from '../core/document/scopes';
+import type { AudioDef, Project, SceneContext } from '../core/types';
 
 /** An audio asset with a `src`, so the resolver's lookup is observable. */
 const audioDef = (id: string, src: string): AudioDef => ({
@@ -50,6 +51,20 @@ const projectWith = (id: string, audioId: string): Project => {
   });
   return built.project;
 };
+
+/**
+ * The library the engine is handed.
+ *
+ * Deliberately *not* the project's own `assets`. These tests are about which map the engine
+ * resolved clip ids against, and a free project happens to keep its audio in the project —
+ * so passing `project.assets` would let a channel that ignored the context entirely pass
+ * every assertion here, while going silent for the series-owned voices that real projects
+ * actually use. This builds the context a series project would present.
+ */
+const contextOf = (project: Project): SceneContext => ({
+  assets: resolveAssets(project, null).assets,
+  settings: project.settings,
+});
 
 let contexts = 0;
 let fetched: string[] = [];
@@ -123,15 +138,15 @@ describe('the playback engine follows the open project', () => {
     const a = projectWith('A', 'voice.a');
     const b = projectWith('B', 'voice.b');
 
-    syncPlaybackAudio(a, a.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(a, contextOf(a), a.scenes[0]?.id ?? '', 0, true);
     expect(contexts).toBe(1);
 
     // The same project again must reuse the engine — rebuilding per frame would be a
     // per-frame `new AudioContext`, which is both a leak and a hard performance defect.
-    syncPlaybackAudio(a, a.scenes[0]?.id ?? '', 0.1, true);
+    syncPlaybackAudio(a, contextOf(a), a.scenes[0]?.id ?? '', 0.1, true);
     expect(contexts).toBe(1);
 
-    syncPlaybackAudio(b, b.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(b, contextOf(b), b.scenes[0]?.id ?? '', 0, true);
     expect(contexts).toBe(2);
   });
 
@@ -140,12 +155,12 @@ describe('the playback engine follows the open project', () => {
     const a = projectWith('A', 'voice.a');
     const b = projectWith('B', 'voice.b');
 
-    syncPlaybackAudio(a, a.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(a, contextOf(a), a.scenes[0]?.id ?? '', 0, true);
     await tick();
     expect(fetched).toContain('/voice.a.wav');
 
     fetched = [];
-    syncPlaybackAudio(b, b.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(b, contextOf(b), b.scenes[0]?.id ?? '', 0, true);
     await tick();
 
     // Whatever project is playing, only its own asset paths are ever requested. An engine
@@ -159,11 +174,11 @@ describe('the playback engine follows the open project', () => {
     const a = projectWith('A', 'voice.a');
     const b = projectWith('B', 'voice.b');
 
-    syncPlaybackAudio(a, a.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(a, contextOf(a), a.scenes[0]?.id ?? '', 0, true);
     expect(contexts).toBe(1);
 
     resetPlaybackAudio();
-    syncPlaybackAudio(b, b.scenes[0]?.id ?? '', 0, true);
+    syncPlaybackAudio(b, contextOf(b), b.scenes[0]?.id ?? '', 0, true);
 
     // A reset must leave nothing behind: the cached engine is gone, so this is a new
     // AudioContext rather than a rebuild triggered by the id changing.
@@ -176,7 +191,7 @@ describe('the playback engine follows the open project', () => {
     delete (globalThis as unknown as { AudioContext?: unknown }).AudioContext;
     const a = projectWith('A', 'voice.a');
     expect(() => {
-      syncPlaybackAudio(a, a.scenes[0]?.id ?? '', 0, true);
+      syncPlaybackAudio(a, contextOf(a), a.scenes[0]?.id ?? '', 0, true);
       resetPlaybackAudio();
     }).not.toThrow();
   });
@@ -205,7 +220,7 @@ describe('decoding does not open an AudioContext per file', () => {
     // Walk the playhead across the scene so every clip is genuinely scheduled. Seeking to
     // t=0 alone would resolve one file, and a one-file test cannot see a per-file context.
     for (const [i] of ids.entries()) {
-      syncPlaybackAudio(built, scene.id, i * 2, true);
+      syncPlaybackAudio(built, contextOf(built), scene.id, i * 2, true);
       await tick();
     }
 

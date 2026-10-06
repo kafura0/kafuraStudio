@@ -16,13 +16,17 @@
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { createScene, createProject } from '../core/document/factories';
+import { createScene, createProject, emptyAssetLibrary } from '../core/document/factories';
 import { HISTORY_LIMIT } from '../core/constants';
 import { setSceneDuration } from '../core/document/projectOps';
-import { SEED_PROJECT } from '../data/seed';
+import { SEED_PROJECT, SEED_SERIES, seedContext } from '../data/seed';
+import { NIA_APARTMENT } from '../data/environments';
+import { NIA } from '../data/characters';
 import { attachAudioMedia } from '../core/document/projectOps';
+import { resolveAssets } from '../core/document/scopes';
 import { useEditor, episodeExportTarget } from './editorStore';
-import type { Project } from '../core/types';
+import type { Project, SeriesDef } from '../core/types';
+import type { SeriesSummary } from '../core/persistence/repository';
 
 // jsdom has no IndexedDB, so the repository is stubbed. `vi.mock` is hoisted above
 // the imports by vitest, which is what lets the store pick this up when it constructs
@@ -38,9 +42,24 @@ const repository = vi.hoisted(() => ({
   load: vi.fn(async (_id: string): Promise<unknown> => null),
 }));
 
+/**
+ * The series store, stubbed the same way.
+ *
+ * Empty by default, which means "the workspace has no series" — the correct starting state
+ * for tests about a project document, and the one that would fail loudly if the store ever
+ * started silently creating a series to paper over a missing lookup.
+ */
+const seriesRepository = vi.hoisted(() => ({
+  save: vi.fn(async (_series: SeriesDef) => {}),
+  load: vi.fn(async (_id: string): Promise<SeriesDef | null> => null),
+  list: vi.fn(async (): Promise<SeriesSummary[]> => []),
+  remove: vi.fn(async () => {}),
+}));
+
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => true,
   IndexedDbProjectRepository: vi.fn(() => repository),
+  IndexedDbSeriesRepository: vi.fn(() => seriesRepository),
 }));
 
 /**
@@ -62,7 +81,13 @@ const reset = (): void => {
   repository.loadMostRecent.mockReset();
   repository.loadMostRecent.mockResolvedValue(null);
   useEditor.setState({
+    // Project, series and context are set together, and from `seedContext()` rather than
+    // assembled by hand. `SEED_PROJECT.assets` is empty now that the library lives on the
+    // series, so a test that left `context` at its previous value would be running against a
+    // stale cast — and one that built its own context would pass even if the merge broke.
     project: SEED_PROJECT,
+    series: SEED_SERIES,
+    context: seedContext(),
     past: [],
     future: [],
     playhead: 0,
@@ -419,10 +444,15 @@ describe('editorStore persistence races', () => {
     useEditor.getState().setPlayhead(3);
     useEditor.getState().play();
 
-    repository.loadMostRecent.mockResolvedValue({
+// A *valid* document. Hydration now resolves the series and validates before opening,
+    // the same way an explicit open does, so a document that cannot hold together is
+    // refused with a message rather than loaded and left for autosave to break.
+    const loaded: Project = {
       ...createProject('Other'),
-      scenes: [{ ...createScene('Loaded', 'env_missing', { duration: 8 }) }],
-    });
+      assets: { ...emptyAssetLibrary(), characters: [NIA], environments: [NIA_APARTMENT] },
+      scenes: [{ ...createScene('Loaded', NIA_APARTMENT.id, { duration: 8 }) }],
+    };
+    repository.loadMostRecent.mockResolvedValue(loaded);
 
     await useEditor.getState().hydrate();
 
@@ -782,10 +812,26 @@ describe('editorStore audio placement', () => {
       .map((c) => ({ duration: c.duration, start: c.start }));
   }
 
-  function attach(audioId: string, duration: number): void {
-    useEditor.setState({
-      project: attachAudioMedia(currentProject(), audioId, `media_${audioId}`, duration),
-    });
+  /**
+   * Attach a recording the way the panel does: through the document, with the resolved
+   * library available.
+   *
+   * Both arguments are needed and neither is decoration. `attachAudioMedia` writes a project
+   * override for a slot that lives on the series, and it can only do that if it can see that
+   * the asset exists — which lives on the series, not on the project. And the store keeps a
+   * derived context beside the document, so setting the project alone would leave the two
+   * disagreeing: exactly the state a real attachment puts the editor in and a hand-built one
+   * does not.
+   */
+function attach(audioId: string, duration: number): void {
+    const next = attachAudioMedia(
+      currentProject(),
+      audioId,
+      `media_${audioId}`,
+      duration,
+      seedContext().assets,
+    );
+    useEditor.setState({ project: next, context: resolveAssets(next, SEED_SERIES) });
   }
 
   beforeEach(() => {

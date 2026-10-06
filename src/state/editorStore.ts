@@ -15,9 +15,19 @@ import { AUTOSAVE_DEBOUNCE_MS, HISTORY_LIMIT } from '../core/constants';
 import { probeAudioDuration } from '../core/audio/probe.browser';
 import { createId } from '../core/id';
 import { clamp } from '../core/geometry';
-import type { Id, Project } from '../core/types';
-import { createProject as newProject } from '../core/document/factories';
-import { validateProject } from '../core/document/invariants';
+import type { Id, Project, SceneContext, SeriesDef } from '../core/types';
+import {
+  createProject as newProject,
+  createSeries as newSeries,
+  emptyAssetLibrary,
+} from '../core/document/factories';
+import { validateProject, type ValidationIssue } from '../core/document/invariants';
+import { resolveAssets } from '../core/document/scopes';
+import {
+  removeSeriesAsset as removeSeriesAssetOp,
+  renameSeries,
+  type SeriesAssetCollection,
+} from '../core/document/seriesOps';
 import {
   addEpisode,
   attachAudioMedia,
@@ -29,10 +39,21 @@ import {
 } from '../core/document/projectOps';
 import { addSimpleClip } from '../core/document/trackOps';
 import { starterAssetLibrary } from '../data/starter';
-import { duplicateProject, importProject } from '../core/io/projectIo';
+import {
+  adoptImportSeries,
+  duplicateProject,
+  exportProject,
+  importProject,
+  type ExportOptions,
+  type ExportResult,
+} from '../core/io/projectIo';
 import { ProjectParseError } from '../core/serialize';
-import type { ProjectSummary } from '../core/persistence/repository';
-import { IndexedDbProjectRepository, isIndexedDbAvailable } from '../core/persistence/indexedDb.browser';
+import type { ProjectSummary, SeriesSummary } from '../core/persistence/repository';
+import {
+  IndexedDbProjectRepository,
+  IndexedDbSeriesRepository,
+  isIndexedDbAvailable,
+} from '../core/persistence/indexedDb.browser';
 import { adoptLegacyWorkspace } from '../core/persistence/adoptLegacyWorkspace.browser';
 import {
   buildEpisodeTimeline,
@@ -98,13 +119,35 @@ export interface EditorState {
    * user never chose.
    */
   project: Project | null;
+  /**
+   * The series that owns the open project's library, or `null` when there is none.
+   *
+   * Two distinct nulls, and the distinction matters:
+   *
+   * - `project === null` means nothing is open, so there is nothing to own.
+   * - `project !== null && series === null` means an open **free project** — `seriesId` is
+   *   `null` and its `assets` are the whole library (§5.3).
+   *
+   * An open project whose `seriesId` names a series that failed to load is *not* one of
+   * these: the open is refused, because drawing half a show is worse than drawing nothing
+   * and saying why.
+   *
+   * Held here rather than derived per call so that the renderer, the asset panels and
+   * validation all resolve the same library in the same frame. Recomputing it at each call
+   * site is how two panels end up disagreeing about what the project contains.
+   */
+  series: SeriesDef | null;
+  /** The library the renderer and the asset panels read, resolved once at open. */
+  context: SceneContext | null;
   past: HistoryEntry[];
   future: HistoryEntry[];
   status: SessionStatus;
   /** Why the last open or import failed, in words. Cleared by the next attempt. */
   statusMessage: string | null;
-  /** The workspace listing, for the project browser. Refreshed on demand. */
+/** The workspace listing, for the project browser. Refreshed on demand. */
   projects: ProjectSummary[];
+  /** The workspace series listing, for the series browser. Refreshed on demand. */
+  seriesList: SeriesSummary[];
 
   // Transient: never recorded in history.
   /**
@@ -198,7 +241,7 @@ export interface EditorState {
   /** Close the open project. Flushes pending work first. */
   closeProject: () => void;
   /** Create a project from the factory, save it, and open it. */
-  createProject: (name: string) => Promise<void>;
+  createProject: (name: string, seriesId?: Id | null) => Promise<void>;
   /** Copy the open project. No-op when nothing is open. */
   duplicateOpenProject: (name?: string) => Promise<void>;
   /** Import a serialized project and open it. Writes nothing if the file is unreadable. */
@@ -211,7 +254,17 @@ export interface EditorState {
    * as a getter, and the first version of this did exactly that.
    */
   peekProject: (id: Id) => Promise<Project | null>;
-  deleteProject: (id: Id) => Promise<void>;
+
+  /**
+   * The file contents and a filename for a project, whether or not it is open.
+   *
+   * Lives here rather than in the browser because assembling a portable file needs two reads
+   * — the project and the series it names — and only this layer has both repositories. A
+   * component that loaded one and forgot the other would write a file that reopens as an
+   * empty stage, which is exactly the kind of failure that only shows up on another machine.
+   */
+  exportProjectFile: (id: Id, options?: ExportOptions) => Promise<ExportResult | null>;
+deleteProject: (id: Id) => Promise<void>;
   /**
    * Hide a project from the browser, or bring a hidden one back.
    *
@@ -220,6 +273,30 @@ export interface EditorState {
    * no un-archive is a delete with extra steps and a reassuring label.
    */
   archiveProject: (id: Id, archived?: boolean) => Promise<void>;
+
+  /* --- series lifecycle --- */
+  /** Reload the series listing. */
+  refreshSeries: () => Promise<void>;
+  /**
+   * Create a series and persist it. Returns its id, or null when the write fails.
+   *
+   * Creation has no name restrictions beyond "not blank" — a series called `Untitled` is
+   * legal, it is what "New series" gives you. Nothing is opened: a series is a container,
+   * and the browser is where you decide which project (if any) to put in it.
+   */
+  createSeries: (name: string, description?: string) => Promise<Id | null>;
+  /** Rename a series in the listing. The open context, if any, follows. */
+  renameSeries: (id: Id, name: string) => Promise<void>;
+  /**
+   * Delete a series. Refused while any project references it, reported as a status error
+   * that names the referencing projects rather than a number.
+   */
+  deleteSeries: (id: Id) => Promise<void>;
+  /**
+   * Remove a series asset, refusing while any of the series' projects reference it.
+   * A project-level override removal stays on the project; this is the series copy.
+   */
+  removeSeriesAsset: (id: Id, collection: SeriesAssetCollection, assetId: Id) => Promise<void>;
   /**
    * Add an episode to a project by id, whether or not it is the one open.
    *
@@ -346,6 +423,32 @@ export interface EditorState {
 const repository = new IndexedDbProjectRepository();
 
 /**
+ * The reusable libraries, in the same database.
+ *
+ * A second repository instance rather than a second database: a series and its projects are
+ * one workspace, and two databases would make "which workspace is this" a question with two
+ * valid answers.
+ */
+const seriesRepository = new IndexedDbSeriesRepository();
+
+/**
+ * Every series in the workspace, keyed by id.
+ *
+ * Read as a map rather than as a list because `adoptImportSeries` needs a membership
+ * question — "does this id exist?" — and turning that into a `find` per call would be a
+ * linear scan dressed up as a lookup.
+ */
+async function loadSeriesMap(): Promise<Map<Id, SeriesDef>> {
+  const rows = await seriesRepository.list();
+  const map = new Map<Id, SeriesDef>();
+  for (const row of rows) {
+    const full = await seriesRepository.load(row.id);
+    if (full !== null) map.set(full.id, full);
+  }
+  return map;
+}
+
+/**
  * The database this app originally wrote, kept for the copy-forward in `hydrate`.
  *
  * This is the one place allowed to know the show's name: it is a storage name from this
@@ -386,6 +489,60 @@ export interface ExportTarget {
 }
 
 const NO_EXPORT_TARGET: ExportTarget = { episodeId: null, episodeTime: 0 };
+
+/**
+ * Why a project could not be resolved against a library.
+ *
+ * A named reason rather than a boolean because the two failures need different words and,
+ * more importantly, different *responses*: a dangling reference is a broken record the
+ * operator may be able to repair, while a genuinely free project is the system working.
+ */
+export type ResolveFailure =
+  | { kind: 'dangling-series'; seriesId: Id }
+  | { kind: 'invalid'; issues: ValidationIssue[] };
+
+export function describeResolveFailure(failure: ResolveFailure): string {
+  if (failure.kind === 'dangling-series') {
+    return (
+      `This project belongs to a series that is not in this workspace (${failure.seriesId}). ` +
+      `Nothing here can draw it, so it was not opened.`
+    );
+  }
+  const first = failure.issues[0];
+  const head = first ? `${first.path}: ${first.message}` : 'unknown reason';
+  const rest = failure.issues.length - 1;
+  return (
+    `This project does not hold together (${failure.issues.length} problem` +
+    `${failure.issues.length === 1 ? '' : 's'}). First: ${head}` +
+    `${rest > 0 ? `, and ${rest} more.` : '.'}`
+  );
+}
+
+/**
+ * Resolve a project against its series, or say precisely why it cannot be resolved.
+ *
+ * Every path that puts a project into the store goes through this. There is one reason: a
+ * project is only drawable in combination with the library it references, and the three ways
+ * that can fail — no such series, a dangling reference, a document that violates an invariant
+ * — are all *silent* at the point of failure. An unchecked open would present an editor with
+ * blank stages and an error-free status bar, and the operator would reasonably conclude the
+ * software had lost their work.
+ *
+ * Note what is *not* refused: a free project (`seriesId === null`) resolves against its own
+ * `assets`, and an empty library is a valid answer. Only a project that points at something
+ * which does not exist is rejected.
+ */
+export function resolveProjectContext(
+  project: Project,
+  series: SeriesDef | null,
+): { context: SceneContext; series: SeriesDef | null } | ResolveFailure {
+  if (project.seriesId !== null && (series === null || series.id !== project.seriesId)) {
+    return { kind: 'dangling-series', seriesId: project.seriesId };
+  }
+  const issues = validateProject(project, series);
+  if (issues.length > 0) return { kind: 'invalid', issues };
+  return { context: resolveAssets(project, series), series };
+}
 
 /**
  * The transport's position expressed on the episode clock, as the exporter needs it.
@@ -476,14 +633,17 @@ export const useEditor = create<EditorState>((set, get) => {
     // unreachable, and a first-time operator was dropped into a show they did not create
     // with no way back. `hydrate` decides what is open by looking at what is stored.
     project: null,
+    series: null,
+    context: null,
     past: [],
     future: [],
     // Loading, not ready: until `hydrate` has asked the database, the honest answer to
     // "is anything open" is "we do not know yet", and the browser shows that rather than
     // flashing an empty list before the records arrive.
-    status: 'loading',
+status: 'loading',
     statusMessage: null,
     projects: [],
+    seriesList: [],
     playhead: 0,
     playing: false,
     // Episode playback is the shipped behaviour; scene-wrap is what the single-scene
@@ -498,11 +658,11 @@ export const useEditor = create<EditorState>((set, get) => {
     setScene: (sceneId) => {
       const state = get();
       // See `setPlayhead`: with no project open these viewer actions are no-ops. They can
-      // still be reached from a keyboard shortcut or a click that lands in the frame
+// still be reached from a keyboard shortcut or a click that lands in the frame
       // between the project closing and the editor unmounting, and taking the tab down
       // for that would be the worst possible trade.
-      if (state.project === null) return;
-      stopPlaybackAudio(state.project);
+      if (state.project === null || state.context === null) return;
+      stopPlaybackAudio(state.project, state.context);
       // In episode mode the playhead means "where in the episode", so picking a scene
       // has to move it to that scene's first frame. Leaving it at 0 would teleport the
       // transport back to the top of the cut while the panel shows another scene, and
@@ -543,8 +703,8 @@ export const useEditor = create<EditorState>((set, get) => {
     pause: () => {
       // Stopping audio is the point of pausing, but with nothing open there is nothing to
       // stop — and a null here is normal rather than exceptional.
-      const project = get().project;
-      if (project !== null) stopPlaybackAudio(project);
+const { project, context } = get();
+      if (project !== null && context !== null) stopPlaybackAudio(project, context);
       set({ playing: false });
     },
     toggleSubtitles: () => set((s) => ({ showSubtitles: !s.showSubtitles })),
@@ -598,10 +758,11 @@ export const useEditor = create<EditorState>((set, get) => {
       return episodeExportTarget(state.project, state.playbackMode, state.sceneId, state.playhead);
     },
 
-    advancePlayback: (dt) => {
+advancePlayback: (dt) => {
       const state = get();
-      if (!state.playing || dt <= 0 || state.project === null) return;
+      if (!state.playing || dt <= 0 || state.project === null || state.context === null) return;
       const project = state.project;
+      const context = state.context;
 
       if (state.playbackMode === 'scene-wrap') {
         const duration = state.activeDuration();
@@ -610,7 +771,7 @@ export const useEditor = create<EditorState>((set, get) => {
         // end would leave the playhead pinned while the transport still reads "Play".
         const next = (state.playhead + dt) % duration;
         set({ playhead: next < 0 ? 0 : next });
-        syncPlaybackAudio(project, state.sceneId, next, true);
+        syncPlaybackAudio(project, context, state.sceneId, next, true);
         return;
       }
 
@@ -631,12 +792,12 @@ export const useEditor = create<EditorState>((set, get) => {
         const wrapped = ((next % duration) + duration) % duration;
         const at = sceneAtTime(projectTimeline, wrapped);
         set({ playhead: wrapped, sceneId: at.sceneId });
-        syncPlaybackAudio(project, at.sceneId, at.sceneTime, true);
+        syncPlaybackAudio(project, context, at.sceneId, at.sceneTime, true);
         return;
       }
 
       set({ playhead: next, sceneId: position.sceneId });
-      syncPlaybackAudio(project, position.sceneId, position.sceneTime, true);
+      syncPlaybackAudio(project, context, position.sceneId, position.sceneTime, true);
     },
 
     select: (kind, id) => set({ selection: { kind, id } }),
@@ -648,7 +809,10 @@ export const useEditor = create<EditorState>((set, get) => {
       // than asked for. Taking the first one means the button works on a project that has
       // been imported, duplicated, or copied from the pilot, without asking the caller to
       // know what is in the library.
-      const environment = environmentId ?? state.project.assets.environments[0]?.id;
+      // The environment has to come from the *resolved* library: for a series-owned
+      // project, `project.assets.environments` is empty and indexing it would report
+      // "no environment yet" for a show that has three.
+      const environment = environmentId ?? get().context?.assets.environments[0]?.id;
       if (environment === undefined) {
         // Nothing to put the scene in. Saying so beats inventing an id, which would
         // produce a scene that fails validation and draws nothing.
@@ -658,7 +822,7 @@ export const useEditor = create<EditorState>((set, get) => {
         });
         return;
       }
-      const { project, sceneId } = createSceneInProject(state.project, {
+      const { project, sceneId } = createSceneInProject(state.project, get().context?.assets ?? emptyAssetLibrary(), {
         name,
         environmentId: environment,
       });
@@ -719,7 +883,11 @@ export const useEditor = create<EditorState>((set, get) => {
     placeAudioSlotInScene: (audioId) => {
       const state = get();
       if (state.project === null) return;
-      const def = state.project.assets.audio.find((a) => a.id === audioId);
+      // Read from the resolved library, not the project's own list. The audio slots moved to
+      // the series with the rest of the reusable art, so a lookup against `project.assets`
+      // now finds nothing and reports "that slot no longer exists" for every slot in the
+      // show — a false alarm about data the operator can plainly see in the panel.
+      const def = state.context?.assets.audio.find((a) => a.id === audioId);
       if (!def) {
         set({ status: 'error', statusMessage: 'That audio slot no longer exists.' });
         return;
@@ -773,7 +941,9 @@ export const useEditor = create<EditorState>((set, get) => {
     attachAudioFile: async (audioId, file) => {
       const state = get();
       if (state.project === null) return;
-      const def = state.project.assets.audio.find((a) => a.id === audioId);
+      // From the resolved library, for the same reason as `placeAudioSlotInScene`: the slots
+      // live on the series now, so reading `project.assets` reports every slot as missing.
+      const def = state.context?.assets.audio.find((a) => a.id === audioId);
       if (!def) {
         set({ status: 'error', statusMessage: 'That audio slot no longer exists.' });
         return;
@@ -809,7 +979,15 @@ export const useEditor = create<EditorState>((set, get) => {
           data: bytes,
         });
         get().commit(
-          attachAudioMedia(get().project as Project, audioId, mediaId, duration),
+          attachAudioMedia(
+            get().project as Project,
+            audioId,
+            mediaId,
+            duration,
+            // The resolved library, so a series-owned slot is overridden into this project
+            // rather than silently not found. See `writeAudioSlot`.
+            get().context?.assets,
+          ),
           `attach audio "${file.name}"`,
         );
         // The engine caches decoded buffers per project, so an engine built while this slot
@@ -825,18 +1003,21 @@ export const useEditor = create<EditorState>((set, get) => {
     clearAudioFile: (audioId) => {
       const state = get();
       if (state.project === null) return;
-      const def = state.project.assets.audio.find((a) => a.id === audioId);
+      const def = state.context?.assets.audio.find((a) => a.id === audioId);
       if (!def) return;
-      get().commit(detachAudioMedia(get().project as Project, audioId), `clear audio "${def.name}"`);
+      get().commit(
+        detachAudioMedia(get().project as Project, audioId, get().context?.assets),
+        `clear audio "${def.name}"`,
+      );
       // Same reason as attach: the cached buffer for this asset is stale either way, and
       // clearing must not leave the previous file audible.
       resetPlaybackAudio();
     },
 
-    previewAudio: async (audioId) => {
-      const project = get().project;
-      if (project === null) return false;
-      return previewAudioAsset(project, audioId);
+previewAudio: async (audioId) => {
+      const { project, context } = get();
+      if (project === null || context === null) return false;
+      return previewAudioAsset(project, context, audioId);
     },
 
     /**
@@ -850,7 +1031,10 @@ export const useEditor = create<EditorState>((set, get) => {
       const state = get();
       if (next === state.project || state.project === null) return;
 
-      const issues = validateProject(next);
+      // Against the *merged* library. A project that overrides nothing has an empty
+      // `assets`, so validating `next` alone would report every character in the show as
+      // unknown and refuse every edit to a migrated project.
+      const issues = validateProject(next, state.series);
       if (issues.length > 0) {
         // A mutation that breaks an invariant is a bug, not a user error. Refuse it
         // loudly in dev rather than letting a broken document into history.
@@ -868,6 +1052,13 @@ export const useEditor = create<EditorState>((set, get) => {
       const past = [...state.past, { label: label ?? 'Edit', project: state.project }].slice(-HISTORY_LIMIT);
       set({
         project: next,
+        // Recomputed here rather than by whichever action changed the overrides. Project
+        // and context are one fact in two places, and an edit that only touches
+        // `project.assets` — attaching a recording, overriding a camera — would otherwise
+        // leave every panel reading a library that no longer matches the document. An
+        // attachment that renders in the audio panel and not in playback is the shape of
+        // bug this line exists to prevent.
+        context: resolveAssets(next, state.series),
         past,
         future: [],
         dirty: true,
@@ -884,6 +1075,10 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!entry || state.project === null) return;
       set({
         project: entry.project,
+        // Undo moves the document, so the derived library moves with it. An attachment
+        // undone while the context still listed it would keep playing for a slot the
+        // document no longer has.
+        context: resolveAssets(entry.project, state.series),
         past: state.past.slice(0, -1),
         // Redo replays the action named by the entry we just consumed.
         future: [{ label: entry.label, project: state.project }, ...state.future].slice(0, HISTORY_LIMIT),
@@ -898,6 +1093,7 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!entry || state.project === null) return;
       set({
         project: entry.project,
+        context: resolveAssets(entry.project, state.series),
         // `slice(-HISTORY_LIMIT)`, matching `commit`. `past` is oldest-first, so the cap
         // gives up the oldest step and keeps the one the user is about to undo.
         //
@@ -932,7 +1128,8 @@ export const useEditor = create<EditorState>((set, get) => {
         // a workspace with no legacy data is the normal case, and that must not look like
         // an error. The old records are untouched either way.
       }
-      await get().refreshProjects();
+await get().refreshProjects();
+      await get().refreshSeries();
       if (!isIndexedDbAvailable()) return;
       set({ status: 'loading', statusMessage: null });
       try {
@@ -948,8 +1145,23 @@ export const useEditor = create<EditorState>((set, get) => {
         // the load. Left in place, Ctrl+Z would restore a whole different project, and
         // a selection could name an actor that this project does not contain.
         resetPlaybackAudio();
+        // The series the project names, loaded alongside it. Without this the context
+        // would resolve against nothing and the reopened show would come back as an
+        // empty stage — the same silent failure as saving a project that names a row
+        // nobody wrote.
+        const owner = saved.seriesId === null ? null : (await loadSeriesMap()).get(saved.seriesId) ?? null;
+        const resolved = resolveProjectContext(saved, owner);
+        if (!('context' in resolved)) {
+          set({
+            status: 'error',
+            statusMessage: describeResolveFailure(resolved),
+          });
+          return;
+        }
         set({
           project: saved,
+          series: resolved.series,
+          context: resolved.context,
           sceneId: saved.scenes[0]?.id ?? '',
           playhead: 0,
           playing: false,
@@ -1000,12 +1212,23 @@ export const useEditor = create<EditorState>((set, get) => {
           set({ status: 'error', statusMessage: 'That project no longer exists.' });
           return;
         }
+        // The series is loaded *with* the project rather than lazily on first use, so that
+        // "this project is open" and "this project's library is open" become true at the
+        // same moment. A lazy load would leave a window in which the stage is live and empty.
+        const owner = opened.seriesId === null ? null : await seriesRepository.load(opened.seriesId);
+        const resolved = resolveProjectContext(opened, owner);
+        if ('kind' in resolved) {
+          set({ status: 'error', statusMessage: describeResolveFailure(resolved) });
+          return;
+        }
         // The engine resolves clip ids against the asset list it was built with, so a
         // project switch has to tear it down. Without this it kept serving the previous
         // project's recordings.
         resetPlaybackAudio();
         set({
           project: opened,
+          series: resolved.series,
+          context: resolved.context,
           sceneId: opened.scenes[0]?.id ?? '',
           playhead: 0,
           playing: false,
@@ -1030,6 +1253,8 @@ export const useEditor = create<EditorState>((set, get) => {
       resetPlaybackAudio();
       set({
         project: null,
+        series: null,
+        context: null,
         sceneId: '',
         playhead: 0,
         playing: false,
@@ -1044,7 +1269,7 @@ export const useEditor = create<EditorState>((set, get) => {
       void get().refreshProjects();
     },
 
-    createProject: async (name) => {
+    createProject: async (name, seriesId = null) => {
       if (!isIndexedDbAvailable()) return;
       set({ status: 'loading', statusMessage: null });
       try {
@@ -1052,14 +1277,24 @@ export const useEditor = create<EditorState>((set, get) => {
         // the seed's contents. The seed is one show; a second project is the operator's
         // own, and shipping them the pilot's scenes would be a content decision leaking
         // into a workflow.
-        const created = newProject(name.trim() === '' ? 'Untitled Project' : name.trim());
+        //
+        // With no `seriesId` this is a **free project**: its starter library lives in its
+        // own `assets` and it is its own owner. Passing a `seriesId` instead would mean
+        // putting the starter set in a *series*, which is a different and much larger act
+        // than creating an episode — so that path is deliberately not offered here.
+        const created = newProject(name.trim() === '' ? 'Untitled Project' : name.trim(), seriesId);
         await repository.save({
           ...created,
           // The starter set is what makes a new project a place to work rather than a
           // valid document with nothing in it: the project invariant demands a character
           // and an environment as soon as there is a scene, and there is no asset UI in
           // this phase to supply them. See `src/data/starter.ts`.
-          assets: starterAssetLibrary(),
+          //
+          // Only valid for a free project. An override library on a series-owned project
+          // would silently shadow the show's own characters for this episode only, which
+          // is a real feature — and emphatically not one that a "create project" button
+          // should switch on without being asked.
+          assets: seriesId === null ? starterAssetLibrary() : emptyAssetLibrary(),
         });
         // Deliberately not opened. Creating a project and landing in an empty editor is
         // not the same as asking to work in it, and a browser that jumps away from the
@@ -1078,11 +1313,24 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!isIndexedDbAvailable()) return;
       set({ status: 'loading', statusMessage: null });
       try {
+        const owner = get().series;
         const copy = duplicateProject(current, name);
+        // A duplicate keeps `seriesId` and shares the library rather than copying it — two
+        // copies of one show's assets is the fork Phase 14 exists to prevent. The context is
+        // re-resolved rather than carried over because `duplicateProject` mints a new project
+        // id; a duplicate of a free project resolves against the copy's own `assets`, which
+        // `duplicateProject` does carry over.
+        const resolved = resolveProjectContext(copy, owner);
+        if ('kind' in resolved) {
+          set({ status: 'error', statusMessage: describeResolveFailure(resolved) });
+          return;
+        }
         await repository.save(copy);
         resetPlaybackAudio();
         set({
           project: copy,
+          series: resolved.series,
+          context: resolved.context,
           sceneId: copy.scenes[0]?.id ?? '',
           playhead: 0,
           playing: false,
@@ -1107,20 +1355,46 @@ export const useEditor = create<EditorState>((set, get) => {
         // half-created project behind, which is why the import returns a project or
         // throws and never a partial one.
         const result = importProject(text, filename);
-        await repository.save(result.project);
+        // Adopt-or-create, decided here because this is the one place that can see the
+        // destination workspace. `adoptImportSeries` is pure and unit-tested; the lookup it
+        // needs is the part that is genuinely a database concern, so the existing series are
+        // read once up front rather than the policy function being made async.
+        const existing = await loadSeriesMap();
+        const resolution = adoptImportSeries(
+          result.project,
+          result.requiredSeries,
+          (id) => existing.get(id) ?? null,
+        );
+        // Both writes happen before either is exposed, and the series goes first: a project
+        // that names a row nobody wrote is a dangling reference, and the reverse is merely
+        // an unreferenced series — recoverable, and far less confusing to explain.
+        if (resolution.seriesToCreate !== null) {
+          await seriesRepository.save(resolution.seriesToCreate);
+        }
+        await repository.save(resolution.project);
+        const resolved = resolveProjectContext(resolution.project, resolution.series);
+        if ('kind' in resolved) {
+          set({ status: 'error', statusMessage: describeResolveFailure(resolved) });
+          return;
+        }
         resetPlaybackAudio();
         set({
-          project: result.project,
-          sceneId: result.project.scenes[0]?.id ?? '',
+          project: resolution.project,
+          series: resolved.series,
+          context: resolved.context,
+          sceneId: resolution.project.scenes[0]?.id ?? '',
           playhead: 0,
           playing: false,
           past: [],
           future: [],
           selection: { kind: null, id: null },
           dirty: false,
-          lastSavedAt: result.project.updatedAt,
+          lastSavedAt: resolution.project.updatedAt,
           status: 'ready',
-          statusMessage: result.warnings[0] ?? null,
+          // The series warning outranks a parse warning. Both are true, but the one about
+          // an empty library is the one that explains an empty stage, so it is the line the
+          // operator reads first.
+          statusMessage: resolution.warning ?? result.warnings[0] ?? null,
         });
         await get().refreshProjects();
       } catch (error) {
@@ -1134,6 +1408,27 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!isIndexedDbAvailable()) return null;
       try {
         return await repository.load(id);
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+        return null;
+      }
+    },
+
+    exportProjectFile: async (id, options) => {
+      if (!isIndexedDbAvailable()) return null;
+      try {
+        const project = await repository.load(id);
+        if (project === null) {
+          set({ status: 'error', statusMessage: `Project ${id} is no longer in this workspace.` });
+          return null;
+        }
+        // The series is read rather than assumed. `openProject` returns null on a dangling
+        // reference and says so; an export that guessed would instead write a file the
+        // operator believes is a copy of their show.
+        const series =
+          project.seriesId === null ? null : (await seriesRepository.load(project.seriesId)) ?? null;
+        const result = exportProject(project, series, options);
+        return result;
       } catch (error) {
         set({ status: 'error', statusMessage: describe(error) });
         return null;
@@ -1204,9 +1499,122 @@ export const useEditor = create<EditorState>((set, get) => {
       } catch (error) {
         set({ status: 'error', statusMessage: describe(error) });
       }
-    },
+},
 
     clearStatus: () => set({ statusMessage: null }),
+
+    /* --- series lifecycle --- */
+
+    refreshSeries: async () => {
+      if (!isIndexedDbAvailable()) return;
+      try {
+        set({ seriesList: await seriesRepository.list() });
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+      }
+    },
+
+    createSeries: async (name, description = '') => {
+      if (!isIndexedDbAvailable()) return null;
+      const trimmed = name.trim() === '' ? 'Untitled Series' : name.trim();
+      // The core factory owns the shape and the id; the store only names it. An empty
+      // library is what a brand-new show ships with — a container for assets nothing
+      // prevents the operator from adding in later phases.
+      const series = newSeries(trimmed, description);
+      try {
+        await seriesRepository.save(series);
+        await get().refreshSeries();
+        set({ status: 'ready', statusMessage: `Created series "${trimmed}".` });
+        return series.id;
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+        return null;
+      }
+    },
+
+    renameSeries: async (id, name) => {
+      if (!isIndexedDbAvailable()) return;
+      const trimmed = name.trim();
+      if (trimmed === '') return;
+      try {
+        const series = await seriesRepository.load(id);
+        if (!series) {
+          set({ status: 'error', statusMessage: 'That series could not be read.' });
+          await get().refreshSeries();
+          return;
+        }
+        if (series.name === trimmed) return;
+        const next = renameSeries(series, trimmed);
+        await seriesRepository.save(next);
+        // If the open project belongs to this series, the resolved context has to rebuild
+        // against the renamed row or the editor keeps showing the old name.
+        const state = get();
+        if (state.project !== null && state.project.seriesId === id && state.context !== null) {
+          // `openProject` recomputes a fresh context; renaming cannot reuse it because the
+          // diff between the series the store cached and the row on disk is only the name.
+          const resolved = resolveProjectContext(state.project, next);
+          if ('context' in resolved) {
+            set({ series: next, context: resolved.context });
+          }
+        }
+        await get().refreshSeries();
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+      }
+    },
+
+    deleteSeries: async (id) => {
+      if (!isIndexedDbAvailable()) return;
+      try {
+        // The repository refuses while projects reference the row; the status message
+        // already names them, so this action only has to surface whatever it says.
+        await seriesRepository.remove(id);
+        const state = get();
+        if (state.project !== null && state.project.seriesId === id) {
+          // Deleting the series underneath an open project would leave the context naming a
+          // row that no longer exists — but the repository refused unless no project names
+          // it, and an open project names it. So this branch is unreachable by construction
+          // today; it exists so a future relaxation cannot silently strand an open document.
+          get().closeProject();
+        }
+        await get().refreshSeries();
+        await get().refreshProjects();
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+      }
+    },
+
+    removeSeriesAsset: async (id, collection, assetId) => {
+      if (!isIndexedDbAvailable()) return;
+      try {
+        const series = await seriesRepository.load(id);
+        if (!series) {
+          set({ status: 'error', statusMessage: 'That series could not be read.' });
+          await get().refreshSeries();
+          return;
+        }
+        // Removing a series asset affects every project of the show, so the reference check
+        // has to run against all of them — not just the one open. The core op throws when a
+        // project still references the asset, and its message names the referrers.
+        const members = await repository.list(id);
+        const loaded = await Promise.all(members.map((m) => repository.load(m.id)));
+        const projects = loaded.filter((p): p is Project => p !== null);
+        const next = removeSeriesAssetOp(series, collection, assetId, projects);
+        await seriesRepository.save(next);
+        // If an open project belongs to this series, rebuild its context against the new
+        // row — the asset is gone from the show, not from one episode.
+        const state = get();
+        if (state.project !== null && state.project.seriesId === id && state.context !== null) {
+          const resolved = resolveProjectContext(state.project, next);
+          if ('context' in resolved) {
+            set({ series: next, context: resolved.context });
+          }
+        }
+        await get().refreshSeries();
+      } catch (error) {
+        set({ status: 'error', statusMessage: describe(error) });
+      }
+    },
 
     /**
      * Write the current document.
@@ -1285,6 +1693,42 @@ export function useOpenProject(): Project {
     );
   }
   return project;
+}
+
+/**
+ * The series owning the open project, or `null` when it is a free project.
+ *
+ * A distinct selector from the context rather than a convenience alias, because the two
+ * answer different questions and callers genuinely need both. `useOpenContext` is for
+ * rendering — assets and settings, resolved. This one is for the operations that must know
+ * *where* an edit belongs: a camera preset written from this panel has to land on the
+ * project or the series deliberately, not whichever happened to be resolved last.
+ */
+export function useOpenSeries(): SeriesDef | null {
+  return useEditor((s) => s.series);
+}
+
+/**
+ * The resolved library and stage settings for the open project.
+ *
+ * This is the only thing rendering code should need. Reading `project.assets` directly in a
+ * component would silently draw a series-owned character as missing, because the project's
+ * own library holds overrides rather than the merged result — a bug that appears only after
+ * a character is moved from a project into its series, which is exactly the change this
+ * phase exists to make possible.
+ */
+export function useOpenContext(): SceneContext {
+  const context = useEditor((s) => s.context);
+  if (context === null) {
+    // Same rule as `useOpenProject`, and for the same reason: a null context is not a
+    // "no assets" state to be handled, it is a component mounted outside the editor. Quietly
+    // substituting an empty library would render an empty stage and look like lost work.
+    throw new Error(
+      'useOpenContext was called while no project is open. Components using it must only ' +
+        'be mounted inside the editor, not in the project browser.',
+    );
+  }
+  return context;
 }
 
 export { AUTOSAVE_DEBOUNCE_MS };

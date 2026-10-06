@@ -23,7 +23,8 @@ import { act } from '@testing-library/react';
 import { exportProject, importProject } from '../core/io/projectIo';
 import { useEditor } from './editorStore';
 import { MemoryMediaStore } from '../core/media/mediaStore';
-import type { AudioDef, Project } from '../core/types';
+import type { AudioDef, Project, SeriesDef } from '../core/types';
+import type { SeriesSummary } from '../core/persistence/repository';
 
 
 /* ------------------------------------------------------------------ */
@@ -88,7 +89,13 @@ const repository = vi.hoisted(() => {
 
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => true,
-  IndexedDbProjectRepository: vi.fn(() => repository),
+IndexedDbProjectRepository: vi.fn(() => repository),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async (_series: SeriesDef) => {}),
+    load: vi.fn(async (_id: string): Promise<SeriesDef | null> => null),
+    list: vi.fn(async (): Promise<SeriesSummary[]> => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 /** The media store is in memory here; the IndexedDB implementation has its own tests. */

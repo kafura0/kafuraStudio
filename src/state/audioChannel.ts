@@ -11,7 +11,7 @@
  * which is also what the seed data produces today (all slots are `src: null`).
  */
 import { type AudioEngine, createBrowserAudioEngine } from '../core/audio/audioEngine.browser';
-import type { Id, Project } from '../core/types';
+import type { Id, Project, SceneContext } from '../core/types';
 import { mediaStore } from './mediaLibrary';
 
 let engine: AudioEngine | null | undefined;
@@ -39,15 +39,20 @@ let engineProjectId: Id | null = null;
  */
 let scheduledSceneId: Id | null = null;
 
-function getEngine(project: Project): AudioEngine | null {
+function getEngine(project: Project, context: SceneContext): AudioEngine | null {
   if (engine !== undefined && engineProjectId === project.id) return engine;
   // A different project, or an engine cleared by hand. Whatever was sounding belongs to
   // the document we are leaving, so it is stopped rather than allowed to ring on.
   engine?.stop();
   // The byte source is what makes an *attached* file audible: a local `src` is a media id,
   // and the engine can only read it through the store that holds the bytes.
+  //
+  // The slot list is the *resolved* library, never `project.assets`. After the split the
+  // voices live on the series, so a project-only list hands the engine an empty vocabulary
+  // and every line goes quiet — a silent scene is indistinguishable from a broken mixer,
+  // which is why this takes the context explicitly instead of reaching into the document.
   engine = createBrowserAudioEngine(
-    project.assets.audio as readonly {
+    context.assets.audio as readonly {
       id: Id;
       src: string | null;
       srcKind: 'local' | 'external' | null;
@@ -75,11 +80,12 @@ export function resetPlaybackAudio(): void {
 /** Feed the current scene time into the engine each frame while playing. */
 export function syncPlaybackAudio(
   project: Project,
+  context: SceneContext,
   sceneId: Id,
   time: number,
   playing: boolean,
 ): void {
-  const current = getEngine(project);
+  const current = getEngine(project, context);
   if (!current) return;
   if (!playing) {
     current.stop();
@@ -95,13 +101,13 @@ export function syncPlaybackAudio(
   scheduledSceneId = sceneId;
   const scene = project.scenes.find((s) => s.id === sceneId);
   if (!scene) return;
-  current.schedule(project, scene, time);
+  current.schedule(context, scene, time);
 }
 
 /** Tear down every scheduled source (pause, scene switch, scrub stop). */
-export function stopPlaybackAudio(project: Project): void {
+export function stopPlaybackAudio(project: Project, context: SceneContext): void {
   scheduledSceneId = null;
-  getEngine(project)?.stop();
+  getEngine(project, context)?.stop();
 }
 
 /**
@@ -121,9 +127,13 @@ export function stopPlaybackAudio(project: Project): void {
  * undecodable buffer are all silence, and reporting them as "played" would make the panel
  * claim success for the exact case the user needs to know about.
  */
-export async function previewAudioAsset(project: Project, audioId: Id): Promise<boolean> {
-  const current = getEngine(project);
+export async function previewAudioAsset(
+  project: Project,
+  context: SceneContext,
+  audioId: Id,
+): Promise<boolean> {
+  const current = getEngine(project, context);
   if (!current) return false;
-  const started = await current.preview(project, audioId);
+  const started = await current.preview(context, audioId);
   return started;
 }
