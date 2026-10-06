@@ -21,7 +21,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ProjectBrowser } from './ProjectBrowser';
 import { useEditor } from '../state/editorStore';
-import type { ProjectSummary } from '../core/persistence/repository';
+import type { ProjectSummary, SeriesSummary } from '../core/persistence/repository';
+import type { SeriesDef } from '../core/types';
 
 const summary = (over: Partial<ProjectSummary> = {}): ProjectSummary => ({
   id: 'proj.1',
@@ -30,6 +31,10 @@ const summary = (over: Partial<ProjectSummary> = {}): ProjectSummary => ({
   sceneCount: 2,
   episodeCount: 1,
   archivedAt: null,
+  // A free project, since these tests are about the browser chrome rather than about
+  // ownership. Stated explicitly so a future change to the summary shape fails here rather
+  // than defaulting to a show and quietly reinterpreting what the test is checking.
+  seriesId: null,
   ...over,
 });
 
@@ -49,6 +54,12 @@ const repository = vi.hoisted(() => ({
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => true,
   IndexedDbProjectRepository: vi.fn(() => repository),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async (_series: SeriesDef) => {}),
+    load: vi.fn(async (_id: string): Promise<SeriesDef | null> => null),
+    list: vi.fn(async (): Promise<SeriesSummary[]> => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 beforeEach(() => {

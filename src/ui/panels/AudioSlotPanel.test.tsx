@@ -64,7 +64,7 @@ describe('an empty slot', () => {
   it('says so, rather than implying a recording exists', async () => {
     render(
       <AudioSlotPanel
-        project={projectWith(emptySlot)}
+        library={{ audio: [emptySlot] }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -77,7 +77,7 @@ describe('an empty slot', () => {
   it('cannot be cleared, because there is nothing to clear', async () => {
     render(
       <AudioSlotPanel
-        project={projectWith(emptySlot)}
+        library={{ audio: [emptySlot] }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -91,7 +91,7 @@ describe('an empty slot', () => {
   it('cannot be previewed, because a slot with no file would be silence', async () => {
     render(
       <AudioSlotPanel
-        project={projectWith(emptySlot)}
+        library={{ audio: [emptySlot] }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -106,10 +106,10 @@ describe('an empty slot', () => {
 describe('an attached slot', () => {
   it('shows the filename, the measured length, and the size', async () => {
     await media.put(record('media_1'));
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5).assets;
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -124,10 +124,10 @@ describe('an attached slot', () => {
 
   it('enables preview and clear, because both now do something', async () => {
     await media.put(record('media_1'));
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5).assets;
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -140,10 +140,10 @@ describe('an attached slot', () => {
 
   it('reports a preview that played nothing instead of claiming success', async () => {
     await media.put(record('media_1'));
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5).assets;
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(async () => false)}
@@ -159,11 +159,11 @@ describe('an attached slot', () => {
 
   it('calls onClear, and does not clear the document itself', async () => {
     await media.put(record('media_1'));
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_1', 4.5).assets;
     const onClear = vi.fn();
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={onClear}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -181,10 +181,10 @@ describe('a slot whose media is missing from storage', () => {
   it('says the file is missing, which is neither "empty" nor "attached"', async () => {
     // The document references media the store does not have: a copy-forward that never ran,
     // or a record reclaimed while a document still pointed at it.
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_gone', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_gone', 4.5).assets;
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -196,10 +196,10 @@ describe('a slot whose media is missing from storage', () => {
   });
 
   it('still allows a clear, which is the only way out of that state', async () => {
-    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_gone', 4.5);
+    const attached = attachAudioMedia(projectWith(emptySlot), 'audio.1', 'media_gone', 4.5).assets;
     render(
       <AudioSlotPanel
-        project={attached}
+        library={attached}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -214,7 +214,7 @@ describe('the panel in other states', () => {
   it('renders nothing when no project is open', () => {
     const { container } = render(
       <AudioSlotPanel
-        project={null}
+        library={null}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
@@ -224,18 +224,20 @@ describe('the panel in other states', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('says a project with no slots has none, rather than showing an empty box', () => {
-    const project = { ...createProject('A'), assets: starterAssetLibrary() };
+it('says a library with no slots has none, rather than showing an empty box', () => {
+    // A library that *does* declare one, so the assertion is about what the panel was handed
+    // rather than about a fixture that happens to be empty. Without it this test would pass
+    // identically whether the panel reads its prop correctly or always shows the empty state.
+    expect(starterAssetLibrary().audio).toHaveLength(1);
     render(
       <AudioSlotPanel
-        project={{ assets: { audio: [] } }}
+        library={{ audio: [] }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}
         onPlaceInScene={vi.fn()}
       />,
     );
-    expect(project.assets.audio).toHaveLength(1); // the starter declares one
     expect(screen.getByText(/declares no audio slots/i)).toBeInTheDocument();
   });
 
@@ -247,7 +249,7 @@ describe('the panel in other states', () => {
     ];
     render(
       <AudioSlotPanel
-        project={{ assets: { audio: many } }}
+        library={{ audio: many }}
         onAttach={vi.fn()}
         onClear={vi.fn()}
         onPreview={vi.fn(() => Promise.resolve(true))}

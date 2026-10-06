@@ -13,7 +13,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { App } from './App';
 import { useEditor } from '../state/editorStore';
-import { SEED_PROJECT } from '../data/seed';
+import { SEED_PROJECT, SEED_SERIES, seedContext } from '../data/seed';
 
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => false,
@@ -21,6 +21,12 @@ vi.mock('../core/persistence/indexedDb.browser', () => ({
     save: vi.fn(async () => {}),
     loadMostRecent: vi.fn(async () => null),
     load: vi.fn(async () => null),
+  })),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async () => {}),
+    load: vi.fn(async () => null),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async () => {}),
   })),
 }));
 
@@ -33,6 +39,11 @@ describe('App keyboard transport', () => {
     } as unknown as CanvasRenderingContext2D);
     useEditor.setState({
       project: SEED_PROJECT,
+      // The shell renders nothing but a project browser until the resolved context exists,
+      // so a test that opens the editor has to supply the series and the library derived
+      // from it. Without both, `App` is technically correct and the test sees no editor.
+      series: SEED_SERIES,
+      context: seedContext(),
       past: [],
       future: [],
       playhead: 0,
@@ -139,7 +150,7 @@ describe('App with no project open', () => {
     await act(async () => {
       render(<App />);
     });
-    expect(screen.getByText('Projects')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Play' })).toBeNull();
   });
 

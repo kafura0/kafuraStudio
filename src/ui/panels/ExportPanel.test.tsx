@@ -19,7 +19,8 @@ import { describeResult } from './exportResult';
 import { detectExportCapabilities, canExportGate } from '../../core/export/capabilities.browser';
 import { addEpisode, addSceneToEpisode } from '../../core/document/projectOps';
 import { createClip, createScene, createTrack } from '../../core/document/factories';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import { resolveAssets } from '../../core/document/scopes';
 import type { Episode, Project } from '../../core/types';
 
 const media = { get: vi.fn(async () => null) };
@@ -245,6 +246,7 @@ function renderPanel(over: {
   return render(
     <ExportPanel
       project={project}
+      context={resolveAssets(resolved, SEED_SERIES)}
       episodeId={episodeId}
       currentTime={over.currentTime ?? 0}
       subtitles={over.subtitles ?? true}
@@ -537,7 +539,13 @@ describe('ExportPanel', () => {
   it('renders nothing when the id names no episode in the project', () => {
     // A stale id after a project switch must not export the first episode instead.
     const { container } = render(
-      <ExportPanel project={SEED_PROJECT} episodeId={'episode.does-not-exist'} currentTime={0} subtitles />,
+      <ExportPanel
+      project={SEED_PROJECT}
+      context={resolveAssets(SEED_PROJECT, SEED_SERIES)}
+      episodeId={'episode.does-not-exist'}
+      currentTime={0}
+      subtitles
+    />,
     );
     expect(container).toBeEmptyDOMElement();
   });

@@ -1,4 +1,4 @@
-import type { AudioDef, Project } from '../../core/types';
+import type { AssetLibrary, AudioDef } from '../../core/types';
 import { hasRecording } from '../../core/audio/recording';
 
 /**
@@ -8,14 +8,18 @@ import { hasRecording } from '../../core/audio/recording';
  * point of the product. Editing an asset is a later phase; presenting a control that
  * does nothing would be a placeholder pretending to be a feature (RULE 9).
  *
+ * Takes an `AssetLibrary` rather than a `Project`, and that is the whole point of the change:
+ * the library moved to the series in Phase 14, so a panel handed the project would show six
+ * empty groups for every series-owned show. The caller resolves the library; the panel stays
+ * content-agnostic and has no idea whether it is looking at a project or a series.
+ *
  * Audio is the one group that is not a bare list of names. An audio entry without a
  * file is a declared slot waiting on a recording, and the whole library ships that way;
  * listing those names with no marker would let a user believe a voice exists when none
  * does. So each slot states its kind, its length, and whether there is anything behind
  * it (RULE 9).
  */
-export function AssetPanel({ project }: { project: Project }): React.JSX.Element {
-  const { assets } = project;
+export function AssetPanel({ assets }: { assets: AssetLibrary }): React.JSX.Element {
   const groups: { label: string; count: number; names: string[] }[] = [
     { label: 'Characters', count: assets.characters.length, names: assets.characters.map((c) => c.name) },
     { label: 'Environments', count: assets.environments.length, names: assets.environments.map((e) => e.name) },

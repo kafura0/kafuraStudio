@@ -13,7 +13,7 @@ import { mediaStore } from '../../state/mediaLibrary';
  * (RULE 9).
  *
  * The panel holds no document state and performs no mutation itself. It is given the open
- * project and the three store actions as props, like every other panel: selecting a file
+ * library and the three store actions as props, like every other panel: selecting a file
  * calls the store, the store writes bytes to the media store and commits the document, and
  * the engine reads them back. That is the only path, so an attachment cannot exist in the
  * store without a reference in the document, or the reverse.
@@ -22,7 +22,15 @@ import { mediaStore } from '../../state/mediaLibrary';
  * `ArrayBuffer` in a React state update is a large value the renderer would hold and diff.
  */
 export interface AudioSlotPanelProps {
-  project: { assets: { audio: AudioDef[] } } | null;
+  /**
+   * The resolved library, narrowed to the one collection this panel reads.
+   *
+   * Structural rather than a full `Project` because the audio slots moved to the series in
+   * Phase 14. Passing the project would mean reading `project.assets.audio`, which is empty
+   * for every series-owned show — the panel would render its honest-sounding "declares no
+   * audio slots" message over a library that plainly has fifteen.
+   */
+  library: { audio: AudioDef[] } | null;
   onAttach: (audioId: Id, file: File) => Promise<void>;
   onClear: (audioId: Id) => void;
   onPreview: (audioId: Id) => Promise<boolean>;
@@ -40,7 +48,7 @@ export interface AudioSlotPanelProps {
 }
 
 export function AudioSlotPanel({
-  project,
+  library,
   onAttach,
   onClear,
   onPreview,
@@ -59,7 +67,7 @@ export function AudioSlotPanel({
    */
   const [resolved, setResolved] = useState<ReadonlySet<Id>>(new Set());
 
-  const audioSlots = project?.assets.audio ?? [];
+  const audioSlots = library?.audio ?? [];
   // Ids to look up. A slot with no `src` cannot be in the store, so asking about it would
   // be a pointless read on every render of a long library.
   const wanted = audioSlots
@@ -100,14 +108,14 @@ export function AudioSlotPanel({
     };
   }, [wanted]);
 
-  if (project === null) return null;
+  if (library === null) return null;
   if (audioSlots.length === 0) {
     return (
       <section className="border-t border-ink-800 px-3 py-3">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
           Audio slots
         </h2>
-        <p className="mt-1 text-[11px] text-ink-500">This project declares no audio slots.</p>
+        <p className="mt-1 text-[11px] text-ink-500">This library declares no audio slots.</p>
       </section>
     );
   }

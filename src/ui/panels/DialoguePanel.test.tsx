@@ -12,8 +12,10 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { DialoguePanel } from './DialoguePanel';
 import { useEditor } from '../../state/editorStore';
-import { SEED_PROJECT } from '../../data/seed';
-import type { AudioDef, Clip, Project, Scene } from '../../core/types';
+import { SEED_PROJECT, SEED_SERIES, seedContext } from '../../data/seed';
+import { resolveAssets } from '../../core/document/scopes';
+import { attachAudioMedia } from '../../core/document/projectOps';
+import type { Clip, Project, Scene } from '../../core/types';
 
 vi.mock('../../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => false,
@@ -22,6 +24,12 @@ vi.mock('../../core/persistence/indexedDb.browser', () => ({
     loadMostRecent: vi.fn(async () => null),
     load: vi.fn(async () => null),
   })),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async () => {}),
+    load: vi.fn(async () => null),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 const scene = SEED_PROJECT.scenes[0] as Scene;
@@ -29,6 +37,10 @@ const scene = SEED_PROJECT.scenes[0] as Scene;
 function resetStore(project: Project = SEED_PROJECT): void {
   useEditor.setState({
     project,
+    // The panel reads the resolved library: the voices moved to the series along with the
+    // rest of the reusable show, so a store with no series has nothing to report on.
+    series: SEED_SERIES,
+    context: resolveAssets(project, SEED_SERIES),
     past: [],
     future: [],
     playhead: 0,
@@ -200,7 +212,7 @@ describe('DialoguePanel', () => {
     expect(screen.getByText(/Plays silent/)).toBeTruthy();
 
     // Once a file is attached, the panel says so instead.
-    act(() => useEditor.setState(() => ({ project: withRecording(openProject(), voiceId as string) })));
+    act(() => openProjectWithRecording(voiceId as string));
     render(<DialoguePanel />);
     expect(screen.getAllByText(/Recording attached/).length).toBeGreaterThan(0);
   });
@@ -303,16 +315,22 @@ function withoutFirstCue(project: Project): Project {
   };
 }
 
+/**
+ * Give a voice slot a recording, the way the panel's own attach action does.
+ *
+ * A project override rather than an edit to the series: the slot belongs to the shared show,
+ * so patching `project.assets.audio` in place would have been a no-op after Phase 14 moved
+ * the voices onto the series — and a no-op that still "works" in the test is exactly how a
+ * broken panel would pass here. The derived context moves with the document, because the
+ * panel reads the library.
+ */
 function withRecording(project: Project, audioId: string): Project {
-  return {
-    ...project,
-    assets: {
-      ...project.assets,
-      audio: project.assets.audio.map((a: AudioDef) =>
-        a.id === audioId ? { ...a, src: 'audio/line1.wav' } : a,
-      ),
-    },
-  };
+  return attachAudioMedia(project, audioId, 'audio/line1.wav', 1.2, seedContext().assets);
+}
+
+function openProjectWithRecording(audioId: string): void {
+  const next = withRecording(openProject(), audioId);
+  useEditor.setState({ project: next, context: resolveAssets(next, SEED_SERIES) });
 }
 
 function withVoice(project: Project, lineId: string, audioId: string | null): Project {

@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { inputClass, round2, useDraftField } from '../draftFields';
 import { Field } from '../fields';
-import { useEditor, useOpenProject } from '../../state/editorStore';
+import { useEditor, useOpenContext, useOpenProject } from '../../state/editorStore';
 import {
   addDialogueLineWithCue,
   removeDialogueLine,
@@ -36,7 +36,7 @@ import {
 } from '../../core/document/dialogueOps';
 import { setClipGain } from '../../core/document/trackOps';
 import { hasRecording } from '../../core/audio/recording';
-import type { AudioDef, Clip, DialogueLine, Id, Project, Scene, Track } from '../../core/types';
+import type { AudioDef, Clip, DialogueLine, Id, Scene, Track } from '../../core/types';
 
 interface Cue {
   track: Track;
@@ -45,6 +45,11 @@ interface Cue {
 
 export function DialoguePanel(): React.JSX.Element {
   const project = useOpenProject();
+  // Voices are series-owned: the slots a project points at live with the show, not in the
+  // project's override layer. Reading `project.assets.audio` here would offer an empty
+  // dropdown in every project whose voices were ever moved into their series, and report
+  // each one as "no voice assigned" — which reads as lost work, not as a shared show.
+  const library = useOpenContext().assets;
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
   const commit = useEditor((s) => s.commit);
@@ -81,7 +86,10 @@ export function DialoguePanel(): React.JSX.Element {
     return <p className="p-3 text-xs text-ink-400">No scene open.</p>;
   }
 
-  const voices = project.assets.audio.filter((a) => a.kind === 'dialogue');
+  const voices = library.audio.filter((a) => a.kind === 'dialogue');
+  // Expressions are reusable art for the whole show, same as the voices: resolved, not
+  // project-local. An empty dropdown here would look like a show with no expressions.
+  const emotionNames = library.expressions.map((e) => e.name);
 
   const patchLine = (patch: Partial<Omit<DialogueLine, 'id'>>, label: string): void => {
     if (!line) return;
@@ -135,12 +143,12 @@ export function DialoguePanel(): React.JSX.Element {
         <LineList scene={scene} selectionId={selection.id} onSelect={(id) => select('line', id)} />
       ) : (
         <LineEditor
-          project={project}
           scene={scene}
           line={line}
           cue={cue}
           cueCount={cues.length}
           voices={voices}
+          emotionNames={emotionNames}
           onPatch={patchLine}
           onVoice={(audioId) => {
             const next = setDialogueVoice(project, scene.id, line.id, audioId);
@@ -239,12 +247,20 @@ function startOf(cues: Map<Id, Clip[]>, lineId: Id): number {
 /* ------------------------------------------------------------------ */
 
 interface LineEditorProps {
-  project: Project;
   scene: Scene;
   line: DialogueLine;
   cue: Cue | null;
   cueCount: number;
   voices: AudioDef[];
+  /**
+   * The emotion vocabulary, resolved from the series.
+   *
+   * Passed in rather than looked up: the editor's vocabulary is shared, reusable art, so it
+   * has to come from the merged library the panel already holds. Handing this component a
+   * project and letting it reach into `project.assets.expressions` would offer an empty
+   * dropdown in any project whose expressions were ever moved into its series.
+   */
+  emotionNames: string[];
   onPatch: (patch: Partial<Omit<DialogueLine, 'id'>>, label: string) => void;
   onVoice: (audioId: Id | null) => void;
   onCue: (cue: { start?: number; duration?: number }) => void;
@@ -255,12 +271,12 @@ interface LineEditorProps {
 }
 
 function LineEditor({
-  project,
   scene,
   line,
   cue,
   cueCount,
   voices,
+  emotionNames,
   onPatch,
   onVoice,
   onCue,
@@ -293,8 +309,6 @@ function LineEditor({
     const duration = Number(v);
     if (Number.isFinite(duration)) onCue({ duration });
   });
-
-  const emotionNames = project.assets.expressions.map((e) => e.name);
 
   return (
     <div className="mt-2 space-y-2">
@@ -338,7 +352,7 @@ function LineEditor({
         </select>
       </Field>
 
-      <Field label="Emotion" hint="Free text; the project's expressions are offered below.">
+      <Field label="Emotion" hint="Free text; the show's expressions are offered below.">
         <input {...emotion} aria-label="Emotion" list="dialogue-emotions" className={inputClass} />
         <datalist id="dialogue-emotions">
           {emotionNames.map((name) => (

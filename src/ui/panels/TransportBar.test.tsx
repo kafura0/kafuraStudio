@@ -21,6 +21,12 @@ vi.mock('../../core/persistence/indexedDb.browser', () => ({
     loadMostRecent: vi.fn(async () => null),
     load: vi.fn(async () => null),
   })),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async () => {}),
+    load: vi.fn(async () => null),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 const SCENE = SEED_PROJECT.scenes[0];

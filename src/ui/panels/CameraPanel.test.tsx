@@ -11,7 +11,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CameraPanel } from './CameraPanel';
 import { useEditor } from '../../state/editorStore';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import { resolveAssets } from '../../core/document/scopes';
 import { cameraClips } from '../../core/document/cameraOps';
 import type { Project, Scene } from '../../core/types';
 
@@ -22,6 +23,12 @@ vi.mock('../../core/persistence/indexedDb.browser', () => ({
     loadMostRecent: vi.fn(async () => null),
     load: vi.fn(async () => null),
   })),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async () => {}),
+    load: vi.fn(async () => null),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 const scene = SEED_PROJECT.scenes[0] as Scene;
@@ -29,6 +36,11 @@ const scene = SEED_PROJECT.scenes[0] as Scene;
 function resetStore(project: Project = SEED_PROJECT): void {
   useEditor.setState({
     project,
+    // Camera presets are the series' reusable layer, so the panel reads the resolved library
+    // rather than the project. A store with no series lists no presets, which is a correct
+    // answer to an empty workspace and the wrong one for a test about the seeded vocabulary.
+    series: SEED_SERIES,
+    context: resolveAssets(project, SEED_SERIES),
     past: [],
     future: [],
     playhead: 0,

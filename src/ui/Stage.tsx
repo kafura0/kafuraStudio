@@ -55,7 +55,7 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       // still takes a scene and a time and knows nothing about episodes. Reading the
       // resolved position rather than `playhead` is what lets a boundary cross without
       // the stage drawing a time that belongs to the previous scene.
-      const { project, showSubtitles } = useEditor.getState();
+      const { project, context, showSubtitles } = useEditor.getState();
       const { sceneId, sceneTime } = useEditor.getState().playbackPosition();
       // The frame after the last project closes can still be requested: the loop is
       // driven by requestAnimationFrame, and unmounting the canvas happens on the commit
@@ -63,10 +63,17 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       // the frame is skipped and the next one never comes, since the loop stops with the
       // component.
       if (project === null) return;
+      // Drawn from the resolved context, never from `project`. Since Phase 14 a series
+      // project's own `assets` are the override list and are normally empty, so drawing the
+      // project would render an empty stage with no error. The store resolves the merged
+      // library once at open (`context`) and keeps the two from drifting; `context ?? project`
+      // exists only to buy a free project the same guarantee as a free one, and it is the
+      // same object for both.
+      const library = context ?? project;
       const scene = project.scenes.find((s) => s.id === sceneId) ?? null;
       const stageWidth = widthRef.current;
       const stageHeight =
-        (stageWidth * project.settings.height) / project.settings.width;
+        (stageWidth * library.settings.height) / library.settings.width;
 
       if (scene) {
         // Match the backing store to the device pixel ratio so 1920p is crisp. The
@@ -82,7 +89,7 @@ export function Stage({ width }: StageProps): React.JSX.Element {
         canvas.style.width = `${stageWidth}px`;
         canvas.style.height = `${stageHeight}px`;
 
-        renderScene(ctx, project, scene, sceneTime, {
+        renderScene(ctx, library, scene, sceneTime, {
           width: stageWidth,
           height: stageHeight,
           pixelRatio: dpr,

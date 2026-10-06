@@ -38,6 +38,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function App(): React.JSX.Element {
   const project = useEditor((s) => s.project);
+// The resolved library. Read here, once, and handed to the panels that list assets — so the
+// merge happens at one place in the UI rather than in each panel that happens to need it.
+const context = useEditor((s) => s.context);
   const sceneId = useEditor((s) => s.sceneId);
   const setScene = useEditor((s) => s.setScene);
   const hydrate = useEditor((s) => s.hydrate);
@@ -156,7 +159,11 @@ export function App(): React.JSX.Element {
   // workspace, and the browser is what you are looking at between projects. Rendering
   // the browser and the editor from the same `project` value means there is no way to
   // show one while the store believes the other.
-  if (project === null) {
+  // Both together, not just the project. The store sets `project` and `context` in one place
+  // for every transition, so `project` without a `context` is not a state that exists - but
+  // checking only `project` would leave the editor rendering an empty asset list from a
+  // `null` context, which reads as "this show has no characters" rather than as a bug.
+  if (project === null || context === null) {
     return <ProjectBrowser />;
   }
 
@@ -261,9 +268,9 @@ export function App(): React.JSX.Element {
           />
           <CameraPanel />
           <DialoguePanel />
-          <AssetPanel project={project} />
+          <AssetPanel assets={context.assets} />
           <AudioSlotPanel
-            project={project}
+            library={context.assets}
             onAttach={attachAudioFile}
             onClear={clearAudioFile}
             onPreview={previewAudio}
@@ -272,6 +279,7 @@ export function App(): React.JSX.Element {
           />
           <ExportPanel
             project={project}
+            context={context}
             episodeId={exportTarget.episodeId}
             currentTime={exportTarget.episodeTime}
             subtitles={showSubtitles}

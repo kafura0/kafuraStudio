@@ -22,6 +22,12 @@ vi.mock('../core/persistence/indexedDb.browser', () => ({
     loadMostRecent: vi.fn(async () => null),
     load: vi.fn(async () => null),
   })),
+  IndexedDbSeriesRepository: vi.fn(() => ({
+    save: vi.fn(async () => {}),
+    load: vi.fn(async () => null),
+    list: vi.fn(async () => []),
+    remove: vi.fn(async () => {}),
+  })),
 }));
 
 vi.mock('../core/render/render', () => ({ renderScene: vi.fn() }));

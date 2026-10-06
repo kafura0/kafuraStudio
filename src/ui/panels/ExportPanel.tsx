@@ -34,7 +34,7 @@ import {
 } from '../../core/export/capabilities.browser';
 import { mediaStore } from '../../state/mediaLibrary';
 import { describeResult } from './exportResult';
-import type { Id, Project } from '../../core/types';
+import type { Id, Project, SceneContext } from '../../core/types';
 
 type Phase = 'idle' | 'exporting' | 'done' | 'failed';
 
@@ -72,6 +72,16 @@ const IDLE: ExportState = {
 export interface ExportPanelProps {
   project: Project | null;
   /**
+   * The resolved library the frames are drawn from.
+   *
+   * Separate from the project, and required alongside it. An export is the one place where
+   * being wrong about the library is least recoverable: the files are on disk, they are
+   * delivered, and nobody reopens the document to notice they are blank. Taking the context
+   * explicitly makes an export of a series-owned project impossible to run against the empty
+   * project-local list.
+   */
+  context: SceneContext | null;
+  /**
    * The episode to export.
    *
    * An id rather than an `Episode`, so a change to the cut reaches the panel through the
@@ -88,6 +98,7 @@ export interface ExportPanelProps {
 
 export function ExportPanel({
   project,
+  context,
   episodeId,
   currentTime,
   subtitles,
@@ -138,10 +149,10 @@ export function ExportPanel({
   }, []);
 
   const onStill = useCallback((): void => {
-    if (!project || !episode) return;
+    if (!project || !context || !episode) return;
     const title = episode.title;
     setState({ ...IDLE, phase: 'exporting', progress: null, message: 'Rendering a still\u2026' });
-    void exportStill(project, episode.id, currentTime, { subtitles })
+    void exportStill(project, context, episode.id, currentTime, { subtitles })
       .then((frame) => {
         setState({
           phase: 'done',
@@ -157,10 +168,10 @@ export function ExportPanel({
         });
       })
       .catch(fail);
-  }, [project, episode, currentTime, subtitles, fail]);
+  }, [project, context, episode, currentTime, subtitles, fail]);
 
   const onSequenceAndMixdown = useCallback((): void => {
-    if (!project || !episode) return;
+    if (!project || !context || !episode) return;
     // Captured for the same reason as `title` above: this export takes seconds, and the
     // episode it is actually about is the one that was open when it started.
     const title = episode.title;
@@ -186,7 +197,7 @@ export function ExportPanel({
 
     void (async () => {
       try {
-        const rendered = await exportSequence(project, id, frames, {
+        const rendered = await exportSequence(project, context, id, frames, {
           subtitles,
           // Stopping here rather than at the end. A cancel button that lets the renderer
           // finish every remaining frame is a lie about what it does, and on a 912-frame
@@ -216,7 +227,7 @@ export function ExportPanel({
 
         // Attached recordings live in the media store, so the mixdown reads them from
         // there. Without this every `local` slot would be reported missing.
-        const result = await mixdownEpisode(project, id, async (mediaId) => {
+        const result = await mixdownEpisode(project, context, id, async (mediaId) => {
           const record = await mediaStore().get(mediaId);
           return record?.data ?? null;
         });
@@ -242,13 +253,13 @@ export function ExportPanel({
         if (!cancelled.current) fail(error);
       }
     })();
-  }, [project, episode, subtitles, fail]);
+  }, [project, context, episode, subtitles, fail]);
 
   const onCancel = useCallback((): void => {
     cancelled.current = true;
   }, []);
 
-  if (!project || !episode) return null;
+  if (!project || !context || !episode) return null;
 
   const gateReady = capabilities !== null && canExportGate(capabilities);
   const busy = state.phase === 'exporting';

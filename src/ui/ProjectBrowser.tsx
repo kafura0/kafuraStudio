@@ -11,9 +11,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../state/editorStore';
-import { exportProject } from '../core/io/projectIo';
 import { isIndexedDbAvailable } from '../core/persistence/indexedDb.browser';
 import type { ProjectSummary } from '../core/persistence/repository';
+import { SeriesBrowser } from './SeriesBrowser';
 
 /**
  * The extension this product ships under.
@@ -40,17 +40,22 @@ export function ProjectBrowser(): React.JSX.Element {
   const archiveProject = useEditor((s) => s.archiveProject);
   const addEpisodeToProject = useEditor((s) => s.addEpisodeToProject);
   const importProjectText = useEditor((s) => s.importProjectText);
-  const peekProject = useEditor((s) => s.peekProject);
+  const exportProjectFile = useEditor((s) => s.exportProjectFile);
   const refreshProjects = useEditor((s) => s.refreshProjects);
+  const refreshSeries = useEditor((s) => s.refreshSeries);
+  const seriesList = useEditor((s) => s.seriesList);
   const clearStatus = useEditor((s) => s.clearStatus);
 
   const [name, setName] = useState('');
+  const [view, setView] = useState<'projects' | 'series'>('projects');
+  const [seriesId, setSeriesId] = useState<string>('__free__');
   const [showArchived, setShowArchived] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     void refreshProjects();
-  }, [refreshProjects]);
+    void refreshSeries();
+  }, [refreshProjects, refreshSeries]);
 
   // Archive means "hidden from the default list", so the default list is the live ones.
   // The archived rows are one click away rather than gone, because a project that can be
@@ -63,9 +68,12 @@ export function ProjectBrowser(): React.JSX.Element {
     // Export reads the project from storage rather than from the open editor, because the
     // open editor holds nothing when the browser is showing. Reading it without opening it
     // keeps the browser's scroll position and selection intact.
-    const project = await peekProject(id);
-    if (project === null) return;
-    const { text, filename } = exportProject(project, { extension: FILE_EXTENSION });
+    //
+    // The store assembles the file because it can read the series the project names as well
+    // as the project itself; the browser only has a file extension to contribute.
+    const result = await exportProjectFile(id, { extension: FILE_EXTENSION });
+    if (result === null) return;
+    const { text, filename } = result;
     const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -127,7 +135,7 @@ export function ProjectBrowser(): React.JSX.Element {
           </div>
           <button
             type="button"
-            onClick={() => void createProject(name)}
+            onClick={() => void createProject(name, seriesId === '__free__' ? null : seriesId)}
             className="rounded bg-zanza-600 px-3 py-1.5 text-sm font-medium text-ink-950 hover:bg-zanza-500"
           >
             New project
@@ -162,6 +170,21 @@ export function ProjectBrowser(): React.JSX.Element {
               className="rounded border border-ink-700 bg-ink-900 px-2 py-1.5 text-sm text-ink-100"
             />
           </label>
+          <label className="flex flex-col gap-1 text-xs text-ink-400">
+            In series
+            <select
+              value={seriesId}
+              onChange={(event) => setSeriesId(event.target.value)}
+              className="rounded border border-ink-700 bg-ink-900 px-2 py-1.5 text-sm text-ink-100"
+            >
+              <option value="__free__">— free project —</option>
+              {seriesList.map((series) => (
+                <option key={series.id} value={series.id}>
+                  {series.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
@@ -190,85 +213,102 @@ export function ProjectBrowser(): React.JSX.Element {
           </p>
         )}
 
-        {projects.length > 0 && (
-          <div className="mb-3 flex items-center gap-1 border-b border-ink-800">
-            <TabButton active={!showArchived} onClick={() => setShowArchived(false)}>
-              Projects ({live.length})
-            </TabButton>
-            <TabButton active={showArchived} onClick={() => setShowArchived(true)}>
-              Archived ({archived.length})
-            </TabButton>
-          </div>
-        )}
+        <div className="mb-3 flex items-center gap-1 border-b border-ink-800">
+          <TabButton
+            active={view === 'projects'}
+            onClick={() => setView('projects')}
+          >
+            Projects
+          </TabButton>
+          <TabButton active={view === 'series'} onClick={() => setView('series')}>
+            Series ({seriesList.length})
+          </TabButton>
+        </div>
 
-        {projects.length === 0 ? (
-          <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
-            No projects yet. Name one above and choose “New project”.
-          </p>
-        ) : visible.length === 0 ? (
-          <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
-            {showArchived ? 'Nothing archived.' : 'Every project is archived.'}
-          </p>
+        {view === 'series' ? (
+          <SeriesBrowser />
         ) : (
-          <ul className="flex flex-col gap-2">
-            {visible.map((summary) => (
-              <li
-                key={summary.id}
-                className="flex items-center gap-4 rounded border border-ink-800 bg-ink-900 px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {summary.name}
-                    {summary.archivedAt !== null && (
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-ink-500">
-                        archived
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-xs text-ink-500">
-                    {summary.sceneCount} scenes · {summary.episodeCount} episodes ·{' '}
-                    {formatDate(summary.updatedAt)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void openProject(summary.id)}
-                  disabled={busy}
-                  className="rounded bg-ink-800 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 disabled:opacity-40"
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onAddEpisode(summary.id)}
-                  className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
-                >
-                  + Episode
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onExport(summary.id)}
-                  className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
-                >
-                  Export
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void archiveProject(summary.id, summary.archivedAt === null)}
-                  className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
-                >
-                  {summary.archivedAt === null ? 'Archive' : 'Restore'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onDelete(summary)}
-                  className="rounded px-2 py-1.5 text-xs text-red-300 hover:bg-ink-800"
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            {projects.length > 0 && (
+              <div className="mb-3 flex items-center gap-1 border-b border-ink-800">
+                <TabButton active={!showArchived} onClick={() => setShowArchived(false)}>
+                  Projects ({live.length})
+                </TabButton>
+                <TabButton active={showArchived} onClick={() => setShowArchived(true)}>
+                  Archived ({archived.length})
+                </TabButton>
+              </div>
+            )}
+            {projects.length === 0 ? (
+              <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
+                No projects yet. Name one above and choose “New project”.
+              </p>
+            ) : visible.length === 0 ? (
+              <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
+                {showArchived ? 'Nothing archived.' : 'Every project is archived.'}
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {visible.map((summary) => (
+                  <li
+                    key={summary.id}
+                    className="flex items-center gap-4 rounded border border-ink-800 bg-ink-900 px-4 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {summary.name}
+                        {summary.archivedAt !== null && (
+                          <span className="ml-2 text-[10px] uppercase tracking-wide text-ink-500">
+                            archived
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-ink-500">
+                        {summary.sceneCount} scenes · {summary.episodeCount} episodes ·{' '}
+                        {formatDate(summary.updatedAt)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void openProject(summary.id)}
+                      disabled={busy}
+                      className="rounded bg-ink-800 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 disabled:opacity-40"
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onAddEpisode(summary.id)}
+                      className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
+                    >
+                      + Episode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onExport(summary.id)}
+                      className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
+                    >
+                      Export
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void archiveProject(summary.id, summary.archivedAt === null)}
+                      className="rounded px-2 py-1.5 text-xs text-ink-300 hover:bg-ink-800"
+                    >
+                      {summary.archivedAt === null ? 'Archive' : 'Restore'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(summary)}
+                      className="rounded px-2 py-1.5 text-xs text-red-300 hover:bg-ink-800"
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
     </div>

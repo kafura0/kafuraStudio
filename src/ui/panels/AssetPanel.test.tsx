@@ -10,14 +10,18 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AssetPanel } from './AssetPanel';
-import { SEED_PROJECT } from '../../data/seed';
-import type { Project } from '../../core/types';
+import { seedContext } from '../../data/seed';
+import type { AssetLibrary } from '../../core/types';
 
-const project = SEED_PROJECT as Project;
+// The resolved library, exactly as the panel receives it in the app. Sourced from
+// `seedContext()` rather than `SEED_PROJECT.assets` because the library moved to the series:
+// reading the project's own list would give an empty collection and every count assertion
+// below would pass against nothing.
+const assets = seedContext().assets;
 
 describe('AssetPanel', () => {
   it('lists every asset group with its count', () => {
-    render(<AssetPanel project={project} />);
+    render(<AssetPanel assets={assets} />);
     for (const group of [
       'Characters',
       'Environments',
@@ -32,37 +36,34 @@ describe('AssetPanel', () => {
   });
 
   it('marks every fileless audio slot as having no recording', () => {
-    expect(project.assets.audio.length).toBeGreaterThan(0);
-    render(<AssetPanel project={project} />);
+    expect(assets.audio.length).toBeGreaterThan(0);
+    render(<AssetPanel assets={assets} />);
 
     // The seed ships declared slots, so every one of them is honest about being empty.
-    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(project.assets.audio.length);
+    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(assets.audio.length);
     expect(screen.queryByText(/file attached/)).toBeNull();
   });
 
   it('says a slot has a file once one is attached, and keeps the rest honest', () => {
-    const withOne = {
-      ...project,
-      assets: {
-        ...project.assets,
-        audio: project.assets.audio.map((a, i) => (i === 0 ? { ...a, src: 'audio/line1.wav' } : a)),
-      },
-    } satisfies Project;
+    const withOne: AssetLibrary = {
+      ...assets,
+      audio: assets.audio.map((a, i) => (i === 0 ? { ...a, src: 'audio/line1.wav' } : a)),
+    };
 
-    render(<AssetPanel project={withOne} />);
+    render(<AssetPanel assets={withOne} />);
     expect(screen.getAllByText(/file attached/)).toHaveLength(1);
-    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(withOne.assets.audio.length - 1);
+    expect(screen.getAllByTestId('asset-audio-no-file')).toHaveLength(withOne.audio.length - 1);
   });
 
   it('shows each slot its kind and declared length', () => {
-    render(<AssetPanel project={project} />);
-    const first = project.assets.audio[0];
+    render(<AssetPanel assets={assets} />);
+    const first = assets.audio[0];
     if (!first) throw new Error('no audio slots');
     expect(screen.getByText(first.name)).toBeTruthy();
     // Kinds repeat across slots, so this counts the slots that share the kind rather
     // than expecting one match.
     expect(screen.getAllByText(first.kind).length).toBe(
-      project.assets.audio.filter((a) => a.kind === first.kind).length,
+      assets.audio.filter((a) => a.kind === first.kind).length,
     );
     expect(screen.getAllByText(`${first.duration.toFixed(1)}s`).length).toBeGreaterThan(0);
   });

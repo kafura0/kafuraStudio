@@ -16,7 +16,7 @@
  */
 
 import { useState } from 'react';
-import { useEditor, useOpenProject } from '../../state/editorStore';
+import { useEditor, useOpenProject, useOpenSeries } from '../../state/editorStore';
 import { draftNumberInputProps, inputClass, round2, useDraftNumber } from '../draftFields';
 import { Field } from '../fields';
 import type { Camera, CameraPreset, Id, Project, Scene } from '../../core/types';
@@ -27,7 +27,8 @@ import {
   frameSelection,
   setSceneCamera,
 } from '../../core/document/cameraOps';
-import { findCameraPreset, resolveCameraPresets, sceneEnvironment } from '../../core/document/lookups';
+import { resolveCameraPresets, sceneEnvironment } from '../../core/document/lookups';
+import { resolveAssets } from '../../core/document/scopes';
 import { degToRad, radToDeg } from '../../core/geometry';
 
 const buttonClass =
@@ -72,9 +73,15 @@ function CameraBody({
   const project = useOpenProject();
   const [presetId, setPresetId] = useState('');
   const camera = scene.camera;
-  const presets = resolveCameraPresets(project);
+  // The panel reads the owning series and merges it itself rather than being handed a
+  // resolved context. That is deliberate at the panel boundary and nowhere else: the *scene
+  // operations* below take a library, and the one place that knows both the project and its
+  // series is this one, so the merge happens here instead of being repeated by each caller.
+  const series = useOpenSeries();
+  const library = resolveAssets(project, series).assets;
+  const presets = resolveCameraPresets(project, series);
   const moves = cameraClips(scene);
-  const environment = sceneEnvironment(project, scene);
+  const environment = sceneEnvironment(library, scene);
 
   // A visible actor is one the shot should actually include. An actor left visible but
   // off-stage would drag the framing to somewhere the user cannot see.
@@ -92,13 +99,13 @@ function CameraBody({
   };
 
   const onPreset = (value: string): void => {
-    const preset: CameraPreset | undefined = findCameraPreset(project, value);
+    const preset: CameraPreset | undefined = presets.find((p) => p.id === value);
     if (!preset) return;
     onChange(applyCameraPreset(project, sceneId, preset), `Camera: ${preset.name}`);
   };
 
   const onFrame = (): void => {
-    const next = frameSelection(project, sceneId, frameIds, {
+    const next = frameSelection(project, library, sceneId, frameIds, {
       frame: {
         width: environment?.width ?? project.settings.width,
         height: environment?.height ?? project.settings.height,
