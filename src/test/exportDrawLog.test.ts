@@ -50,9 +50,10 @@ function drawAsExporter(
   project: Project,
   frame: ReturnType<typeof resolveExportFrame>,
   subtitles = EXPORT_SUBTITLES,
+  context?: SceneContext,
 ): DrawOp[] {
   const surface = new RecordingContext();
-  drawExportFrame(surface, libraryFor(project), frame, { subtitles });
+  drawExportFrame(surface, context ?? libraryFor(project), frame, { subtitles });
   return surface.calls;
 }
 
@@ -64,6 +65,11 @@ function drawAsExporter(
  * no character, no set, and no props on it. Both sides of every comparison below resolve
  * the same way, so the parity assertions stay about parity rather than about the library,
  * and "not trivially empty" keeps guarding what it was written to guard.
+ *
+ * Resolved **once per comparison**, never inside the frame loop: the store resolves the
+ * merged library once at open and the stage reuses it, so a test that re-merged it for
+ * every frame would be measuring the merge, not drawing. The heavy parity test pays for
+ * the merge twice (once per side) across ~800 frames otherwise.
  */
 function libraryFor(project: Project): SceneContext {
   return resolveAssets(project, SEED_SERIES);
@@ -74,9 +80,10 @@ function drawAsStage(
   project: Project,
   frame: ReturnType<typeof resolveExportFrame>,
   subtitles = EXPORT_SUBTITLES,
+  context?: SceneContext,
 ): DrawOp[] {
   const surface = new RecordingContext();
-  renderScene(surface, libraryFor(project), frame.scene, frame.sceneTime, {
+  renderScene(surface, context ?? libraryFor(project), frame.scene, frame.sceneTime, {
     width: EXPORT_WIDTH,
     height: EXPORT_HEIGHT,
     pixelRatio: EXPORT_PIXEL_RATIO,
@@ -131,9 +138,14 @@ describe('export draw log equals the stage draw log', () => {
       const frames = frameSequence({ project }, episode);
       expect(frames.length).toBeGreaterThan(0);
 
+      // The merged library is the same fact for every frame and every side — the store
+      // resolves it once at open — so it is resolved once here rather than per frame.
+      const context = libraryFor(project);
       for (const frame of frames) {
         const resolved = resolveExportFrame(timeline, frame.index, frame.time);
-        expect(drawAsExporter(project, resolved)).toEqual(drawAsStage(project, resolved));
+        expect(drawAsExporter(project, resolved, EXPORT_SUBTITLES, context)).toEqual(
+          drawAsStage(project, resolved, EXPORT_SUBTITLES, context),
+        );
       }
     },
     // The whole episode is rendered twice, and recording several hundred thousand draw
