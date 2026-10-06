@@ -10,7 +10,7 @@
  */
 
 /** Schema version. Bump only alongside a step in the ladder below. */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const STORE_PROJECTS = 'projects';
 export const STORE_META = 'meta';
@@ -18,6 +18,19 @@ export const STORE_META = 'meta';
 export const STORE_MEDIA = 'media';
 /** Records that failed to parse, kept verbatim so a bad write is never overwritten. */
 export const STORE_QUARANTINE = 'quarantine';
+/**
+ * Reusable libraries, one row per show.
+ *
+ * A separate store rather than a field on `projects` because the ownership is the other way
+ * round: several projects point at one series, and a series outlives any of them. Storing it
+ * per project would let the same library exist twice, which is the conflation Phase 14 exists
+ * to remove (§4.3.1).
+ *
+ * Note that this store holds the *document*, not the bytes. Audio and image payloads stay in
+ * `STORE_MEDIA` and are still reached by id, so sharing a series shares references rather
+ * than duplicating recordings (§4.2).
+ */
+export const STORE_SERIES = 'series';
 
 /**
  * Storage defaults.
@@ -74,6 +87,19 @@ export function openDatabase(name: string): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_QUARANTINE)) {
         db.createObjectStore(STORE_QUARANTINE, { keyPath: 'id' });
+      }
+
+      // v3: series — the reusable libraries the projects reference.
+      //
+      // Adding the store is all this step does, and that is deliberate. The asset library
+      // that used to live inline in every project does *not* get rewritten here: a
+      // project record is migrated lazily on read (`serialize.ts`, v2->v3), because a
+      // bulk rewrite of every document on upgrade is exactly the operation that turns a
+      // routine schema bump into a data-loss event. A user who never opens a project never
+      // pays for it, and one who opens it gets the library back on the way in.
+      if (!db.objectStoreNames.contains(STORE_SERIES)) {
+        const store = db.createObjectStore(STORE_SERIES, { keyPath: 'id' });
+        store.createIndex('updatedAt', 'updatedAt');
       }
     };
 

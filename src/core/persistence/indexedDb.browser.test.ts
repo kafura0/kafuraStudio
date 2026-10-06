@@ -12,7 +12,15 @@
 
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DB_VERSION, openDatabase, STORE_MEDIA, STORE_PROJECTS, STORE_QUARANTINE, transactionDone } from './db.browser';
+import {
+  DB_VERSION,
+  openDatabase,
+  STORE_MEDIA,
+  STORE_PROJECTS,
+  STORE_QUARANTINE,
+  STORE_SERIES,
+  transactionDone,
+} from './db.browser';
 import {
   IndexedDbProjectRepository,
   isIndexedDbAvailable,
@@ -338,10 +346,14 @@ describe('schema version 2', () => {
     // Opening with the current version runs the upgrade.
     const db = await openDatabase(name);
     expect(db.version).toBe(DB_VERSION);
-    expect([...db.objectStoreNames].sort()).toEqual([STORE_MEDIA, 'meta', STORE_PROJECTS, STORE_QUARANTINE].sort());
+    expect([...db.objectStoreNames].sort()).toEqual(
+      [STORE_MEDIA, 'meta', STORE_PROJECTS, STORE_SERIES, STORE_QUARANTINE].sort(),
+    );
     db.close();
 
     // The v1 project is still there and still opens - the upgrade adds, it does not reset.
+    // It reopens *and* migrates: the row is a v2 document, so the repository derives its
+    // series on read rather than refusing a workspace it wrote itself.
     const repo = repository(name);
     expect(await repo.load(SEED_PROJECT.id)).toEqual(SEED_PROJECT);
   });
