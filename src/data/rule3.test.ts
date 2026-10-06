@@ -19,7 +19,8 @@ import type { CharacterDef, Project, Scene } from '../core/types';
 import { RecordingContext } from '../test/recordingContext';
 import { renderScene } from '../core/render/render';
 import { validateProject } from '../core/document/invariants';
-import { SEED_PROJECT } from './seed';
+import { resolveAssets } from '../core/document/scopes';
+import { SEED_PROJECT, SEED_SERIES } from './seed';
 
 const SYNTHETIC_SKIN = '#c98a5b';
 
@@ -69,7 +70,10 @@ function stageSynthetic(): {
     assets: { ...SEED_PROJECT.assets, characters: [...SEED_PROJECT.assets.characters, CHARACTER] },
   };
 
-  const created = createSceneInProject(withCharacter, {
+  // Resolved rather than read off the project, because this character is an *override* on
+  // top of a series library rather than the whole library: the scene needs both this
+  // character and the environment the series already owns.
+  const created = createSceneInProject(withCharacter, resolveAssets(withCharacter, SEED_SERIES).assets, {
     name: 'Synthetic scene',
     environmentId: ENVIRONMENT_ID,
     duration: 4,

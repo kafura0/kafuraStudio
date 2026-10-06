@@ -12,11 +12,11 @@ import { addDialogueLineWithCue, removeDialogueLine } from '../core/document/dia
 import { createSceneInProject } from '../core/document/projectOps';
 import { validateProject } from '../core/document/invariants';
 import { NIA } from './characters';
-import { SEED_PROJECT } from './seed';
+import { SEED_PROJECT, SEED_SERIES } from './seed';
 
 describe('placeCharacter', () => {
   it('does not leak poseId or expressionId into the transform', () => {
-    const created = createSceneInProject(SEED_PROJECT, {
+    const created = createSceneInProject(SEED_PROJECT, SEED_SERIES.assets, {
       name: 'Leak check',
       environmentId: SEED_PROJECT.assets.environments[0]?.id ?? '',
     });
@@ -48,7 +48,7 @@ describe('placeCharacter', () => {
   });
 
   it('still places the actor where asked', () => {
-    const created = createSceneInProject(SEED_PROJECT, {
+    const created = createSceneInProject(SEED_PROJECT, SEED_SERIES.assets, {
       name: 'Placement check',
       environmentId: SEED_PROJECT.assets.environments[0]?.id ?? '',
     });
@@ -64,7 +64,7 @@ describe('placeCharacter', () => {
 
 describe('removeDialogueLine', () => {
   function sceneWithThreeLines() {
-    const created = createSceneInProject(SEED_PROJECT, {
+    const created = createSceneInProject(SEED_PROJECT, SEED_SERIES.assets, {
       name: 'Dialogue removal',
       environmentId: SEED_PROJECT.assets.environments[0]?.id ?? '',
     });
