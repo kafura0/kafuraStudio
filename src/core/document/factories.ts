@@ -26,6 +26,7 @@ import type {
   Scene,
   SceneActor,
   SceneProp,
+  SeriesDef,
   StagingAnchor,
   Track,
   TrackKind,
@@ -39,6 +40,28 @@ export function emptyAssetLibrary(): AssetLibrary {
     expressions: [],
     props: [],
     audio: [],
+  };
+}
+
+/**
+ * A new series with an empty library.
+ *
+ * There is deliberately no starter content here. A `Project` gets a scaffold
+ * (`starterAssetLibrary`) because an empty project cannot hold a scene, and there is no
+ * asset-authoring UI; a series with nothing in it is simply an empty show, and the fastest
+ * path to a second one is to create it and then point at assets that already exist.
+ */
+export function createSeries(name: string, description = ''): SeriesDef {
+  const now = new Date().toISOString();
+  return {
+    id: createId(ID_PREFIX.series),
+    name,
+    description,
+    createdAt: now,
+    updatedAt: now,
+    formatVersion: CURRENT_FORMAT_VERSION,
+    assets: emptyAssetLibrary(),
+    metadata: {},
   };
 }
 
@@ -78,7 +101,19 @@ export interface FrameSize {
   height: number;
 }
 
-export function createProject(name: string, description = ''): Project {
+/**
+ * A new production document.
+ *
+ * `seriesId` is an argument rather than a default, because a project without an owner is a
+ * decision and not an oversight: `null` is the free project (§5.3), and every other caller
+ * in this codebase has a series in hand. Making it explicit at the call site is what stops
+ * a second, accidental way of ending up series-less.
+ */
+export function createProject(
+  name: string,
+  seriesId: Id | null = null,
+  description = '',
+): Project {
   const now = new Date().toISOString();
   return {
     id: createId(ID_PREFIX.project),
@@ -87,6 +122,7 @@ export function createProject(name: string, description = ''): Project {
     createdAt: now,
     updatedAt: now,
     formatVersion: CURRENT_FORMAT_VERSION,
+    seriesId,
     settings: defaultProjectSettings(),
     assets: emptyAssetLibrary(),
     cameraPresets: [],

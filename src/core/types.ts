@@ -432,6 +432,76 @@ export interface ProjectMetadata {
   snapshotOf: Id | null;
 }
 
+/**
+ * Facts about a series that are not part of the production itself.
+ *
+ * Empty on purpose. The one thing that was ever proposed here — a structured show bible —
+ * was deferred for a reason that has nothing to do with storage: it is prose, and the
+ * system has no text store, no search and no reader (ARCHITECTURE_SPEC.md §28.5). When
+ * that phase arrives it is a documents table beside this field, not a field full of text.
+ *
+ * It is a record rather than `{}` so that adding a fact is a deliberate, type-checked act
+ * instead of a silent shape widening.
+ */
+export type SeriesMetadata = Record<string, unknown>;
+
+/**
+ * The reusable content of one show.
+ *
+ * A series owns the asset library; a project owns the production document that references
+ * it. This is the whole of Phase 14's architectural claim: ZANZA is a `SeriesDef` row,
+ * and "Nia" is a row inside `assets.characters` rather than a fact about the engine
+ * (ARCHITECTURE_SPEC.md §29.1).
+ *
+ * What does **not** belong here, because it is production state rather than vocabulary:
+ * scenes, episodes, tracks, clips, keyframes, camera state and dialogue placement. Those
+ * stay in `Project` and stay scene-local (§4.2).
+ */
+export interface SeriesDef {
+  id: Id;
+  name: string;
+  description: string;
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601. */
+  updatedAt: string;
+  formatVersion: number;
+  assets: AssetLibrary;
+  /**
+   * Named framings a series' projects may start a shot from.
+   *
+   * Presets are *values*, not assets (§4.2), so they live outside `assets` on both scopes
+   * and are resolved series-first with a project entry winning by name. A series' presets
+   * are the house framings — the establishing shot every episode opens on — and a project
+   * overrides one only when this production wants it differently.
+   *
+   * Optional rather than required because a series with no house framings is normal, and
+   * because the v2→v3 migration cannot invent one: a pre-series document kept its presets
+   * on the project, so they are still there after migrating.
+   */
+  cameraPresets?: CameraPreset[] | undefined;
+  metadata: SeriesMetadata;
+}
+
+/**
+ * Everything the renderer and the audio planner are allowed to read.
+ *
+ * This is the seam that makes Series a scope change rather than a behaviour change. Both
+ * `SeriesDef`-resolved assets and `Project.settings` are needed to draw a frame, so the
+ * render path is re-typed to this and nothing else. `Project` satisfies it structurally,
+ * which is why every existing call site compiles unchanged — that is the compiler proof
+ * the specification relies on (§24.5), and `src/arch/multiseries.test.ts` is the
+ * behavioural one.
+ *
+ * It deliberately does **not** carry the series or the project. A frame drawn from this
+ * value cannot tell which show it belongs to, which is exactly the property §29.5 requires.
+ */
+export interface SceneContext {
+  /** Series assets with project overrides merged over them. See `resolveAssets`. */
+  assets: AssetLibrary;
+  settings: ProjectSettings;
+}
+
 export interface Project {
   id: Id;
   name: string;
@@ -441,12 +511,34 @@ export interface Project {
   /** ISO 8601. */
   updatedAt: string;
   formatVersion: number;
+  /**
+   * The series that owns this production's reusable assets.
+   *
+   * `null` is a legitimate state, not a broken one: it is a free project with no series,
+   * and its `assets` are then the whole library (§5.3). It is *not* the state a migrated
+   * project is in — the v2→v3 migration always derives a series, because a pre-series
+   * document carried its library inline and somebody has to adopt it.
+   *
+   * A non-null id that no `SeriesDef` satisfies is a dangling reference, and a project in
+   * that state is refused at open rather than rendered against a half-empty library
+   * (§23.5). `validateProject` enforces it against the merged library, not this field
+   * alone, because a null here is legal and a non-null that resolves to nothing is not.
+   */
+  seriesId: Id | null;
   settings: ProjectSettings;
+  /**
+   * Overrides of the series library, and nothing else.
+   *
+   * A project with an empty override library is the normal case, not a broken one: most
+   * episodes use the show's own assets unchanged (§4.3.1). The collection is kept because
+   * "this production redraws Nia for a season finale" is a real and expressible variation,
+   * and an asset is owned at the narrowest scope that can express it (§4.1).
+   */
   assets: AssetLibrary;
   /**
-   * Named framings a shot can be started from. Project-scope today; Phase 14 resolves
-   * them from the series as well, with a project entry overriding a series entry by
-   * name. Not in `assets` on purpose — see `CameraPreset`.
+   * Named framings a shot can be started from. Project-scope, resolved against the series
+   * first with a project entry overriding a series entry by name. Not in `assets` on
+   * purpose — presets are values, not assets (§4.2).
    */
   cameraPresets: CameraPreset[];
   episodes: Episode[];

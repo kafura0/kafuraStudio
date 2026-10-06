@@ -24,6 +24,7 @@ export function createId(prefix: string): string {
 }
 
 export const ID_PREFIX = {
+  series: 'series',
   project: 'proj',
   episode: 'ep',
   scene: 'scene',

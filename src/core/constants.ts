@@ -19,7 +19,7 @@ export const DEFAULT_SCENE_DURATION = 12;
  * parser had to migrate, and a `serialize` -> `factories` import already exists for the
  * empty asset library. Defining it in the cycle-free module keeps one source of truth.
  */
-export const CURRENT_FORMAT_VERSION = 2;
+export const CURRENT_FORMAT_VERSION = 3;
 
 /** Hard cap on retained undo snapshots. See ARCHITECTURE.md §3. */
 export const HISTORY_LIMIT = 100;
