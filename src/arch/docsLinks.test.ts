@@ -44,8 +44,6 @@ const DOCS = join(ROOT, 'docs');
  * needs a phase number, because "it will exist someday" is not a claim anybody can check.
  */
 const PLANNED_PATHS: Record<string, string> = {
-  // Phase 14 - series and asset scope.
-  'src/ui/SeriesBrowser.tsx': '14',
   // Phase 15 - engine correctness and render performance.
   'src/core/render/perf.test.ts': '15',
   // Phase 16 - commands, transactions and provenance.
@@ -73,12 +71,9 @@ const PLANNED_PATHS: Record<string, string> = {
   'src/core/render/index.ts': '20',
   'src/core/persistence/series': '14',
   // Architecture gates named for phases 15-19.
-  'src/arch/layering.test.ts': '15',
-  'src/arch/contentBlindness.test.ts': '15',
   'src/arch/planIsolation.test.ts': '17',
   'src/arch/commandCoverage.test.ts': '16',
   'src/arch/mutationPath.test.ts': '16',
-  'src/arch/multiseries.test.ts': '14',
 };
 
 /**
