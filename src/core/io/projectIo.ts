@@ -20,8 +20,9 @@
  */
 
 import { createId, ID_PREFIX } from '../id';
-import { CURRENT_FORMAT_VERSION, ProjectParseError, readProjectFile, serializeProject } from '../serialize';
-import type { Episode, Id, Project, Scene, Track } from '../types';
+import { CURRENT_FORMAT_VERSION, ProjectParseError, readProjectFile, serializeProjectFile } from '../serialize';
+import { emptyAssetLibrary } from '../document/factories';
+import type { Episode, Id, Project, Scene, SeriesDef, Track } from '../types';
 
 /** Suffix appended to a duplicated project's name. */
 const COPY_SUFFIX = ' (copy)';
@@ -51,6 +52,19 @@ const DEFAULT_EXTENSION = '.json';
 
 export interface ImportResult {
   project: Project;
+  /**
+   * A series this import needs, or `null` for a free project.
+   *
+   * Not written here. Import is a pure function over a string and knows nothing about what
+   * is in the destination library, so it states the *requirement* and leaves the decision to
+   * `adoptImportSeries`. The two cases differ in substance, not just in value:
+   *
+   * - a pre-v3 file arrives with a **full** library, because that is all it ever had, and
+   *   something has to hold those assets or the scenes that reference them are unresolvable;
+   * - a v3 file names a series and carries no library, so the placeholder below has an empty
+   *   one and adopting the real series is the normal path.
+   */
+  requiredSeries: SeriesDef | null;
   /** Anything the parser had to correct. Surfaced to the user rather than swallowed. */
   warnings: string[];
   /**
@@ -60,21 +74,111 @@ export interface ImportResult {
   migratedFrom: number | null;
 }
 
+export interface ImportSeriesResolution {
+  /** The project, possibly re-pointed at a new series. */
+  project: Project;
+  /**
+   * The series the project resolves against once this is applied.
+   *
+   * `null` for a free project, and also when the imported project was itself free. It is
+   * *not* `null` merely because an existing series was adopted — the caller needs the adopted
+   * record to build the render context, not just to know that nothing has to be written.
+   */
+  series: SeriesDef | null;
+  /** Non-null only when `series` is new and must be persisted before the project is. */
+  seriesToCreate: SeriesDef | null;
+  /** Why the operator should know something happened, or `null`. */
+  warning: string | null;
+}
+
+/**
+ * Decide what a freshly imported project's series should be.
+ *
+ * The rule, and the reason for each half of it:
+ *
+ * - **Adopt when the named series already exists.** A project file does not carry its
+ *   library (§5.5), so importing one into a workspace that already has that show must join it
+ *   to the existing library. Anything else would give the same show two libraries and make
+ *   editing a character not affect the other episodes — silently, and only visible once
+ *   somebody noticed a character had two designs.
+ *
+ * - **Otherwise create a fresh, empty series under a new id, and say so.** Silently reusing
+ *   the id would be a lie: it would suggest the destination library had content when it does
+ *   not. Minting a new id avoids colliding with whatever occupies that id later, and the
+ *   warning is what stops the resulting empty stage from looking like lost work.
+ *
+ * The pre-v3 case is the same rule and lands on the same answer for a different reason: its
+ * derived series id is deterministic (§6.3), so the *second* import of the same old file
+ * adopts what the first one created. That is idempotence arriving through the import path,
+ * which is why the derived id has to be a pure function of the project id.
+ *
+ * `existing` is a callback rather than a loaded map so that this stays pure and does not
+ * care whether the workspace is in memory, in IndexedDB, or somewhere else.
+ */
+export function adoptImportSeries(
+  project: Project,
+  required: SeriesDef | null,
+  existing: (id: Id) => SeriesDef | null,
+): ImportSeriesResolution {
+  if (required === null) {
+    return { project, series: null, seriesToCreate: null, warning: null };
+  }
+
+  const adopted = existing(required.id);
+  if (adopted !== null) {
+    return { project, series: adopted, seriesToCreate: null, warning: null };
+  }
+
+  const fresh: SeriesDef = {
+    id: createId(ID_PREFIX.series),
+    name: required.name,
+    description: required.description,
+    createdAt: now(),
+    updatedAt: now(),
+    formatVersion: CURRENT_FORMAT_VERSION,
+    assets: emptyAssetLibrary(),
+    metadata: {},
+  };
+  return {
+    project: { ...project, seriesId: fresh.id },
+    series: fresh,
+    seriesToCreate: fresh,
+    warning:
+      `This file belongs to a series that is not in this workspace, so an empty one was ` +
+      `created for it ("${fresh.name}"). Nothing in this project can be drawn until that ` +
+      `series has characters and environments in it — the file did not carry any.`,
+  };
+}
+
 /**
  * Serialise a project to a file.
+ *
+ * Takes the series the project draws from, and writes it into the file. That is not
+ * convenience: since Phase 14 the project holds only overrides, so a file without its
+ * library reopens as an empty stage on any machine that does not already have that series —
+ * with no error anywhere, because every id in the document resolves, just not to anything.
+ * The exported file is the only thing that crosses machines, so it has to carry what the
+ * machine on the other side is missing.
  *
  * Rejects a project that is not at the current format version rather than writing a file
  * this build would not read back. That can only happen if a caller bypassed the
  * migration ladder, and a file that cannot be reopened is worse than a loud failure.
  */
-export function exportProject(project: Project, options: ExportOptions = {}): ExportResult {
+export function exportProject(
+  project: Project,
+  series: SeriesDef | null = null,
+  options: ExportOptions = {},
+): ExportResult {
   if (project.formatVersion !== CURRENT_FORMAT_VERSION) {
     throw new ProjectParseError(
       `Refusing to export a project at format version ${project.formatVersion}; this build ` +
         `writes ${CURRENT_FORMAT_VERSION}.`,
     );
   }
-  return { text: serializeProject(project), filename: filenameFor(project, options) };
+  return {
+    text: serializeProjectFile(project, series),
+    filename: filenameFor(project, options),
+  };
 }
 
 /**
@@ -88,7 +192,7 @@ export function exportProject(project: Project, options: ExportOptions = {}): Ex
  * in that case, so a failed import cannot half-create a project.
  */
 export function importProject(text: string, sourceName = 'Untitled'): ImportResult {
-  const { project, warnings } = readProjectFile(text);
+  const { project, series, warnings } = readProjectFile(text);
   const declaredVersion = declaredFormatVersion(text);
   return {
     project: {
@@ -101,6 +205,23 @@ export function importProject(text: string, sourceName = 'Untitled'): ImportResu
       updatedAt: now(),
       metadata: { archived: null, duplicatedFrom: null, snapshotOf: null },
     },
+    // A v3 file names its series and carries no library, so what is required is only that
+    // the name resolve. `adoptImportSeries` reads the empty assets as "nothing to copy" and
+    // prefers an existing series of that id — which is the normal outcome, not an edge case.
+    requiredSeries:
+      series ??
+      (project.seriesId === null
+        ? null
+        : {
+            id: project.seriesId,
+            name: project.name,
+            description: project.description,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            formatVersion: CURRENT_FORMAT_VERSION,
+            assets: emptyAssetLibrary(),
+            metadata: {},
+          }),
     warnings,
     migratedFrom: declaredVersion !== null && declaredVersion < CURRENT_FORMAT_VERSION
       ? declaredVersion

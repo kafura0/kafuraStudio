@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { duplicateProject, exportProject, importProject, snapshotProject } from './projectIo';
 import { CURRENT_FORMAT_VERSION, ProjectParseError, parseProject } from '../serialize';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
 import type { Id, Project, Scene } from '../types';
 
 /** Every id defined inside a scene. Two scenes in one project must not share any. */
@@ -37,14 +37,14 @@ const BRANDED = { extension: '.zanza.json' } as const;
 
 describe('exportProject', () => {
   it('writes a file that reopens to the same document', () => {
-    const { text, filename } = exportProject(SEED_PROJECT, BRANDED);
+    const { text, filename } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     expect(parseProject(text)).toEqual(SEED_PROJECT);
     expect(filename).toMatch(/\.zanza\.json$/);
   });
 
   it('changes nothing about the project', () => {
     const before = structuredClone(SEED_PROJECT);
-    exportProject(SEED_PROJECT, BRANDED);
+    exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     expect(SEED_PROJECT).toEqual(before);
   });
 
@@ -52,7 +52,7 @@ describe('exportProject', () => {
     // A duplicate has a different id from everything else in the database, and it has
     // to survive a save/load or "duplicate" is only a session-lifetime feature.
     const copy = duplicateProject(SEED_PROJECT);
-    const { text } = exportProject(copy, BRANDED);
+    const { text } = exportProject(copy, SEED_SERIES, BRANDED);
     expect(parseProject(text)).toEqual(copy);
   });
 
@@ -60,29 +60,29 @@ describe('exportProject', () => {
     // The only way to get here is to bypass the migration ladder, and a file this build
     // cannot reopen is worse than a loud failure.
     const stale = { ...SEED_PROJECT, formatVersion: CURRENT_FORMAT_VERSION - 1 };
-    expect(() => exportProject(stale, BRANDED)).toThrow(ProjectParseError);
+    expect(() => exportProject(stale, SEED_SERIES, BRANDED)).toThrow(ProjectParseError);
   });
 
   it('produces a filename that is safe on a filesystem', () => {
-    const { filename } = exportProject({ ...SEED_PROJECT, name: 'A/B: "Pilot" <ep1>' }, BRANDED);
+    const { filename } = exportProject({ ...SEED_PROJECT, name: 'A/B: "Pilot" <ep1>' }, SEED_SERIES, BRANDED);
     expect(filename).not.toMatch(/[\\/:*?"<>|]/);
     expect(filename).toMatch(/\.zanza\.json$/);
   });
 
   it('defaults to a neutral extension, leaving the brand to the caller', () => {
     // RULE 3. The file extension is a product decision; core is told what to use.
-    expect(exportProject(SEED_PROJECT).filename.endsWith('.json')).toBe(true);
-    expect(exportProject(SEED_PROJECT).filename).not.toContain('zanza.');
+    expect(exportProject(SEED_PROJECT, SEED_SERIES).filename.endsWith('.json')).toBe(true);
+    expect(exportProject(SEED_PROJECT, SEED_SERIES).filename).not.toContain('zanza.');
   });
 
   it('falls back to a usable filename when the name is all punctuation', () => {
-    expect(exportProject({ ...SEED_PROJECT, name: '///' }, BRANDED).filename).toBe('project.zanza.json');
+    expect(exportProject({ ...SEED_PROJECT, name: '///' }, SEED_SERIES, BRANDED).filename).toBe('project.zanza.json');
   });
 });
 
 describe('importProject', () => {
   it('adopts neither the id nor the name from the file', () => {
-    const { text } = exportProject(SEED_PROJECT, BRANDED);
+    const { text } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     const { project } = importProject(text, 'ep003.zanza.json');
     expect(project.id).not.toBe(SEED_PROJECT.id);
     expect(project.id).toMatch(/^proj_/);
@@ -90,14 +90,14 @@ describe('importProject', () => {
   });
 
   it('is a distinct project every time, even from the same file', () => {
-    const { text } = exportProject(SEED_PROJECT, BRANDED);
+    const { text } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     const a = importProject(text, 'x.zanza.json');
     const b = importProject(text, 'x.zanza.json');
     expect(a.project.id).not.toBe(b.project.id);
   });
 
   it('keeps the content, so an exported project re-imports unchanged apart from identity', () => {
-    const { text } = exportProject(SEED_PROJECT, BRANDED);
+    const { text } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     const { project } = importProject(text, 'pilot.zanza.json');
     expect(project.scenes.map(sceneLocalIds)).toEqual(SEED_PROJECT.scenes.map(sceneLocalIds));
     expect(project.assets).toEqual(SEED_PROJECT.assets);
@@ -105,7 +105,7 @@ describe('importProject', () => {
   });
 
   it('does not carry the source project archive state into the import', () => {
-    const { text } = exportProject({ ...SEED_PROJECT, metadata: { archived: '2026-01-01T00:00:00.000Z', duplicatedFrom: null, snapshotOf: null } });
+    const { text } = exportProject({ ...SEED_PROJECT, metadata: { archived: '2026-01-01T00:00:00.000Z', duplicatedFrom: null, snapshotOf: null } }, SEED_SERIES);
     const { project } = importProject(text, 'a.zanza.json');
     expect(project.metadata.archived).toBeNull();
   });
@@ -118,7 +118,7 @@ describe('importProject', () => {
   });
 
   it('reports no migration for a current file', () => {
-    const { text } = exportProject(SEED_PROJECT, BRANDED);
+    const { text } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     expect(importProject(text, 'new.zanza.json').migratedFrom).toBeNull();
   });
 
@@ -133,20 +133,20 @@ describe('importProject', () => {
     // name inside. The stem is lowercased by the slugger, so only the first letter is
     // restored — a deliberate trade for a filename that is safe on any filesystem. The
     // name is editable, and guessing at capitalisation would mangle names like `iPhone`.
-    const { text, filename } = exportProject(SEED_PROJECT, BRANDED);
+    const { text, filename } = exportProject(SEED_PROJECT, SEED_SERIES, BRANDED);
     const { project } = importProject(text, filename);
     expect(project.name).toBe('Zanza — pilot (imported)');
     expect(project.name).not.toContain('.json');
   });
 
   it('keeps a dotted name that is not an extension', () => {
-    expect(importProject(exportProject(SEED_PROJECT, BRANDED).text, 'Ep.2.json').project.name).toBe(
+    expect(importProject(exportProject(SEED_PROJECT, SEED_SERIES, BRANDED).text, 'Ep.2.json').project.name).toBe(
       'Ep.2 (imported)',
     );
   });
 
   it('falls back to a generic name when the file is named after nothing', () => {
-    expect(importProject(exportProject(SEED_PROJECT).text, '.json').project.name).toBe(
+    expect(importProject(exportProject(SEED_PROJECT, SEED_SERIES).text, '.json').project.name).toBe(
       'Untitled Project (imported)',
     );
   });
@@ -250,7 +250,7 @@ describe('duplicateProject', () => {
     // Cheapest end-to-end check available in core: a duplicate that would not parse back
     // is a duplicate with a dangling id in it.
     const copy = duplicateProject(SEED_PROJECT);
-    expect(() => parseProject(exportProject(copy, BRANDED).text)).not.toThrow();
+    expect(() => parseProject(exportProject(copy, SEED_SERIES, BRANDED).text)).not.toThrow();
   });
 
   it('stamps fresh timestamps, because a copy is new work', () => {
