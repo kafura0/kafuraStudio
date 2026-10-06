@@ -17,8 +17,18 @@ import { mixdownPlan } from './mixdownPlan';
 import { mixdownDuration } from './mixdown.browser';
 import { episodeAudioPlan } from '../audio/episodePlan';
 import { createClip, createTrack } from '../document/factories';
-import { SEED_PROJECT } from '../../data/seed';
-import type { AudioDef, Clip, Episode, Id, Project } from '../../core/types';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import { resolveAssets } from '../document/scopes';
+import type { AudioDef, Clip, Episode, Id, Project, SceneContext } from '../../core/types';
+
+/**
+ * The seed project's own ssets is the override list and is empty; the library lives on
+ * SEED_SERIES. Resolving is what the editor does before any of this runs, so the tests do it
+ * explicitly rather than reading the override list and planning silence.
+ */
+function ctx(project: Project): SceneContext {
+  return resolveAssets(project, SEED_SERIES);
+}
 
 function seedEpisode(project: Project): Episode {
   const episode = project.episodes[0];
@@ -82,12 +92,12 @@ function projectWithClip(project: Project, options: { loop?: boolean; gain?: num
 
 describe('mixdownPlan', () => {
   it('returns null for an episode that is not in the document', () => {
-    expect(mixdownPlan(SEED_PROJECT, 'episode.nope')).toBeNull();
+    expect(mixdownPlan(SEED_PROJECT, ctx(SEED_PROJECT), 'episode.nope')).toBeNull();
   });
 
   it('reports the episode duration as the mix length', () => {
     const episode = seedEpisode(SEED_PROJECT);
-    const plan = mixdownPlan(SEED_PROJECT, episode.id);
+    const plan = mixdownPlan(SEED_PROJECT, ctx(SEED_PROJECT), episode.id);
     expect(plan).not.toBeNull();
     if (!plan) return;
     expect(plan.duration).toBe(mixdownDuration(SEED_PROJECT, episode.id));
@@ -97,7 +107,7 @@ describe('mixdownPlan', () => {
   it('plans the seed clips even though every slot is fileless', () => {
     const project = SEED_PROJECT;
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     if (!plan) throw new Error('seed plan missing');
 
     // The plan says what *should* be heard, not what is available. The seed declares
@@ -108,7 +118,7 @@ describe('mixdownPlan', () => {
     // fileless slot is named rather than dropped.
     expect(plan.placements.length).toBeGreaterThan(0);
     for (const placement of plan.placements) {
-      const asset = project.assets.audio.find((a) => a.id === placement.audioId);
+      const asset = ctx(project).assets.audio.find((a) => a.id === placement.audioId);
       expect(asset).toBeDefined();
       expect(asset?.src).toBeNull();
     }
@@ -117,7 +127,7 @@ describe('mixdownPlan', () => {
   it('places a clip on the episode clock, offset by its scene', () => {
     const { project, audioId } = projectWithClip(SEED_PROJECT);
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     if (!plan) throw new Error('plan missing');
 
     const placement = plan.placements.find((p) => p.audioId === audioId);
@@ -169,7 +179,7 @@ describe('mixdownPlan', () => {
       assets: { ...project.assets, audio: [...project.assets.audio, secondAsset] },
     };
 
-    const plan = mixdownPlan(patched, episode.id);
+    const plan = mixdownPlan(patched, ctx(patched), episode.id);
     if (!plan) throw new Error('plan missing');
     const placement = plan.placements.find((p) => p.audioId === 'audio.second');
     expect(placement).toBeDefined();
@@ -184,7 +194,7 @@ describe('mixdownPlan', () => {
   it('carries gain through unchanged', () => {
     const { project, audioId } = projectWithClip(SEED_PROJECT, { gain: 0.25 });
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     const placement = plan?.placements.find((p) => p.audioId === audioId);
     expect(placement?.gain).toBe(0.25);
   });
@@ -192,7 +202,7 @@ describe('mixdownPlan', () => {
   it('leaves a loop unbounded and records the minimum asset length it needs', () => {
     const { project, audioId } = projectWithClip(SEED_PROJECT, { loop: true });
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     const placement = plan?.placements.find((p) => p.audioId === audioId);
     expect(placement).toBeDefined();
     if (!placement) return;
@@ -206,7 +216,7 @@ describe('mixdownPlan', () => {
   it('bounds a one-shot by its clip window', () => {
     const { project, audioId } = projectWithClip(SEED_PROJECT, { loop: false });
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     const placement = plan?.placements.find((p) => p.audioId === audioId);
     expect(placement?.loop).toBe(false);
     expect(placement?.duration).not.toBeNull();
@@ -218,8 +228,8 @@ describe('mixdownPlan', () => {
   it('agrees with episodeAudioPlan exactly, in order', () => {
     const { project } = projectWithClip(SEED_PROJECT);
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
-    const segments = episodeAudioPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
+    const segments = episodeAudioPlan(project, ctx(project), episode.id);
     if (!plan) throw new Error('plan missing');
 
     expect(plan.placements).toHaveLength(segments.length);
@@ -236,7 +246,7 @@ describe('mixdownPlan', () => {
   it('keeps every placement inside the mix', () => {
     const { project } = projectWithClip(SEED_PROJECT);
     const episode = seedEpisode(project);
-    const plan = mixdownPlan(project, episode.id);
+    const plan = mixdownPlan(project, ctx(project), episode.id);
     if (!plan) throw new Error('plan missing');
 
     for (const placement of plan.placements) {

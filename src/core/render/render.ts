@@ -1,7 +1,7 @@
 /**
  * The renderer.
  *
- * `renderScene(ctx, project, scene, time)` is a pure function: the same project and
+ * `renderScene(ctx, context, scene, time)` is a pure function: the same context and
  * time always produce the same pixels, with no retained state anywhere. That single
  * property buys three things at once — deterministic unit tests, frame-accurate
  * export, and an editor loop that can redraw from scratch after any undo.
@@ -16,7 +16,11 @@
 
 import { fitScale } from '../geometry';
 import { resolveCamera, sampleKeyframes, talkPulseAt } from '../animation/sample';
-import { allClips } from '../document/lookups';
+import {
+  allClips,
+  findExpression as lookupExpression,
+  findPose as lookupPose,
+} from '../document/lookups';
 import type { Canvas2DLike, ImageLike } from './canvas';
 import { resolveCharacter, resolveProp, type ResolvedPart } from './resolve';
 import { buildShapePath, shapeBounds } from './shapes';
@@ -26,15 +30,15 @@ import type {
   EnvironmentDef,
   ExpressionDef,
   PoseDef,
-  Project,
   Scene,
+  SceneContext,
   ShapeDef,
   TrackKind,
   Vec2,
 } from '../types';
 
 export interface RenderOptions {
-  /** Viewport size. Defaults to the project's authored frame. */
+  /** Viewport size. Defaults to the context's authored frame. */
   width?: number;
   height?: number;
   /**
@@ -70,17 +74,17 @@ const MAX_SUBTITLE_WIDTH_RATIO = 0.86;
 
 export function renderScene(
   ctx: Canvas2DLike,
-  project: Project,
+  context: SceneContext,
   scene: Scene,
   time: number,
   options: RenderOptions = {},
 ): void {
-  const width = options.width ?? project.settings.width;
-  const height = options.height ?? project.settings.height;
+  const width = options.width ?? context.settings.width;
+  const height = options.height ?? context.settings.height;
   const images = options.images ?? {};
   const pixelRatio = options.pixelRatio ?? 1;
 
-  const environment = project.assets.environments.find((e) => e.id === scene.environmentId);
+  const environment = context.assets.environments.find((e) => e.id === scene.environmentId);
 
   ctx.save();
   // Establish the base transform explicitly. Deriving it from `pixelRatio` rather
@@ -104,8 +108,8 @@ export function renderScene(
   // Fit the authored environment frame into the viewport, then apply the camera on
   // top of that fit so a scene never letterboxes differently per window size.
   const fit = fitScale(
-    environment ? environment.width : project.settings.width,
-    environment ? environment.height : project.settings.height,
+    environment ? environment.width : context.settings.width,
+    environment ? environment.height : context.settings.height,
     width,
     height,
   );
@@ -121,7 +125,7 @@ export function renderScene(
     drawLighting(ctx, environment, camera.x, camera.y);
   }
 
-  const nodes = collectDrawNodes(ctx, project, scene, time, images);
+  const nodes = collectDrawNodes(ctx, context, scene, time, images);
   for (const node of nodes) node.draw();
 
   ctx.restore();
@@ -150,7 +154,7 @@ export function renderScene(
  */
 function collectDrawNodes(
   ctx: Canvas2DLike,
-  project: Project,
+  context: SceneContext,
   scene: Scene,
   time: number,
   images: Record<string, ImageLike>,
@@ -159,7 +163,7 @@ function collectDrawNodes(
   let order = 0;
 
   for (const sceneProp of scene.props) {
-    const propDef = project.assets.props.find((p) => p.id === sceneProp.propId);
+    const propDef = context.assets.props.find((p) => p.id === sceneProp.propId);
     if (!propDef) continue;
 
     const sampled = sampleTarget(scene, 'prop', sceneProp.id, time);
@@ -184,14 +188,14 @@ function collectDrawNodes(
   }
 
   for (const actor of scene.actors) {
-    const character = project.assets.characters.find((c) => c.id === actor.characterId);
+    const character = context.assets.characters.find((c) => c.id === actor.characterId);
     if (!character) continue;
 
     const sampled = sampleTarget(scene, 'actor', actor.id, time);
     if (!boolAt(sampled.visible, actor.visible)) continue;
 
-    const pose = findPose(project, stringAt(sampled.poseId, actor.poseId));
-    const expression = findExpression(project, stringAt(sampled.expressionId, actor.expressionId));
+    const pose = findPose(context, stringAt(sampled.poseId, actor.poseId));
+    const expression = findExpression(context, stringAt(sampled.expressionId, actor.expressionId));
     const mouthScale = isActorTalking(scene, actor.id, time) ? talkPulseAt(time) : 1;
 
     const nodeOrder = order++;
@@ -481,12 +485,16 @@ function stringAt(sampled: SampledValue, fallback: string): string {
   return typeof sampled === 'string' ? sampled : fallback;
 }
 
-function findPose(project: Project, id: string): PoseDef | null {
-  return project.assets.poses.find((p) => p.id === id) ?? null;
+// Delegates to the shared lookups rather than scanning `context.assets` inline. The
+// difference is not stylistic: `findPose` takes a resolved library, so there is no way for
+// the renderer to accidentally search the project's override collection in isolation and
+// report a series pose as missing.
+function findPose(context: SceneContext, id: string): PoseDef | null {
+  return lookupPose(context.assets, id) ?? null;
 }
 
-function findExpression(project: Project, id: string): ExpressionDef | null {
-  return project.assets.expressions.find((e) => e.id === id) ?? null;
+function findExpression(context: SceneContext, id: string): ExpressionDef | null {
+  return lookupExpression(context.assets, id) ?? null;
 }
 
 /** The subtitle text under the playhead, or null when nothing is being said. */

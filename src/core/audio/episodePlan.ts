@@ -13,7 +13,13 @@
  * are not re-derived when export arrives.
  *
  * Nothing here plays anything. The engine in `audioEngine.browser.ts` remains the only
- * module that touches `AudioContext`, and it still takes `(project, scene, time)`.
+ * module that touches `AudioContext`.
+ *
+ * Takes both the project and the resolved `SceneContext`. The two answer different
+ * questions and neither is a superset of the other: the project owns the cut and the scene
+ * timings, the context owns the audio definitions. Since `Project` satisfies `SceneContext`
+ * structurally, a single-argument version would compile while quietly planning an episode
+ * against the project's own — normally empty — library.
  *
  * Two properties are worth stating because they are what a mixdown would silently get
  * wrong if they were not deliberate:
@@ -26,7 +32,7 @@
 
 import { audioPlan, type AudioSegment } from './audioPlan';
 import { buildEpisodeTimeline, sceneAtTime, type EpisodePosition } from '../timeline/episode';
-import type { Id, Project } from '../types';
+import type { Id, Project, SceneContext } from '../types';
 
 export interface EpisodeAudioSegment extends AudioSegment {
   /** The scene this segment belongs to. */
@@ -54,6 +60,7 @@ export interface EpisodeAudioPlan {
  */
 export function episodeAudioPlan(
   project: Project,
+  context: SceneContext,
   episodeId: Id,
 ): EpisodeAudioSegment[] {
   const timeline = buildEpisodeTimeline(project, episodeId);
@@ -61,7 +68,11 @@ export function episodeAudioPlan(
 
   const out: EpisodeAudioSegment[] = [];
   for (const segment of timeline.segments) {
-    for (const audio of audioPlan(project, segment.scene)) {
+    // The resolved context, not the project. The cut and the scene times come from the
+    // project; the *assets* come from the library, which after Phase 14 lives on the series.
+    // Passing `project` here would compile — `Project` satisfies `SceneContext` — and then
+    // plan an episode with no audio at all, silently.
+    for (const audio of audioPlan(context, segment.scene)) {
       out.push({
         ...audio,
         sceneId: segment.scene.id,

@@ -8,7 +8,7 @@
 
 import type { Canvas2DLike, GradientLike, ImageLike, TextMetricsLike } from '../core/render/canvas';
 import { renderScene } from '../core/render/render';
-import type { Id, Project } from '../core/types';
+import type { Scene, SceneContext } from '../core/types';
 
 export interface DrawOp {
   op: string;
@@ -240,15 +240,21 @@ export class RecordingContext implements Canvas2DLike {
   }
 }
 
-/** Render one scene at one time and return the recording context. */
+/**
+ * Render one scene at one time and return the recording context.
+ *
+ * Takes a `SceneContext` for the art and a `Scene` for the production, because they now
+ * come from different documents: a scene belongs to a project, the assets it references
+ * live in a series. Passing a whole `Project` here would quietly hand `renderScene` an
+ * empty override library and render a blank frame, which is precisely the bug this gate
+ * exists to make impossible to miss.
+ */
 export function renderToRecording(
-  project: Project,
-  sceneId: Id,
+  context: SceneContext,
+  scene: Scene,
   time: number,
 ): RecordingContext {
   const ctx = new RecordingContext();
-  const scene = project.scenes.find((s) => s.id === sceneId);
-  if (!scene) throw new Error(`No scene ${sceneId} in project`);
-  renderScene(ctx, project, scene, time);
+  renderScene(ctx, context, scene, time);
   return ctx;
 }

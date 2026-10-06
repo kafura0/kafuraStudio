@@ -34,7 +34,7 @@
 import { decodeAudioDataCopy } from '../audio/decode.browser';
 import { exportTimeline } from './resolveFrame';
 import { mixdownPlan, type MixdownPlacement } from './mixdownPlan';
-import type { Id, Project } from '../types';
+import type { Id, Project, SceneContext } from '../types';
 
 /** Reads the bytes behind a media id. Async because the store is IndexedDB. */
 export type MixdownByteSource = (mediaId: Id) => Promise<ArrayBuffer | null>;
@@ -92,6 +92,7 @@ export function mixdownDuration(project: Project, episodeId: Id): number {
  */
 export async function mixdownEpisode(
   project: Project,
+  library: SceneContext,
   episodeId: Id,
   loadBytes: MixdownByteSource,
 ): Promise<MixdownResult> {
@@ -112,10 +113,13 @@ export async function mixdownEpisode(
     MIXDOWN_SAMPLE_RATE,
   );
 
-  const plan = mixdownPlan(project, episodeId);
+  const plan = mixdownPlan(project, library, episodeId);
   if (!plan) throw new Error(`Unknown episode: ${episodeId}`);
 
-  const audioById = new Map(project.assets.audio.map((a) => [a.id, a]));
+  // From the resolved library. `project.assets.audio` is the override list and is normally
+  // empty after Phase 14, so looking there would mark every segment of a show with real
+  // recordings as missing media — an export that reports failure for content it could play.
+  const audioById = new Map(library.assets.audio.map((a) => [a.id, a]));
   const missing: MissingSegment[] = [];
   let placed = 0;
 

@@ -30,9 +30,10 @@ import { frameSequence } from '../core/export/frameSequence';
 import { exportTimeline, resolveExportFrame } from '../core/export/resolveFrame';
 import { drawExportFrame } from '../core/export/exportImages.browser';
 import { renderScene, activeSubtitle } from '../core/render/render';
-import type { Project } from '../core/types';
+import type { Project, SceneContext } from '../core/types';
 import { RecordingContext, type DrawOp } from './recordingContext';
-import { SEED_PROJECT } from '../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../data/seed';
+import { resolveAssets } from '../core/document/scopes';
 
 /** What the exporter passes. Any drift from the stage shows up here. */
 const EXPORT_WIDTH = 1920;
@@ -50,9 +51,22 @@ function drawAsExporter(
   frame: ReturnType<typeof resolveExportFrame>,
   subtitles = EXPORT_SUBTITLES,
 ): DrawOp[] {
-  const ctx = new RecordingContext();
-  drawExportFrame(ctx, project, frame, { subtitles });
-  return ctx.calls;
+  const surface = new RecordingContext();
+  drawExportFrame(surface, libraryFor(project), frame, { subtitles });
+  return surface.calls;
+}
+
+/**
+ * The library the editor resolves before it draws anything.
+ *
+ * `SEED_PROJECT.assets` is the override list and is empty, so handing a raw `Project` to
+ * either entry point compiles — `Project` satisfies `SceneContext` — and draws a stage with
+ * no character, no set, and no props on it. Both sides of every comparison below resolve
+ * the same way, so the parity assertions stay about parity rather than about the library,
+ * and "not trivially empty" keeps guarding what it was written to guard.
+ */
+function libraryFor(project: Project): SceneContext {
+  return resolveAssets(project, SEED_SERIES);
 }
 
 /** The same instant drawn the way `Stage.tsx` draws: a direct `renderScene` call. */
@@ -61,14 +75,14 @@ function drawAsStage(
   frame: ReturnType<typeof resolveExportFrame>,
   subtitles = EXPORT_SUBTITLES,
 ): DrawOp[] {
-  const ctx = new RecordingContext();
-  renderScene(ctx, project, frame.scene, frame.sceneTime, {
+  const surface = new RecordingContext();
+  renderScene(surface, libraryFor(project), frame.scene, frame.sceneTime, {
     width: EXPORT_WIDTH,
     height: EXPORT_HEIGHT,
     pixelRatio: EXPORT_PIXEL_RATIO,
     subtitles,
   });
-  return ctx.calls;
+  return surface.calls;
 }
 
 function seedFrame(index: number, time: number): ReturnType<typeof resolveExportFrame> {
@@ -214,14 +228,14 @@ describe('export draw log equals the stage draw log', () => {
     const frame = resolveExportFrame(timeline, 0, 0);
 
     const atCutSize = new RecordingContext();
-    renderScene(atCutSize, project, frame.scene, frame.sceneTime, {
+    renderScene(atCutSize, libraryFor(project), frame.scene, frame.sceneTime, {
       width: CUT_WIDTH,
       height: CUT_HEIGHT,
       pixelRatio: EXPORT_PIXEL_RATIO,
       subtitles: EXPORT_SUBTITLES,
     });
     const atProjectSize = new RecordingContext();
-    renderScene(atProjectSize, project, frame.scene, frame.sceneTime, {
+    renderScene(atProjectSize, libraryFor(project), frame.scene, frame.sceneTime, {
       width: project.settings.width,
       height: project.settings.height,
       pixelRatio: EXPORT_PIXEL_RATIO,

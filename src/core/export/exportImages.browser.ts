@@ -22,7 +22,7 @@
 import { renderScene, type RenderOptions } from '../render/render';
 import type { Canvas2DLike } from '../render/canvas';
 import { exportTimeline, resolveExportFrame, type ResolvedFrame } from './resolveFrame';
-import type { Id, Project } from '../types';
+import type { Id, Project, SceneContext } from '../types';
 
 /** A resolved frame, plus its PNG bytes. */
 export interface ExportedFrame extends Omit<ResolvedFrame, 'timeline'> {
@@ -70,9 +70,18 @@ function createSurface(width: number, height: number): {
  * and the sequence path each built their own context, the draw-log comparison would be
  * comparing two implementations instead of two runs of one.
  */
+/**
+ * Draw one resolved export frame.
+ *
+ * Takes the resolved `SceneContext` rather than the `Project`. `Project` satisfies
+ * `SceneContext` structurally, so a `Project` parameter would compile and then draw from the
+ * project's own — normally empty — library: a series-owned export would come out as an empty
+ * stage with no error anywhere. The timeline already carries the cut and the scenes, so
+ * nothing is lost by taking the context instead.
+ */
 export function drawExportFrame(
   ctx: Canvas2DLike,
-  project: Project,
+  context: SceneContext,
   frame: ResolvedFrame,
   options: ExportImageOptions = {},
 ): void {
@@ -85,7 +94,7 @@ export function drawExportFrame(
   // `RenderOptions` is declared with `exactOptionalPropertyTypes`, so a key that may be
   // absent cannot be passed explicitly as `undefined`. `images` is therefore spread in
   // only when the caller supplied one, rather than always being set to `undefined`.
-  renderScene(ctx, project, frame.scene, frame.sceneTime, {
+  renderScene(ctx, context, frame.scene, frame.sceneTime, {
     width,
     height,
     // Export is not a screen. The stage multiplies by the device pixel ratio to stay
@@ -106,6 +115,7 @@ export function drawExportFrame(
  */
 export async function exportStill(
   project: Project,
+  library: SceneContext,
   episodeId: Id,
   time: number,
   options: ExportImageOptions = {},
@@ -121,7 +131,7 @@ export async function exportStill(
   const surface = createSurface(width, height);
   if (!surface) throw new Error('Canvas 2D context unavailable');
 
-  drawExportFrame(surface.ctx, project, frame, options);
+  drawExportFrame(surface.ctx, library, frame, options);
 
   const blob = await toPng(surface.canvas);
   surface.canvas.width = 0;
@@ -145,6 +155,7 @@ export async function exportStill(
  */
 export async function exportSequence(
   project: Project,
+  library: SceneContext,
   episodeId: Id,
   frames: readonly { index: number; time: number }[],
   options: ExportImageOptions = {},
@@ -164,7 +175,7 @@ export async function exportSequence(
     const surface = createSurface(width, height);
     if (!surface) throw new Error('Canvas 2D context unavailable');
 
-    drawExportFrame(surface.ctx, project, resolved, options);
+    drawExportFrame(surface.ctx, library, resolved, options);
 
     const blob = await toPng(surface.canvas);
     // Release the backing store before allocating the next one, so peak memory is one

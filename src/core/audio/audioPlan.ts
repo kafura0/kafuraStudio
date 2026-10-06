@@ -16,7 +16,7 @@
  * A segment's duration is bounded by its clip, by its scene, and by the asset's
  * declared length. Muted or locked audio tracks are dropped entirely.
  */
-import type { AudioDef, Clip, Id, Project, Scene, Track } from '../types';
+import type { AudioDef, Clip, Id, Scene, SceneContext, Track } from '../types';
 
 export interface AudioSegment {
   audioId: Id;
@@ -33,8 +33,8 @@ export interface AudioSegment {
 }
 
 /** Collect every audible window on a scene's audio and dialogue tracks. */
-export function audioPlan(project: Project, scene: Scene): AudioSegment[] {
-  const audioById = new Map(project.assets.audio.map((a) => [a.id, a]));
+export function audioPlan(context: SceneContext, scene: Scene): AudioSegment[] {
+  const audioById = new Map(context.assets.audio.map((a) => [a.id, a]));
 
   const segments: AudioSegment[] = [];
   for (const track of scene.tracks) {

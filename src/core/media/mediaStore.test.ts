@@ -20,9 +20,11 @@ import {
   type MediaRecord,
 } from './mediaStore';
 import { emptyAssetLibrary } from '../document/factories';
+import { resolveAssets } from '../document/scopes';
 import { serializeProject } from '../serialize';
-import type { AudioDef, Project } from '../types';
-import { SEED_PROJECT } from '../../data/seed';
+import { CURRENT_FORMAT_VERSION } from '../constants';
+import type { AssetLibrary, AudioDef, Project, SeriesDef } from '../types';
+import { SEED_PROJECT, SEED_SERIES, seedContext } from '../../data/seed';
 
 function audio(overrides: Partial<AudioDef> & { id: string }): AudioDef {
   return {
@@ -56,6 +58,18 @@ function record(id: string, overrides: Partial<MediaRecord> = {}): MediaRecord {
 
 function withAudio(audioDefs: AudioDef[]): Project {
   return { ...SEED_PROJECT, assets: { ...emptyAssetLibrary(), ...SEED_PROJECT.assets, audio: audioDefs } };
+}
+
+/**
+ * The resolved library for a project built by `withAudio`.
+ *
+ * The media helpers take a library, not a project, and a test that passed `project.assets`
+ * would keep passing against a channel that ignored series assets entirely — which is the
+ * exact bug the split introduced. Going through `resolveAssets` here means these tests
+ * exercise the same merge the running app does.
+ */
+function libraryOf(audioDefs: AudioDef[]): AssetLibrary {
+  return resolveAssets(withAudio(audioDefs), null).assets;
 }
 
 describe('MediaStore round trip', () => {
@@ -162,41 +176,57 @@ describe('mediaIdFor', () => {
 });
 
 describe('referencedMediaIds', () => {
-  it('collects only the ids the project actually claims to hold', () => {
-    const project = withAudio([
+  it('collects only the ids the library actually claims to hold', () => {
+    const library = libraryOf([
       audio({ id: 'a', src: 'media_1', srcKind: 'local' }),
       audio({ id: 'b' }),
       audio({ id: 'c', src: '/tmp/x.wav', srcKind: 'external' }),
       audio({ id: 'd', src: 'media_2', srcKind: 'local' }),
     ]);
-    expect([...referencedMediaIds(project)].sort()).toEqual(['media_1', 'media_2']);
+    expect([...referencedMediaIds(library)].sort()).toEqual(['media_1', 'media_2']);
   });
 
   it('counts a shared id once', () => {
-    const project = withAudio([
+    const library = libraryOf([
       audio({ id: 'a', src: 'media_1', srcKind: 'local' }),
       audio({ id: 'b', src: 'media_1', srcKind: 'local' }),
     ]);
-    expect(referencedMediaIds(project).size).toBe(1);
+    expect(referencedMediaIds(library).size).toBe(1);
   });
 
   it('finds nothing in the shipped seed, which declares slots and no files', () => {
-    expect(referencedMediaIds(SEED_PROJECT).size).toBe(0);
+    expect(referencedMediaIds(seedContext().assets).size).toBe(0);
+  });
+
+  it('counts a slot that lives on the series, not only on the project', () => {
+    // The regression this signature exists for. Once a voice moved onto its series, the
+    // project's own library holds no audio at all, so counting `project.assets` reported
+    // zero references and a sweep would have deleted the show's recordings.
+    const series: SeriesDef = {
+      ...SEED_SERIES,
+      assets: {
+        ...SEED_SERIES.assets,
+        audio: [audio({ id: 'vo_shared', src: 'media_shared', srcKind: 'local' })],
+      },
+    };
+    const project: Project = { ...SEED_PROJECT, assets: emptyAssetLibrary() };
+    const resolved = resolveAssets(project, series).assets;
+    expect([...referencedMediaIds(resolved)]).toEqual(['media_shared']);
   });
 });
 
 describe('missingMediaReferences', () => {
   it('names the slots that claim a file the store cannot produce', () => {
-    const project = withAudio([
+    const library = libraryOf([
       audio({ id: 'a', src: 'media_gone', srcKind: 'local' }),
       audio({ id: 'b', src: 'media_here', srcKind: 'local' }),
     ]);
-    const missing = missingMediaReferences(project, new Set(['media_here']));
+    const missing = missingMediaReferences(library, new Set(['media_here']));
     expect(missing.map((m) => m.id)).toEqual(['media_gone']);
   });
 
   it('is empty for the shipped seed', () => {
-    expect(missingMediaReferences(SEED_PROJECT, new Set())).toEqual([]);
+    expect(missingMediaReferences(seedContext().assets, new Set())).toEqual([]);
   });
 });
 
@@ -204,15 +234,15 @@ describe('orphaned media', () => {
   it('is nothing when every file is referenced', async () => {
     const store = new MemoryMediaStore();
     await store.put(record('media_1'));
-    const project = withAudio([audio({ id: 'a', src: 'media_1', srcKind: 'local' })]);
-    expect(await findOrphanedMedia([project], store)).toEqual([]);
+    const library = libraryOf([audio({ id: 'a', src: 'media_1', srcKind: 'local' })]);
+    expect(await findOrphanedMedia([library], store)).toEqual([]);
   });
 
-  it('finds a file no project points at', async () => {
+  it('finds a file no library points at', async () => {
     const store = new MemoryMediaStore();
     await store.put(record('media_1'));
-    const project = withAudio([audio({ id: 'a' })]);
-    expect((await findOrphanedMedia([project], store)).map((m) => m.id)).toEqual(['media_1']);
+    const library = libraryOf([audio({ id: 'a' })]);
+    expect((await findOrphanedMedia([library], store)).map((m) => m.id)).toEqual(['media_1']);
   });
 
   it('treats a file shared by two projects as still referenced', async () => {
@@ -221,18 +251,19 @@ describe('orphaned media', () => {
     // bytes out from under the copy.
     const store = new MemoryMediaStore();
     await store.put(record('media_1'));
-    const usesIt = withAudio([audio({ id: 'a', src: 'media_1', srcKind: 'local' })]);
-    const alsoUsesIt = { ...usesIt, id: 'proj_other' };
-    const doesNot = withAudio([audio({ id: 'a' })]);
-    expect(await findOrphanedMedia([doesNot, alsoUsesIt], store)).toEqual([]);
+    const usesIt = libraryOf([audio({ id: 'a', src: 'media_1', srcKind: 'local' })]);
+    // A different slot id and a different document: two projects, one recording.
+    const copyOfIt = libraryOf([audio({ id: 'b', src: 'media_1', srcKind: 'local' })]);
+    const doesNot = libraryOf([audio({ id: 'a' })]);
+    expect(await findOrphanedMedia([doesNot, usesIt, copyOfIt], store)).toEqual([]);
   });
 
   it('sweeps only after being asked, and reports what it removed', async () => {
     const store = new MemoryMediaStore();
     await store.put(record('media_kept'));
     await store.put(record('media_orphan'));
-    const project = withAudio([audio({ id: 'a', src: 'media_kept', srcKind: 'local' })]);
-    const removed: MediaMeta[] = await sweepOrphanedMedia([project], store);
+    const library = libraryOf([audio({ id: 'a', src: 'media_kept', srcKind: 'local' })]);
+    const removed: MediaMeta[] = await sweepOrphanedMedia([library], store);
     expect(removed.map((m) => m.id)).toEqual(['media_orphan']);
     expect(await store.has('media_kept')).toBe(true);
     expect(await store.has('media_orphan')).toBe(false);
@@ -255,6 +286,9 @@ describe('a project with attached media still round trips', () => {
     const def = parsed.project.assets.audio[0];
     expect(def?.src).toBe('media_1');
     expect(def?.srcKind).toBe('local');
-    expect(project.formatVersion).toBe(2);
+    // Current format version, whatever that is today. This assertion is about the *field*
+    // surviving the round trip; pinning the number would make it fail the next time a
+    // migration is added, saying nothing about src or srcKind.
+    expect(project.formatVersion).toBe(CURRENT_FORMAT_VERSION);
   });
 });

@@ -19,7 +19,13 @@
 import { describe, expect, it } from 'vitest';
 import { mixdownDuration } from './mixdown.browser';
 import { mixdownPlan } from './mixdownPlan';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import { resolveAssets } from '../document/scopes';
+import type { Project, SceneContext } from '../../core/types';
+
+function ctx(project: Project): SceneContext {
+  return resolveAssets(project, SEED_SERIES);
+}
 
 describe('mixdown surface', () => {
   it('reports the episode duration as the mix length', () => {
@@ -30,13 +36,13 @@ describe('mixdown surface', () => {
 
   it('is zero for an episode that is not in the document', () => {
     expect(mixdownDuration(SEED_PROJECT, 'episode.nope')).toBe(0);
-    expect(mixdownPlan(SEED_PROJECT, 'episode.nope')).toBeNull();
+    expect(mixdownPlan(SEED_PROJECT, ctx(SEED_PROJECT), 'episode.nope')).toBeNull();
   });
 
   it('agrees on length between the plan and the reported duration', () => {
     const episode = SEED_PROJECT.episodes[0];
     if (!episode) throw new Error('seed has no episode');
-    const plan = mixdownPlan(SEED_PROJECT, episode.id);
+    const plan = mixdownPlan(SEED_PROJECT, ctx(SEED_PROJECT), episode.id);
     if (!plan) throw new Error('plan missing');
     // These are two routes to the same number. If they diverged, a caller reporting
     // "3.2s of audio" from one and building a context from the other would render a file
@@ -48,7 +54,7 @@ describe('mixdown surface', () => {
     const episode = SEED_PROJECT.episodes[0];
     if (!episode) throw new Error('seed has no episode');
     const empty = { ...episode, sceneIds: [] };
-    const plan = mixdownPlan(SEED_PROJECT, empty.id);
+    const plan = mixdownPlan(SEED_PROJECT, ctx(SEED_PROJECT), empty.id);
     // Present but zero-length: `flattenCut` resolves the id against the project, so this
     // reads the real episode. Asserted through the duration helper instead, which is the
     // one that guards the context length.

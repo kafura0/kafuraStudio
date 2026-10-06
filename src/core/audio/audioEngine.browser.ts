@@ -17,7 +17,7 @@
  */
 import { audioPlan, type AudioSegment } from './audioPlan';
 import { decodeAudioDataCopy } from './decode.browser';
-import type { Id, Project, Scene } from '../types';
+import type { Id, Scene, SceneContext } from '../types';
 
 /** The slice of the Web Audio API the engine touches, so a test can fake it. */
 export interface AudioPort {
@@ -62,7 +62,7 @@ export class AudioEngine {
    * per frame while playing. A non-monotonic `time` (scrub backwards, or the scene
    * looping to zero) clears the schedule so nothing replays out of order.
    */
-  schedule(project: Project, scene: Scene, time: number): void {
+  schedule(context: SceneContext, scene: Scene, time: number): void {
     if (time < this.lastTime) {
       this.stop();
       this.lastTime = time;
@@ -70,7 +70,7 @@ export class AudioEngine {
       this.lastTime = time;
     }
 
-    for (const segment of audioPlan(project, scene)) {
+    for (const segment of audioPlan(context, scene)) {
       if (this.scheduled.has(segment.clipId)) continue;
       const startIn = segment.start - time;
       if (startIn < 0 || startIn > LOOKAHEAD) continue;
@@ -97,10 +97,10 @@ export class AudioEngine {
    * Used to check an attachment, so it reports failure rather than silently doing nothing:
    * `false` means "no bytes", which is the one thing the operator needs to be told.
    */
-  async preview(project: Project, audioId: Id): Promise<boolean> {
+  async preview(context: SceneContext, audioId: Id): Promise<boolean> {
     const buffer = await this.bufferFor(audioId);
     if (!buffer) return false;
-    const def = project.assets.audio.find((a) => a.id === audioId);
+    const def = context.assets.audio.find((a) => a.id === audioId);
     const duration = def && Number.isFinite(def.duration) && def.duration > 0 ? def.duration : 0;
     try {
       const source = this.port.createBufferSource();

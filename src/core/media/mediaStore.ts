@@ -11,7 +11,7 @@
  * against an in-memory implementation (AGENTS.md RULE 5, RULE 10).
  */
 
-import type { AudioDef, Id, Project } from '../types';
+import type { AssetLibrary, AudioDef, Id } from '../types';
 
 /** Everything about a media file except the bytes. Cheap to list, safe to render. */
 export interface MediaMeta {
@@ -99,10 +99,18 @@ export function hasMediaSource(def: AudioDef): boolean {
   return mediaIdFor(def) !== null;
 }
 
-/** Every media id a project references, across every audio slot in its library. */
-export function referencedMediaIds(project: Project): Set<string> {
+/**
+ * Every media id a library references, across every audio slot in it.
+ *
+ * Takes the *resolved* library rather than a project, and that is a correctness requirement
+ * rather than tidiness. A slot moved onto its series is not in `project.assets`, so a sweep
+ * that counted project-local slots would call every shared recording garbage and delete a
+ * show's voice files because of where the asset was declared. Callers resolve with
+ * `resolveAssets(project, series)` first.
+ */
+export function referencedMediaIds(library: AssetLibrary): Set<string> {
   const ids = new Set<string>();
-  for (const def of project.assets.audio) {
+  for (const def of library.audio) {
     const id = mediaIdFor(def);
     if (id !== null) ids.add(id);
   }
@@ -115,14 +123,17 @@ export function referencedMediaIds(project: Project): Set<string> {
  * Reachable but unreferenced is not garbage: a project can be temporarily closed, and a
  * duplicated project shares its media with the original. This returns the candidates and
  * leaves the decision to the caller, so nothing is destroyed implicitly.
+ *
+ * `libraries` are resolved libraries, one per open or stored project *and* one per series,
+ * because a series slot's recording is as reachable as a project's own.
  */
 export async function findOrphanedMedia(
-  projects: Project[],
+  libraries: AssetLibrary[],
   media: MediaStore,
 ): Promise<MediaMeta[]> {
   const referenced = new Set<string>();
-  for (const project of projects) {
-    for (const id of referencedMediaIds(project)) referenced.add(id);
+  for (const library of libraries) {
+    for (const id of referencedMediaIds(library)) referenced.add(id);
   }
   const all = await media.list();
   return all.filter((record) => !referenced.has(record.id));
@@ -135,22 +146,28 @@ export async function findOrphanedMedia(
  * the UI can say what it did instead of silently reclaiming megabytes.
  */
 export async function sweepOrphanedMedia(
-  projects: Project[],
+  libraries: AssetLibrary[],
   media: MediaStore,
 ): Promise<MediaMeta[]> {
-  const orphans = await findOrphanedMedia(projects, media);
+  const orphans = await findOrphanedMedia(libraries, media);
   for (const orphan of orphans) {
     await media.remove(orphan.id);
   }
   return orphans;
 }
 
-/** A slot that claims local media the store does not have. */
+/**
+ * A slot that claims local media the store does not have.
+ *
+ * Takes the resolved library for the same reason as `referencedMediaIds`: a series-owned
+ * slot with a dead file path must be reported missing, and a project-local list would
+ * report it as absent rather than broken.
+ */
 export function missingMediaReferences(
-  project: Project,
+  library: AssetLibrary,
   available: ReadonlySet<string>,
 ): { def: AudioDef; id: Id }[] {
-  return project.assets.audio
+  return library.audio
     .filter((def) => {
       const id = mediaIdFor(def);
       return id !== null && !available.has(id);

@@ -16,7 +16,7 @@
 
 import { episodeAudioPlan, type EpisodeAudioSegment } from '../audio/episodePlan';
 import { exportTimeline } from './resolveFrame';
-import type { Id, Project } from '../types';
+import type { Id, Project, SceneContext } from '../types';
 
 /** Where a sound sits in the mix, and how it is played. */
 export interface MixdownPlacement {
@@ -52,13 +52,24 @@ export interface MixdownPlan {
  * Returns `null` for an episode not in the document, and a zero-length plan for a cut with
  * no playable scenes — which is a real answer (a silent episode), not a failure.
  */
-export function mixdownPlan(project: Project, episodeId: Id): MixdownPlan | null {
+/**
+ * The pure projection of the mixdown: what goes where, in episode time.
+ *
+ * Takes the project *and* the resolved context, for the reason given in `episodeAudioPlan`:
+ * the project has the cut, the context has the audio definitions, and only one of them is
+ * right about either. Accepting just the project would compile and plan silence.
+ */
+export function mixdownPlan(
+  project: Project,
+  context: SceneContext,
+  episodeId: Id,
+): MixdownPlan | null {
   const timeline = exportTimeline(project, episodeId);
   if (!timeline) return null;
 
   return {
     duration: timeline.duration,
-    placements: episodeAudioPlan(project, episodeId).map(toPlacement),
+    placements: episodeAudioPlan(project, context, episodeId).map(toPlacement),
   };
 }
 

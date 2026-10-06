@@ -10,13 +10,13 @@ import { describe, expect, it } from 'vitest';
 import { renderScene } from '../core/render/render';
 import { sampleSceneTarget, sceneDuration } from '../core/animation/sample';
 import { activeClips, findScene } from '../core/document/lookups';
-import { SEED_PROJECT } from './seed';
+import { SEED_PROJECT, seedContext } from './seed';
 import { RecordingContext, renderToRecording } from '../test/recordingContext';
 
 const scene1 = SEED_PROJECT.scenes[0]!;
 
 function renderAt(time: number): RecordingContext {
-  return renderToRecording(SEED_PROJECT, scene1.id, time);
+  return renderToRecording(seedContext(), scene1, time);
 }
 
 describe('renderScene', () => {

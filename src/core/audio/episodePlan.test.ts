@@ -12,7 +12,13 @@
 import { describe, expect, it } from 'vitest';
 import { episodeAudioPlan, episodePositionAt } from './episodePlan';
 import { createEpisode, createProject, createScene, createTrack } from '../document/factories';
-import type { AudioDef, Id, Project, Scene } from '../types';
+import { resolveAssets } from '../document/scopes';
+import type { AudioDef, Id, Project, Scene, SceneContext } from '../types';
+
+/** A free project's library is its own, so its context resolves to its own assets. */
+function ctx(project: Project): SceneContext {
+  return resolveAssets(project, null);
+}
 
 function asset(id: string, kind: AudioDef['kind'], duration: number): AudioDef {
   return { id, name: id, kind, src: null, srcKind: null, duration, tags: [] };
@@ -69,7 +75,7 @@ function episodeWithAudio(): { project: Project; episodeId: Id } {
 describe('episodeAudioPlan', () => {
   it('offsets every scene by where that scene starts in the cut', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
 
     // Offsets 0, 10, 18 plus a local start of 2 in each scene.
     expect(plan.map((s) => s.episodeStart)).toEqual([2, 12, 20]);
@@ -77,7 +83,7 @@ describe('episodeAudioPlan', () => {
 
   it('keeps the scene-local start untouched alongside the episode start', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
     // The same window is reported twice, in two clocks. A consumer that mixes them up
     // is the bug this module exists to prevent.
     expect(plan.map((s) => s.start)).toEqual([2, 2, 2]);
@@ -85,14 +91,14 @@ describe('episodeAudioPlan', () => {
 
   it('names the scene each segment belongs to', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
     const sceneIds = project.episodes[0]?.sceneIds ?? [];
     expect(plan.map((s) => s.sceneId)).toEqual(sceneIds);
   });
 
   it('carries gain and loop through the offset unchanged', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
     // An offset changes when a sound is heard, never how loud it is.
     expect(plan.map((s) => s.gain)).toEqual([0.5, 0.6, 0.7]);
     expect(plan.every((s) => s.loop)).toBe(true);
@@ -100,21 +106,21 @@ describe('episodeAudioPlan', () => {
 
   it('returns segments in episode order', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
     const starts = plan.map((s) => s.episodeStart);
     expect([...starts].sort((a, b) => a - b)).toEqual(starts);
   });
 
   it('never places a segment past the end of the episode', () => {
     const { project, episodeId } = episodeWithAudio();
-    const plan = episodeAudioPlan(project, episodeId);
+    const plan = episodeAudioPlan(project, ctx(project), episodeId);
     // Total is 30s. A segment running past it would be scheduled into nothing.
     expect(Math.max(...plan.map((s) => s.episodeStart + s.duration))).toBeLessThanOrEqual(30);
   });
 
   it('returns nothing for an episode the project does not contain', () => {
     const { project } = episodeWithAudio();
-    expect(episodeAudioPlan(project, 'no-such-episode')).toEqual([]);
+    expect(episodeAudioPlan(project, ctx(project), 'no-such-episode')).toEqual([]);
   });
 
   it('returns nothing for a cut of silent scenes', () => {
@@ -128,13 +134,14 @@ describe('episodeAudioPlan', () => {
       scenes: [scene],
       episodes: [{ ...episode, sceneIds: [scene.id] }],
     };
-    expect(episodeAudioPlan(withEpisode, episode.id)).toEqual([]);
+    expect(episodeAudioPlan(withEpisode, ctx(withEpisode), episode.id)).toEqual([]);
   });
 
   it('returns nothing for an empty cut', () => {
     const project = createProject('Empty');
     const episode = createEpisode('EP');
-    expect(episodeAudioPlan({ ...project, episodes: [episode] }, episode.id)).toEqual([]);
+    const withEpisode: Project = { ...project, episodes: [episode] };
+    expect(episodeAudioPlan(withEpisode, ctx(withEpisode), episode.id)).toEqual([]);
   });
 
   it('skips a missing scene and offsets the rest by their real positions', () => {
@@ -149,7 +156,7 @@ describe('episodeAudioPlan', () => {
       ...project,
       episodes: [{ ...project.episodes[0]!, sceneIds: [a, 'missing', b, c] }],
     };
-    const plan = episodeAudioPlan(broken, episodeId);
+    const plan = episodeAudioPlan(broken, ctx(broken), episodeId);
     // A at 0, B at 10 (A was 10s), C at 18.
     expect(plan.map((s) => s.episodeStart)).toEqual([2, 12, 20]);
   });
@@ -157,7 +164,7 @@ describe('episodeAudioPlan', () => {
   it('does not mutate the project', () => {
     const { project, episodeId } = episodeWithAudio();
     const before = JSON.stringify(project);
-    episodeAudioPlan(project, episodeId);
+    episodeAudioPlan(project, ctx(project), episodeId);
     expect(JSON.stringify(project)).toBe(before);
   });
 });
