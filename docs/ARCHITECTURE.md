@@ -328,19 +328,21 @@ ui  ->  state  ->  core  ->  (nothing)
   is still downstream of `core`, so the arrow above is unchanged. What the rule forbids
   is the reverse: `core` importing content.
 
-**The arrow is enforced for the layers it covers, and blind at one edge.** A custom ESLint
-rule, `local/no-upward-imports` in `eslint.config.js`, fails the build when a file in
+**The arrow is enforced for all four edges.** A custom ESLint rule,
+`local/no-upward-imports` in `eslint.config.js`, fails the build when a file in
 `src/core` reaches up into `src/state` or `src/ui`, or when `src/state` reaches into
-`src/ui`. That one was checked by hand: adding an upward import to a `core` file produces
+`src/ui`. Adding an upward import to a `core` file produces
 `Upward import: "../state/editorStore" jumps from the 1 layer to the 2 layer` as an error.
 
-The blind edge is `core → data`. Both sit at the same tier, so the rule permits it, even
-though `AGENTS.md` §3 says `core` must never import from `data` — and it does not: the
-seeding is one-directional, and a `core` module importing a seed would pass lint. There is
-also no test that walks the import graph; `src/arch/layering.test.ts` does not exist yet and
-is named as planned in `docs/ARCHITECTURE_SPEC.md`, and `src/arch/` holds only the
-docs-link check. Treat the arrow as enforced across the three layers and unverified at
-`core → data`.
+On top of it, `src/arch/layering.test.ts` (Phase 14) walks the import graph for everything
+the lint tiers cannot see. It forbids `core` imports of `state`, `ui`, `ai` and `data` from
+implementation and from test doubles alike; forbids `react` imports in `core`; forbids
+`window.`, `document.`, `indexedDB` and `React` outside `*.browser.ts` core modules; and holds
+`data` and (when it exists) `ai` to the same boundary against `state` and `ui`. That closes
+the edge the tier rule alone left open: a `core` module importing the seed was invisible to
+lint, because `core` and `data` sit on the same tier — the graph test now catches it. The
+single remaining seam is `*.browser.ts`, the explicitly-named exception every browser-facing
+module in `core` uses.
 
 Content-agnosticism, by contrast, **is** tested directly:
 `src/data/rule3.test.ts` seeds a synthetic character `char.synthetic_tester` and
@@ -360,7 +362,7 @@ RULE 3 made mechanical.
 | Single user, no cloud | Can't collaborate | Repository interface is the seam; no editor code assumes local storage |
 | No audio assets ship | Exported mixdown is silent or near-silent | The audio pipeline is real and tested with synthesised buffers, but the seed content has no real audio, so a fresh export is silent unless audio is attached. Shipping sample audio is a content task, not an engineering one |
 | No dirty check on the stage loop | Idle editor redraws at 60 fps | Accepted for now; the cost is a few hundred allocations and a handful of fills per frame, and the fix is a small change isolated to `src/ui/Stage.tsx` |
-| Layer rule is unenforced | An upward import could land unnoticed | Review convention plus the plan to add `src/arch/layering.test.ts`. Named here as a gap rather than presented as a guarantee |
+| Layer rule is unenforced | An upward import could land unnoticed | **Resolved in Phase 14.** `local/no-upward-imports` covers the lint half; `src/arch/layering.test.ts` walks the import graph, bans browser globals outside `*.browser.ts`, and closes the `core → data` edge |
 
 **Honest status labels** are used throughout the docs and UI: *implemented*,
 *prototype*, *placeholder*, *planned*. A greyed-out button is labelled *planned*,

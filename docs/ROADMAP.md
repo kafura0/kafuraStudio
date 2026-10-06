@@ -1,8 +1,12 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** Complete — closed as
+> **Current phase: Phase 14 — SERIES & ASSET SCOPE.** In progress: the series lifecycle,
+> the `SeriesBrowser`, the derivation and the three architecture gates (G1, G2, G12)
+> are landed and green. Not yet closed — the Phase 14 acceptance row below will record
+> completion against the §24.5 gate when the manual runs are walked.
+> **Previous: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** Complete — closed as
 > verification, with checks 4 and 8 reported unmet rather than redefined to pass.
-> **Next: Phase 14 — Series & Asset Scope.**
+> **Next: Phase 15 — Engine Correctness & Render Performance.**
 
 Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
 § Phase 13, which is the authority.
@@ -99,7 +103,8 @@ debt.
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-746 tests green across 51 files, all four gates clean.
+800 tests green across 57 files, all four gates clean. This is the state on the last
+verification run (Phase 14 gate work); Phase 13's snapshot at its close was 746 across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.

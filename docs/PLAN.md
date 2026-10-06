@@ -1,7 +1,8 @@
 # ZANZA STUDIO — DEVELOPMENT PLAN
 
-> **Current phase: Phase 8 — DIALOGUE / AUDIO**
-> **Not started: Phase 12 — EXPORT**
+> **Current phase: Phase 14 — SERIES & ASSET SCOPE.** Authority for status is
+> [`ROADMAP.md`](ROADMAP.md), whose phase table this header follows. The plan below is
+> the sequencing and the reasoning, not the status.
 
 The plan of record for what gets built next, in what order, and what is
 deliberately left alone. Phase *definitions* and *gates* live in
@@ -261,33 +262,30 @@ check that the assertions were the right ones. An independent pass can.
 | `core → data` is permitted by the tier rule | `core` could start importing seed data, and the layering would quietly invert | `local/no-upward-imports` treats `core` and `data` as one tier, so it does not catch this. See below. |
 | Scope creep into the renderer | A drawing tool starts appearing | The stage is a viewport, not a paint surface. This is not negotiable. |
 
-### Known gap: the `core → data` edge is unenforced
+### Resolved in Phase 14: the import graph and the `core → data` edge
 
 `AGENTS.md` §3 states that imports flow downward only and that "a lint rule or review
-must catch any upward import". The lint rule half is **done** and this note was wrong
-until the Phase 13 audit went looking: `eslint.config.js` carries `local/no-upward-imports`,
-which fails the build when `src/core` reaches into `src/state` or `src/ui`, or when
-`src/state` reaches into `src/ui`. Verified by hand — the probe import produced an
-`Upward import … jumps from the 1 layer to the 2 layer` error, and was reverted.
+must catch any upward import". The lint half has been in place since before Phase 13:
+`eslint.config.js` carries `local/no-upward-imports`, which fails the build when
+`src/core` reaches into `src/state` or `src/ui`, or when `src/state` reaches into
+`src/ui`. Verified by hand — the probe import produced an `Upward import … jumps
+from the 1 layer to the 2 layer` error, and was reverted.
 
-The edge that survives is `core → data`. `TIER` maps `core` and `data` to the same level, so
-the rule sees a peer import and stays quiet; an import of the seed from a `core` module
-passes lint cleanly. `AGENTS.md` §3 forbids it in prose ("`core` must never import from
-`state`, `ui`, or `data`") and nothing checks it. There is no import-graph test either, so
-the *shape* of the rule is also unpinned — a future edit that quietly retiers `data` to 3
-would break `core` imports wholesale and no test would notice.
+What survived lint was `core → data`. `TIER` maps `core` and `data` to the same level, so
+the rule saw a peer import and stayed quiet; an import of the seed from a `core` module
+passed lint cleanly. Nothing walked the import graph either, so the *shape* of the rule was
+unpinned — a future edit that quietly retiers `data` would break `core` imports wholesale
+and no test would notice.
 
-Two things are worth being precise about. First, this has been true since Phase 0, and
-it has survived thirteen phases: the discipline has held, so the gap is a missing
-*guarantee* on one edge rather than an observed defect. Second, the original note said this
-should be done "before Phase 7, because Phase 7 is the first phase that will tempt someone
-to import a store hook into a core module" — Phase 7 is long finished and the temptation
-did not materialise, which is evidence about the reviewers rather than about the rule.
-
-It remains the cheapest high-value item outstanding, but Phase 13 narrowed it: the
-enforcement gap is `core → data` plus the absence of a graph test, not the whole rule. The
-test that would close both, `src/arch/layering.test.ts`, does not exist yet, is named as
-planned in `docs/ARCHITECTURE_SPEC.md`, and `src/arch/` holds only the docs-link check.
+Phase 14 closes both with `src/arch/layering.test.ts` (G12). It walks the graph on top of
+the lint rule and forbids, by test rather than convention: `core` importing `state`, `ui`,
+`ai`, `data` or React (implementation files and test doubles alike); `window.`,
+`document.`, `indexedDB` and `React` anywhere in `core` outside `*.browser.ts`; `data`
+(or `ai`, once it exists) reaching into `state` or `ui`. The `core → data` edge was the
+last unverified one, and it is now an assertion instead of a review convention. Keeping the
+note is the point: for thirteen phases this was a missing *guarantee* on one edge rather
+than an observed defect, and it did not materialise — which is evidence about the
+reviewers, and now the tests keep it that way.
 
 ---
 

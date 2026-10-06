@@ -2140,7 +2140,7 @@ The strategy below is therefore not "add more tests" — it is "add tests at the
 
 **`src/arch/layering.test.ts`**
 - `src/core/**` imports nothing from `src/state`, `src/ui`, `src/ai`
-- `src/core/**` imports nothing from `src/data` (currently true; a lint rule should enforce it)
+- `src/core/**` imports nothing from `src/data` — implemented in Phase 14, closing the edge the lint tiers did not see
 - `src/core/**` contains no `React`, no `window`, no `document`, no `indexedDB` outside `*.browser.ts`
 - `src/ai/**` imports nothing from `src/state`, `src/ui`
 - `src/data/**` does not import from `src/state` or `src/ui`
@@ -2461,7 +2461,7 @@ The most important section. Phases 0–8 are the historical record and keep thei
 - `resolveAssets(project, series)` — a pure merge, computed at open, never persisted
 - `removeAsset` gains a reference check across the series
 - `validateProject` runs against the merged library
-- v1 → v2 migration, lazy and idempotent
+- v2 → v3 migration, lazy and idempotent (Phase 11 already took v1 → v2 for the media store; this phase moves the document ladder once more, from 2 to 3, for `Series`)
 - camera presets resolve from both scopes
 
 **New domain concepts:** `SeriesDef`, `SceneContext`, `SeriesRepository`, `resolveAssets`.
@@ -3150,7 +3150,7 @@ The first ten are content. The eleventh is a fixture id. The twelfth is the F2 c
 | **11** | **Project IO & Session Lifecycle** | Keep work; close Phase 8 | 10 | `Project\|null`, ProjectBrowser, JSON import/export, media store, file attach, **F4 + F5 fixed** | No |
 | **12** | **Export** | Produce a playable file | 10 | PNG still → PNG sequence → video; mixdown; honest codec reporting | No |
 | **13** | **MVP Acceptance & Doc Truth** | Prove it; make the docs honest | 11, 12 | The manual checks; 6 false doc claims corrected; docs-link test added | No |
-| **14** | **Series & Asset Scope** | Make ZANZA the *first* series | 13 | `SeriesDef`, `SceneContext`, v1→v2 migration (render-neutral), SeriesBrowser | No |
+| **14** | **Series & Asset Scope** | Make ZANZA the *first* series | 13 | `SeriesDef`, `SceneContext`, v2→v3 migration (render-neutral), SeriesBrowser | No |
 | **15** | **Engine Correctness & Render Performance** | Stop lying; stop being O(n²) | 14 | `RenderIndex`, `scaleY` fix, `mouthSlot`, colour validation, golden fixtures | No |
 | **16** | **Commands, Transactions & Provenance** | A named, atomic seam | 15 | `src/core/commands/`, `applyCommands`, `HistoryEntry`, coverage gate | No |
 | **17** | **Plans, Validation & Compilation** | The pure plan pipeline | 16 | `parsePlan` → `validatePlan` → `compilePlan`; `preview === applied` | No |
