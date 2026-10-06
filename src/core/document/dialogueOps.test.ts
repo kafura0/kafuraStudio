@@ -12,12 +12,12 @@ import { createSceneInProject } from './projectOps';
 import { addDialogueLineWithCue, setDialogueCue } from './dialogueOps';
 import { MIN_CLIP_DURATION } from './trackOps';
 import { validateProject } from './invariants';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
 import type { Clip, Project, Scene } from '../types';
 
 /** A scene with two cued lines, the second starting exactly where the first ends. */
 function sceneWithTwoCues(): { project: Project; sceneId: string; first: string; second: string } {
-  const created = createSceneInProject(SEED_PROJECT, {
+  const created = createSceneInProject(SEED_PROJECT, SEED_SERIES.assets, {
     name: 'Cue timing',
     environmentId: SEED_PROJECT.assets.environments[0]?.id ?? '',
   });

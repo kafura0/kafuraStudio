@@ -6,6 +6,7 @@
  */
 
 import type {
+  AssetLibrary,
   CharacterDef,
   EnvironmentDef,
   ExpressionDef,
@@ -170,12 +171,13 @@ export function bringActorToFront(project: Project, sceneId: Id, actorId: Id): P
  */
 export function bindActorToAnchor(
   project: Project,
+  library: AssetLibrary,
   sceneId: Id,
   actorId: Id,
   anchorId: Id,
 ): Project {
   const scene = requireScene(project, sceneId);
-  const environment = findEnvironment(project, scene.environmentId);
+  const environment = findEnvironment(library, scene.environmentId);
   const anchor = environment?.anchors.find((a) => a.id === anchorId);
   if (!anchor) throw new Error(`Anchor not found in environment: ${anchorId}`);
 
@@ -229,8 +231,11 @@ export function updateAnchor(
   };
 }
 
-export function environmentAnchors(project: Project, scene: Scene): StagingAnchor[] {
-  const environment: EnvironmentDef | undefined = findEnvironment(project, scene.environmentId);
+export function environmentAnchors(
+  library: AssetLibrary,
+  scene: Scene,
+): StagingAnchor[] {
+  const environment: EnvironmentDef | undefined = findEnvironment(library, scene.environmentId);
   return environment?.anchors ?? [];
 }
 

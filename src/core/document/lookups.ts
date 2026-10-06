@@ -4,9 +4,17 @@
  * These run in the render hot path, so they are written as plain scans over small
  * arrays rather than building indexes. An MVP project holds tens of scenes and
  * hundreds of assets; a Map index would cost more to maintain than it saves.
+ *
+ * Note the split in what these take. Scene, episode and clip lookups take a `Project`,
+ * because that is where production lives. The six *asset* lookups take a resolved
+ * `AssetLibrary`, because that is where art lives — and taking a library rather than a
+ * project is what makes it impossible to resolve an id against the project's override
+ * collection alone and silently miss the series asset it was meant to find. A project with
+ * no overrides of its own has, by construction, no characters.
  */
 
 import type {
+  AssetLibrary,
   AudioDef,
   CameraPreset,
   CharacterDef,
@@ -21,6 +29,7 @@ import type {
   Scene,
   SceneActor,
   SceneProp,
+  SeriesDef,
   Track,
   TrackKind,
 } from '../types';
@@ -49,28 +58,28 @@ export function findSceneProp(scene: Scene, propId: Id): SceneProp | undefined {
   return scene.props.find((p) => p.id === propId);
 }
 
-export function findCharacter(project: Project, id: Id): CharacterDef | undefined {
-  return project.assets.characters.find((c) => c.id === id);
+export function findCharacter(assets: AssetLibrary, id: Id): CharacterDef | undefined {
+  return assets.characters.find((c) => c.id === id);
 }
 
-export function findEnvironment(project: Project, id: Id): EnvironmentDef | undefined {
-  return project.assets.environments.find((e) => e.id === id);
+export function findEnvironment(assets: AssetLibrary, id: Id): EnvironmentDef | undefined {
+  return assets.environments.find((e) => e.id === id);
 }
 
-export function findPose(project: Project, id: Id): PoseDef | undefined {
-  return project.assets.poses.find((p) => p.id === id);
+export function findPose(assets: AssetLibrary, id: Id): PoseDef | undefined {
+  return assets.poses.find((p) => p.id === id);
 }
 
-export function findExpression(project: Project, id: Id): ExpressionDef | undefined {
-  return project.assets.expressions.find((e) => e.id === id);
+export function findExpression(assets: AssetLibrary, id: Id): ExpressionDef | undefined {
+  return assets.expressions.find((e) => e.id === id);
 }
 
-export function findPropDef(project: Project, id: Id): PropDef | undefined {
-  return project.assets.props.find((p) => p.id === id);
+export function findPropDef(assets: AssetLibrary, id: Id): PropDef | undefined {
+  return assets.props.find((p) => p.id === id);
 }
 
-export function findAudioDef(project: Project, id: Id): AudioDef | undefined {
-  return project.assets.audio.find((a) => a.id === id);
+export function findAudioDef(assets: AssetLibrary, id: Id): AudioDef | undefined {
+  return assets.audio.find((a) => a.id === id);
 }
 
 export function findDialogueLine(scene: Scene, id: Id): DialogueLine | undefined {
@@ -138,24 +147,55 @@ export function clipsForTarget(scene: Scene, kind: TrackKind, targetId: Id): Cli
 }
 
 /** The environment backing a scene, or undefined if the reference is dangling. */
-export function sceneEnvironment(project: Project, scene: Scene): EnvironmentDef | undefined {
-  return findEnvironment(project, scene.environmentId);
+export function sceneEnvironment(assets: AssetLibrary, scene: Scene): EnvironmentDef | undefined {
+  return findEnvironment(assets, scene.environmentId);
 }
 
 /**
  * Every camera preset available to this project.
  *
- * Project-scope today. The seam is deliberate: Phase 14 moves the library to the series
- * and resolves a project entry over a series entry **by name**, so the panel and every
- * caller keep calling one function and the override rule lives in exactly one place.
+ * Series first, then the project's own entries overriding **by name**. The seam was
+ * declared in advance of the work ("Phase 14 moves the library to the series"), and it is
+ * kept as one function so that every caller — the camera panel today — resolves the
+ * override rule in exactly one place rather than re-implementing it.
+ *
+ * Overriding by name rather than by id is deliberate. A preset is a *value*, not an asset:
+ * it has no id a show would want to keep stable across projects, and its name is what an
+ * author recognises ("the wide establishing"). Matching on name is also what lets a project
+ * change the framing of a house preset without having to know which id the series gave it.
+ *
  * Returning a fresh array keeps callers from sorting the document's own array in place.
  */
-export function resolveCameraPresets(project: Project): CameraPreset[] {
-  return [...(project.cameraPresets ?? [])];
+export function resolveCameraPresets(project: Project, series: SeriesDef | null = null): CameraPreset[] {
+  const own = project.cameraPresets ?? [];
+  // Short-circuit only for a free project. Returning early when the *project* happens to be
+  // empty reads like an optimisation and is the opposite: a project that overrides nothing
+  // is the normal case, and taking that branch discarded the show's entire shot vocabulary.
+  // The library being empty is the only condition under which there is nothing to merge.
+  if (series === null || (series.cameraPresets ?? []).length === 0) return [...own];
+  const ownByName = new Map(own.map((preset) => [preset.name, preset]));
+  const merged: CameraPreset[] = [];
+  const claimed = new Set<string>();
+  for (const preset of series.cameraPresets ?? []) {
+    const override = ownByName.get(preset.name);
+    if (override !== undefined) {
+      merged.push(override);
+      claimed.add(preset.name);
+    } else {
+      merged.push(preset);
+    }
+  }
+  for (const preset of own) {
+    if (!claimed.has(preset.name)) merged.push(preset);
+  }
+  return merged;
 }
 
-export function findCameraPreset(project: Project, id: Id): CameraPreset | undefined {
-  return (project.cameraPresets ?? []).find((preset) => preset.id === id);
+export function findCameraPreset(
+  presets: CameraPreset[],
+  id: Id,
+): CameraPreset | undefined {
+  return presets.find((preset) => preset.id === id);
 }
 
 export function scenesOfEpisode(project: Project, episodeId: Id): Scene[] {

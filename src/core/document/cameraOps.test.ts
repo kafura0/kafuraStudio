@@ -26,9 +26,11 @@ import {
 } from './cameraOps';
 import { createCameraPreset, createProject } from './factories';
 import { normaliseProject, serializeProject } from '../serialize';
-import { validateProject } from './invariants';
-import { SEED_PROJECT } from '../../data/seed';
-import type { Camera, Clip, Id, Project, Scene } from '../types';
+import { resolveAssets } from './scopes';
+import { resolveCameraPresets } from './lookups';
+import { validateProject, validateSeries } from './invariants';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import type { AssetLibrary, Camera, Clip, Id, Project, Scene } from '../types';
 
 const FRAME = { width: 1920, height: 1080 };
 const STILL: Camera = { x: 960, y: 540, zoom: 1, rotation: 0 };
@@ -40,7 +42,23 @@ const STILL: Camera = { x: 960, y: 540, zoom: 1, rotation: 0 };
  */
 function projectWithCharacters(): Project {
   const base = createProject('Camera tests');
-  return { ...base, assets: { ...base.assets, characters: [...SEED_PROJECT.assets.characters] } };
+  // The seed's characters now live on the series, so they are read from there. Taking them
+  // from `SEED_PROJECT.assets` would hand over an empty list, and every test below would
+  // then pass vacuously against a project that cannot draw anyone.
+  return { ...base, assets: { ...base.assets, characters: [...SEED_SERIES.assets.characters] } };
+}
+
+/**
+ * The library these tests operate against.
+ *
+ * A free project owns its own assets, so its project record *is* the resolved library —
+ * `resolveAssets(project, null)` returns exactly this. Passing `project.assets` directly
+ * would be the same value today, but spelling it as a call makes the intent visible: the
+ * operations under test take a resolved library because they may equally well be pointed at
+ * a series, and nothing in them knows or cares which.
+ */
+function libraryOf(project: Project): AssetLibrary {
+  return resolveAssets(project, null).assets;
 }
 
 /**
@@ -48,7 +66,8 @@ function projectWithCharacters(): Project {
  * `frameSelection` has to be handed its frame by the caller.
  */
 function blankScene(duration = 10): { project: Project; sceneId: Id } {
-  return createSceneInProject(projectWithCharacters(), {
+  const project = projectWithCharacters();
+  return createSceneInProject(project, libraryOf(project), {
     name: 'S1',
     environmentId: '',
     duration,
@@ -267,7 +286,7 @@ describe('applyCameraPreset', () => {
 describe('frameSelection', () => {
   it('frames a single actor by centring on them', () => {
     const { project, sceneId, actorIds } = sceneWithActors(1);
-    const next = frameSelection(project, sceneId, actorIds, { frame: FRAME });
+    const next = frameSelection(project, libraryOf(project), sceneId, actorIds, { frame: FRAME });
     // One actor standing at x=500, so the camera sits on them.
     expect(sceneOf(next, sceneId).camera.x).toBe(500);
     expect(sceneOf(next, sceneId).camera.y).toBe(900 - project.assets.characters[0]!.height / 2);
@@ -278,7 +297,7 @@ describe('frameSelection', () => {
     // A 640-tall actor in a 1080 frame needs zoom 0.73 to fit with margin, and the
     // default minimum of 1 refuses to show past the authored frame. Zoom 1 is the
     // tightest framing that is still correct.
-    const next = frameSelection(project, sceneId, actorIds, { frame: FRAME });
+    const next = frameSelection(project, libraryOf(project), sceneId, actorIds, { frame: FRAME });
     expect(sceneOf(next, sceneId).camera.zoom).toBe(1);
   });
 
@@ -288,7 +307,7 @@ describe('frameSelection', () => {
     const actorIds: Id[] = [];
     // Placed at opposite edges, so the pair genuinely does not fit at zoom 1.
     for (const x of [200, 1750]) {
-      const placed = placeCharacter(project, created.sceneId, SEED_PROJECT.assets.characters[0]!, {
+const placed = placeCharacter(project, created.sceneId, SEED_SERIES.assets.characters[0]!, {
         x,
         y: 900,
       });
@@ -296,8 +315,10 @@ describe('frameSelection', () => {
       actorIds.push(placed.actorId);
     }
 
-    const camera = sceneOf(frameSelection(project, created.sceneId, actorIds, { frame: FRAME }), created.sceneId)
-      .camera;
+    const camera = sceneOf(
+      frameSelection(project, libraryOf(project), created.sceneId, actorIds, { frame: FRAME }),
+      created.sceneId,
+    ).camera;
     expect(camera.zoom).toBeGreaterThan(1);
     // And it centres between them rather than on either.
     expect(camera.x).toBeCloseTo(975, 6);
@@ -305,14 +326,14 @@ describe('frameSelection', () => {
 
   it('can pull back past the authored frame when the caller allows it', () => {
     const { project, sceneId, actorIds } = sceneWithActors(1);
-    const next = frameSelection(project, sceneId, actorIds, { frame: FRAME, minZoom: 0 });
+    const next = frameSelection(project, libraryOf(project), sceneId, actorIds, { frame: FRAME, minZoom: 0 });
     const height = project.assets.characters[0]!.height;
     expect(sceneOf(next, sceneId).camera.zoom).toBeCloseTo((height * 1.24) / 1080, 6);
   });
 
   it('produces one camera move, not a keyframe per axis', () => {
     const { project, sceneId, actorIds } = sceneWithActors(2);
-    const clips = cameraClipsOf(frameSelection(project, sceneId, actorIds, { frame: FRAME }), sceneId);
+    const clips = cameraClipsOf(frameSelection(project, libraryOf(project), sceneId, actorIds, { frame: FRAME }), sceneId);
     expect(clips).toHaveLength(1);
     expect(clips[0]!.keyframes).toHaveLength(1);
   });
@@ -320,22 +341,25 @@ describe('frameSelection', () => {
   it('preserves a camera tilt the user had already chosen', () => {
     const { project, sceneId, actorIds } = sceneWithActors(1);
     const tilted = setSceneCamera(project, sceneId, { rotation: 0.3 });
-    const next = frameSelection(tilted, sceneId, actorIds, { frame: FRAME });
+    const next = frameSelection(tilted, libraryOf(tilted), sceneId, actorIds, { frame: FRAME });
     expect(sceneOf(next, sceneId).camera.rotation).toBeCloseTo(0.3, 6);
   });
 
   it('frames against the environment size, not the frame the caller passed', () => {
-    const created = createSceneInProject(SEED_PROJECT, {
+const library = SEED_SERIES.assets;
+    const created = createSceneInProject(SEED_PROJECT, library, {
       name: 'Framing',
-      environmentId: SEED_PROJECT.assets.environments[0]!.id,
+      environmentId: library.environments[0]!.id,
     });
-    const character = SEED_PROJECT.assets.characters[0]!;
-    const environment = SEED_PROJECT.assets.environments[0]!;
+    const character = library.characters[0]!;
+    const environment = library.environments[0]!;
     const placed = placeCharacter(created.project, created.sceneId, character, { x: 960, y: 900 });
 
     // The environment, not the argument, decides the frame size when the scene has
     // one. minZoom is opened up so the arithmetic is visible rather than clamped.
-    const opened = frameSelection(placed.project, created.sceneId, [placed.actorId], {
+    // The library is passed explicitly because the project's own list is empty now that
+    // the art lives on the series — resolving it here is the only way the shot can be framed.
+    const opened = frameSelection(placed.project, library, created.sceneId, [placed.actorId], {
       frame: FRAME,
       minZoom: 0,
     });
@@ -347,7 +371,7 @@ describe('frameSelection', () => {
 
   it('ignores actors that are not in the scene', () => {
     const { project, sceneId } = sceneWithActors(1);
-    expect(frameSelection(project, sceneId, ['ghost'], { frame: FRAME })).toBe(project);
+    expect(frameSelection(project, libraryOf(project), sceneId, ['ghost'], { frame: FRAME })).toBe(project);
   });
 
   it('ignores an actor whose character is missing, rather than framing zero height', () => {
@@ -365,12 +389,12 @@ describe('frameSelection', () => {
       ],
     };
     // A zero-height box is not a subject; including one would shrink the shot to nothing.
-    expect(frameSelection(orphaned, sceneId, actorIds, { frame: FRAME })).toBe(orphaned);
+    expect(frameSelection(orphaned, libraryOf(orphaned), sceneId, actorIds, { frame: FRAME })).toBe(orphaned);
   });
 
   it('returns the same project when the selection is empty', () => {
     const { project, sceneId } = sceneWithActors(2);
-    expect(frameSelection(project, sceneId, [], { frame: FRAME })).toBe(project);
+    expect(frameSelection(project, libraryOf(project), sceneId, [], { frame: FRAME })).toBe(project);
   });
 });
 
@@ -416,8 +440,31 @@ describe('cameraPresets in the document', () => {
   });
 
   it('passes validation for the seeded presets', () => {
-    expect(SEED_PROJECT.cameraPresets.length).toBeGreaterThan(0);
-    const issues = validateProject(SEED_PROJECT).filter((i) => i.path.startsWith('cameraPresets'));
+    // The shot vocabulary moved to the series with the rest of the reusable art, so the
+    // presets under test are the resolved set rather than either side's own list. Checking
+    // `SEED_PROJECT.cameraPresets` alone would assert that a now-empty array is fine and say
+    // nothing about the presets the editor actually offers.
+    const resolved = resolveCameraPresets(SEED_PROJECT, SEED_SERIES);
+    expect(resolved.length).toBeGreaterThan(0);
+    const issues = [
+      ...validateProject(SEED_PROJECT, SEED_SERIES),
+      ...validateSeries(SEED_SERIES),
+    ].filter((i) => i.path.startsWith('cameraPresets'));
     expect(issues).toEqual([]);
+  });
+
+  it('lets a project override a series preset by name rather than by having two', () => {
+    // The merge rule that keeps a project from shadowing a show's whole shot list: same name
+    // in both scopes is one preset, and the project's value is the one that wins.
+    const mine = createCameraPreset('Wide', { x: 9, y: 9, zoom: 2, rotation: 0 });
+    const seriesPreset = SEED_SERIES.cameraPresets?.[0];
+    expect(seriesPreset).toBeDefined();
+    const project: Project = {
+      ...SEED_PROJECT,
+      cameraPresets: [{ ...mine, name: seriesPreset!.name }],
+    };
+    const resolved = resolveCameraPresets(project, SEED_SERIES);
+expect(resolved.filter((p) => p.name === seriesPreset!.name)).toHaveLength(1);
+    expect(resolved.find((p) => p.name === seriesPreset!.name)?.camera.x).toBe(9);
   });
 });

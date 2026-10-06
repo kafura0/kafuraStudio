@@ -25,7 +25,7 @@ import { frameBounds, type FrameOptions, type FrameSubject } from '../animation/
 import { addKeyframe, addSimpleClip, sortClips } from './trackOps';
 import { findCharacter, sceneEnvironment, requireScene } from './lookups';
 import { mapScene } from './projectOps';
-import type { Camera, CameraPreset, Id, KeyframeTarget, Project, Scene } from '../types';
+import type { AssetLibrary, Camera, CameraPreset, Id, KeyframeTarget, Project, Scene } from '../types';
 
 /** The track target every camera clip hangs off. There is one camera per scene. */
 export const CAMERA_TARGET_ID = 'camera';
@@ -203,6 +203,7 @@ export function applyFraming(project: Project, sceneId: Id, camera: Camera): Pro
  */
 export function frameSelection(
   project: Project,
+  library: AssetLibrary,
   sceneId: Id,
   actorIds: Id[],
   options: FrameOptions,
@@ -213,16 +214,16 @@ export function frameSelection(
 
   for (const actor of scene.actors) {
     if (!wanted.has(actor.id)) continue;
-    // Through the lookup, not a direct index: `assets.characters` is an array, so
-    // indexing it by id yields undefined and every subject would be silently skipped.
-    const character = findCharacter(project, actor.characterId);
+    // Through the lookup, not a direct index: `characters` is an array, so indexing it by
+    // id yields undefined and every subject would be silently skipped.
+    const character = findCharacter(library, actor.characterId);
     if (!character || !Number.isFinite(character.height)) continue;
     subjects.push({ transform: actor.transform, height: character.height });
   }
 
   if (subjects.length === 0) return project;
 
-  const environment = sceneEnvironment(project, scene);
+  const environment = sceneEnvironment(library, scene);
   const frame = environment
     ? { width: environment.width, height: environment.height }
     : options.frame;
