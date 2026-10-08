@@ -253,7 +253,8 @@ fades, and any real mixdown in export.
 | `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo |
 | `Ctrl+S` / `Cmd+S` | Save to the browser's local database |
 
-Undo and redo work by snapshotting the whole document, capped at 100 steps.
+Undo and redo work by snapshotting the whole document, capped at 100 steps (fewer
+when the document grows large, so history stays within a memory budget).
 
 Undo and redo are live. Moving or trimming a clip in the timeline is the first control
 to change the document, and each completed drag is one step. The buttons enable

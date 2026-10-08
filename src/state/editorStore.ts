@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand';
-import { AUTOSAVE_DEBOUNCE_MS, HISTORY_LIMIT } from '../core/constants';
+import { AUTOSAVE_DEBOUNCE_MS } from '../core/constants';
+import { historyLimitFor } from '../core/document/history';
 import { probeAudioDuration } from '../core/audio/probe.browser';
 import { createId } from '../core/id';
 import { clamp } from '../core/geometry';
@@ -1058,9 +1059,12 @@ previewAudio: async (audioId) => {
         return;
       }
 
-      // The label goes on the state being *left behind*, so undo can name the action it
-      // is reversing without the caller telling it again.
-      const past = [...state.past, { label: label ?? 'Edit', project: state.project }].slice(-HISTORY_LIMIT);
+// The label goes on the state being *left behind*, so undo can name the action it
+      // is reversing without the caller telling it again. The cap is adaptive (§22.4):
+      // the larger the document, the fewer snapshots survive.
+      const past = [...state.past, { label: label ?? 'Edit', project: state.project }].slice(
+        -historyLimitFor(state.project),
+      );
       set({
         project: next,
         // Recomputed here rather than by whichever action changed the overrides. Project
@@ -1090,9 +1094,13 @@ previewAudio: async (audioId) => {
         // undone while the context still listed it would keep playing for a slot the
         // document no longer has.
         context: resolveAssets(entry.project, state.series),
-        past: state.past.slice(0, -1),
-        // Redo replays the action named by the entry we just consumed.
-        future: [{ label: entry.label, project: state.project }, ...state.future].slice(0, HISTORY_LIMIT),
+past: state.past.slice(0, -1),
+        // Redo replays the action named by the entry we just consumed. The cap matches
+        // the adaptive limit for the document being undone from.
+        future: [
+          { label: entry.label, project: state.project },
+          ...state.future,
+        ].slice(0, historyLimitFor(state.project)),
         dirty: true,
       });
       autosave.schedule();
@@ -1105,17 +1113,17 @@ previewAudio: async (audioId) => {
       set({
         project: entry.project,
         context: resolveAssets(entry.project, state.series),
-        // `slice(-HISTORY_LIMIT)`, matching `commit`. `past` is oldest-first, so the cap
-        // gives up the oldest step and keeps the one the user is about to undo.
-        //
-        // To be precise about why this had no observable effect: the slice runs on every
-        // redo, but today it never has anything to truncate, because `commit` already caps
-        // `past` and an undo/redo pair only returns it to the size it had before the undo.
+// `slice(-limit)`, matching `commit`. `past` is oldest-first, so the cap gives up
+        // the oldest step and keeps the one the user is about to undo. The limit is the
+        // adaptive one for this entry's project, the same document `commit` capped by, so
+        // an undo/redo pair only returns the stack to the size it had before the undo.
         // It was `slice(0, ...)` - which would have dropped the *newest* step, the opposite
         // end - so it was wrong rather than merely unused, and it would have corrupted
         // history the moment the model grew a way to overflow. Written correctly so the two
         // paths cannot drift apart.
-        past: [...state.past, { label: entry.label, project: state.project }].slice(-HISTORY_LIMIT),
+        past: [...state.past, { label: entry.label, project: state.project }].slice(
+          -historyLimitFor(entry.project),
+        ),
         future: rest,
         dirty: true,
       });

@@ -119,17 +119,17 @@ commit(next, 'Move Nia');
 in the new document. **Undo is `project = past.pop()`.** That is the whole engine.
 
 **Why snapshots and not a command/patch history?** A patch history
-(`{path, before, after}`) is asymptotically better for very large documents. It is
-also substantially more bug-prone: every mutation site must supply a correct
-inverse, and one wrong inverse corrupts the timeline. MVP documents are
-kilobytes-to-low-megabytes of JSON; 100 retained snapshots is a few tens of MB worst
-case and is trivially correct. Snapshot history is the simpler production-ready
-choice, and it is *exactly* reversible.
+(`{path, before, after}`) is asymptotically better for very large documents. It is also
+substantially more bug-prone: every mutation site must supply a correct inverse, and
+one wrong inverse corrupts the timeline. Snapshot history is the simpler
+production-ready choice, and it is *exactly* reversible.
 
-The cost is recorded honestly: history is capped at `HISTORY_LIMIT = 100` entries
-and is **not** deduplicated. A migration to a patch-based history is a contained
-change to `commit()`/`undo()` alone, because the rest of the app never touches
-`past`/`future`.
+The cost is recorded honestly: history is capped at `HISTORY_LIMIT = 100` entries for a
+seed-sized document and shrinks with the document — `historyLimitFor` in
+`src/core/document/history.ts` keeps the retained serialized JSON near a 2 MB budget
+(ARCHITECTURE_SPEC.md §22.4), down to a floor of 20 entries. History is **not**
+deduplicated. A migration to a patch-based history is a contained change to
+`commit()`/`undo()` alone, because the rest of the app never touches `past`/`future`.
 
 **React never owns scene state.** Components read via selectors from the store and
 call `commit()`-wrapped actions. There are no `useState` copies of scene data, so
@@ -360,7 +360,7 @@ RULE 3 made mechanical.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Vector art looks crude | Poor perceived quality | Palette + palette-slot theming; swap to image parts per part, no renderer change |
-| Snapshot history memory | Cap memory | Hard cap at 100; documents are small JSON |
+| Snapshot history memory | Cap memory | **Resolved in Phase 15.** Cap is adaptive: `historyLimitFor` holds the retained serialized history near a 2 MB budget, clamped between `HISTORY_LIMIT = 100` and a floor of 20 (`src/core/document/history.ts`) |
 | No single-file video output | Nothing to upload to a social platform | **Not built, and stated as such.** Export is a PNG sequence plus a WAV mixdown. `docs/adr/001-video-encoding.md` records why no muxer is present; `MediaRecorder` is a browser-dependent WebM path and is deliberately not taken |
 | No lip sync | Dialogue looks static | Mouth shapes swap per line; real phoneme sync is a later phase |
 | Single user, no cloud | Can't collaborate | Repository interface is the seam; no editor code assumes local storage |
