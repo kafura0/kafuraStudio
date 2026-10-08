@@ -19,6 +19,19 @@ Nia sits on the couch. Kito enters through the door anchor. Nia reacts.
 | 3 | NIA | "You owe me rent." |
 | 4 | KITO | "...the empire is still in development." |
 
+The renderer's golden fixtures pin this scene at five beats (ARCHITECTURE_SPEC.md
+§18.5) — one committed draw-log fixture per time, so a renderer change is either
+intentional (fixture regenerated, reason in the commit) or a regression caught in
+review:
+
+| t (s) | Beat |
+|---|---|
+| 0.0 | opening frame — Kito off-stage, camera at rest |
+| 1.6 | Kito's walk-on has landed, Nia still neutral |
+| 3.0 | line 2 subtitled, the camera push mid-move |
+| 3.9 | Nia's expression changes to angry |
+| 9.5 | final beat, camera near its pushed-in end |
+
 If this scene can be **staged, timed, previewed at speed, and exported to a playable
 file**, the system works. Everything else is expansion.
 
