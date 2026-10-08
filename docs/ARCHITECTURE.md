@@ -66,8 +66,9 @@ per rig part, per actor, per frame. A three-character scene allocates a few hund
 short-lived objects per frame, which is immaterial at 60 fps and far below the cost of
 the canvas fills themselves. A scratch-buffer pool is deliberately **not**
 implemented — it would complicate the resolver to remove a cost that measurement has
-not shown to matter. Layers are pre-sorted by `z` when the environment is authored.
-Revisit only if profiling a heavy scene justifies it.
+not shown to matter. Environment layers are sorted by `z` once when the render index
+for a scene is built — not per frame, and not by the author. Revisit only if profiling
+a heavy scene justifies it.
 
 **The loop does not currently skip idle frames.** `src/ui/Stage.tsx` redraws on every
 `requestAnimationFrame` whenever a project and scene are open, and returns early only
