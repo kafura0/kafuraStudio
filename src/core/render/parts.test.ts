@@ -40,7 +40,7 @@ describe('drawParts', () => {
   it('offsets by the authored pivot, not the centre', () => {
     const ctx = new RecordingContext();
     // A 40x120 arm pivoting at its top edge, i.e. the shoulder.
-    drawParts(ctx, [part({ pivot: { x: 0.5, y: 0 } })], {});
+    drawParts(ctx, [part({ pivot: { x: 0.5, y: 0 } })]);
 
     // -pivot * size. A centre pivot would have produced [-20, -60] and detached the
     // arm from the shoulder by half its length.
@@ -49,13 +49,13 @@ describe('drawParts', () => {
 
   it('centres the shape when the pivot is the middle', () => {
     const ctx = new RecordingContext();
-    drawParts(ctx, [part({ pivot: { x: 0.5, y: 0.5 } })], {});
+    drawParts(ctx, [part({ pivot: { x: 0.5, y: 0.5 } })]);
     expect(translate(ctx, 1)).toEqual([-20, -60]);
   });
 
   it('applies the part transform before the pivot offset', () => {
     const ctx = new RecordingContext();
-    drawParts(ctx, [part({ x: 300, y: 200, rotation: 0.5 })], {});
+    drawParts(ctx, [part({ x: 300, y: 200, rotation: 0.5 })]);
 
     const ops = ctx.calls.map((c) => c.op);
     expect(ops.indexOf('translate')).toBeLessThan(ops.indexOf('rotate'));
@@ -67,17 +67,17 @@ describe('drawParts', () => {
 
   it('skips fully transparent parts but draws a visible sliver', () => {
     const hidden = new RecordingContext();
-    drawParts(hidden, [part({ alpha: 0 })], {});
+    drawParts(hidden, [part({ alpha: 0 })]);
     expect(hidden.countOf('fill')).toBe(0);
 
     const sliver = new RecordingContext();
-    drawParts(sliver, [part({ alpha: 0.002 })], {});
+    drawParts(sliver, [part({ alpha: 0.002 })]);
     expect(sliver.countOf('fill')).toBe(1);
   });
 
   it('leaves the context balanced', () => {
     const ctx = new RecordingContext();
-    drawParts(ctx, [part(), part({ id: 'p_armR' })], {});
+    drawParts(ctx, [part(), part({ id: 'p_armR' })]);
     expect(ctx.isBalanced()).toBe(true);
   });
 });

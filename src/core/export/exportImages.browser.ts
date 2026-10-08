@@ -19,7 +19,7 @@
  * stays DOM-free (RULE 5). Everything about *what* to draw stays in the pure renderer.
  */
 
-import { renderScene, type RenderOptions } from '../render/render';
+import { renderScene } from '../render/render';
 import type { Canvas2DLike } from '../render/canvas';
 import { exportTimeline, resolveExportFrame, type ResolvedFrame } from './resolveFrame';
 import type { Id, Project, SceneContext } from '../types';
@@ -31,8 +31,6 @@ export interface ExportedFrame extends Omit<ResolvedFrame, 'timeline'> {
 }
 
 export interface ExportImageOptions {
-  /** Supplied by the caller so `core` never loads anything itself. */
-  images?: RenderOptions['images'];
   /** Draw the subtitle bar. Matches the stage default, so the export does too. */
   subtitles?: boolean;
   /** Called after each frame, for progress reporting. */
@@ -91,9 +89,6 @@ export function drawExportFrame(
   // different resolution from the one its own cut says, with nothing but a file size to
   // notice it by. `frameSequence` already takes fps from the episode for the same reason.
   const { width, height } = frame.timeline.episode.renderSettings;
-  // `RenderOptions` is declared with `exactOptionalPropertyTypes`, so a key that may be
-  // absent cannot be passed explicitly as `undefined`. `images` is therefore spread in
-  // only when the caller supplied one, rather than always being set to `undefined`.
   renderScene(ctx, context, frame.scene, frame.sceneTime, {
     width,
     height,
@@ -102,7 +97,6 @@ export function drawExportFrame(
     // ratio is 1 and the output is resolution-independent of whoever runs it.
     pixelRatio: 1,
     subtitles: options.subtitles ?? true,
-    ...(options.images ? { images: options.images } : {}),
   });
 }
 

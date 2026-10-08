@@ -48,8 +48,7 @@ export type ShapeDef =
   | { kind: 'ellipse'; rx: number; ry: number }
   | { kind: 'rect'; w: number; h: number }
   | { kind: 'roundRect'; w: number; h: number; radius: number }
-  | { kind: 'path'; points: Vec2[]; closed: boolean }
-  | { kind: 'image'; src: string; w: number; h: number };
+  | { kind: 'path'; points: Vec2[]; closed: boolean };
 
 /**
  * One drawable unit of a rig.

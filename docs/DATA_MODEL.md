@@ -56,8 +56,10 @@ type ShapeDef =
   | { kind: 'ellipse';   rx: number; ry: number }
   | { kind: 'rect';      w: number; h: number }
   | { kind: 'roundRect'; w: number; h: number; radius: number }
-  | { kind: 'path';      points: Vec2[]; closed: boolean }
-  | { kind: 'image';     src: string; w: number; h: number };
+  | { kind: 'path';      points: Vec2[]; closed: boolean };
+  /* `{ kind: 'image'; src; w; h }` was removed in Phase 15 (R5): no caller supplied
+     the images it needed, so the whole image feature is planned, not present, and
+     returns with the art pipeline (see ARCHITECTURE.md §Shapes). */
 
 interface PartDef {
   id: string;

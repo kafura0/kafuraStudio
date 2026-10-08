@@ -353,10 +353,10 @@ Deliberately not built. Listed so they are not lost, and so nobody re-adds them
 by accident during MVP work.
 
 ### Phase 14 — ART PIPELINE
-Replace vector parts with painted art. `PartDef.shape` already accepts
-`{ kind: 'image' }`, so this is primarily a content and tooling task, not a rewrite.
-Add: asset import, sprite atlasing, per-part art variants, pose libraries authored
-in-app.
+Replace vector parts with painted art. Pipe-fitted, not prebuilt: `{ kind: 'image' }`
+was removed from `ShapeDef` in Phase 15 (R5) because nothing supplied it, and it
+returns here together with an image resolver. Add: asset import, sprite atlasing,
+per-part art variants, pose libraries authored in-app.
 
 ### Phase 15 — ANIMATION DEPTH
 Pose-to-pose keyframed animation with an eased graph editor, animation clips in the

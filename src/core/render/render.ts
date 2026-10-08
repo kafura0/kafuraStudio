@@ -21,7 +21,7 @@ import {
   findExpression as lookupExpression,
   findPose as lookupPose,
 } from '../document/lookups';
-import type { Canvas2DLike, ImageLike } from './canvas';
+import type { Canvas2DLike } from './canvas';
 import { resolveCharacter, resolveProp, type ResolvedPart } from './resolve';
 import { buildShapePath, shapeBounds } from './shapes';
 import type {
@@ -41,11 +41,6 @@ export interface RenderOptions {
   /** Viewport size. Defaults to the context's authored frame. */
   width?: number;
   height?: number;
-  /**
-   * Decoded bitmaps by part id, for `{ kind: 'image' }` parts. Supplied by the
-   * caller so `core` never loads anything itself.
-   */
-  images?: Record<string, ImageLike>;
   /**
    * Device pixel ratio of the target surface, as a plain number. `core` cannot read
    * `window.devicePixelRatio`, so the caller supplies it.
@@ -81,7 +76,6 @@ export function renderScene(
 ): void {
   const width = options.width ?? context.settings.width;
   const height = options.height ?? context.settings.height;
-  const images = options.images ?? {};
   const pixelRatio = options.pixelRatio ?? 1;
 
   const environment = context.assets.environments.find((e) => e.id === scene.environmentId);
@@ -125,7 +119,7 @@ export function renderScene(
     drawLighting(ctx, environment, camera.x, camera.y);
   }
 
-  const nodes = collectDrawNodes(ctx, context, scene, time, images);
+  const nodes = collectDrawNodes(ctx, context, scene, time);
   for (const node of nodes) node.draw();
 
   ctx.restore();
@@ -157,7 +151,6 @@ function collectDrawNodes(
   context: SceneContext,
   scene: Scene,
   time: number,
-  images: Record<string, ImageLike>,
 ): DrawNode[] {
   const nodes: DrawNode[] = [];
   let order = 0;
@@ -183,7 +176,7 @@ function collectDrawNodes(
           rotation: numberAt(sampled.rotation, sceneProp.transform.rotation),
           alpha: numberAt(sampled.alpha, sceneProp.transform.alpha),
         });
-        drawParts(ctx, parts, images);
+        drawParts(ctx, parts);
       },
     });
   }
@@ -220,7 +213,7 @@ function collectDrawNodes(
           mouthScale,
           mouthSlot: character.mouthSlot,
         });
-        drawParts(ctx, parts, images);
+        drawParts(ctx, parts);
       },
     });
   }
@@ -257,7 +250,7 @@ function drawEnvironment(
       ctx.rotate(part.transform.rotation);
       ctx.scale(part.transform.scaleX, part.transform.scaleY);
       // Environment parts carry a literal colour; only characters get a palette.
-      drawShapeAtPivot(ctx, part.shape, part.colorKey, part.pivot, undefined);
+      drawShapeAtPivot(ctx, part.shape, part.colorKey, part.pivot);
       ctx.restore();
     }
     ctx.restore();
@@ -333,11 +326,7 @@ function drawFrameBoundary(
 /* Parts + shapes                                                      */
 /* ------------------------------------------------------------------ */
 
-export function drawParts(
-  ctx: Canvas2DLike,
-  parts: ResolvedPart[],
-  images: Record<string, ImageLike>,
-): void {
+export function drawParts(ctx: Canvas2DLike, parts: ResolvedPart[]): void {
   for (const part of parts) {
     if (part.alpha <= 0.001) continue;
     ctx.save();
@@ -345,7 +334,7 @@ export function drawParts(
     ctx.translate(part.x, part.y);
     ctx.rotate(part.rotation);
     ctx.scale(part.scaleX, part.scaleY);
-    drawShapeAtPivot(ctx, part.shape, part.color, part.pivot, images[part.id]);
+    drawShapeAtPivot(ctx, part.shape, part.color, part.pivot);
     ctx.restore();
   }
 }
@@ -362,15 +351,7 @@ function drawShapeAtPivot(
   shape: ShapeDef,
   color: string,
   pivot: Vec2,
-  image: ImageLike | undefined,
 ): void {
-  if (shape.kind === 'image') {
-    if (!image) return;
-    const bounds = shapeBounds(shape);
-    ctx.drawImage(image, -bounds.width * pivot.x, -bounds.height * pivot.y, bounds.width, bounds.height);
-    return;
-  }
-
   const bounds = shapeBounds(shape);
   ctx.save();
   ctx.translate(-bounds.width * pivot.x, -bounds.height * pivot.y);

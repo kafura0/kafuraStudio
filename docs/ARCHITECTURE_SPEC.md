@@ -2916,7 +2916,7 @@ For each: why it is premature, and the **specific signal** that would justify it
 
 ### 28.10 A generative video / image pipeline
 
-**Why premature:** it is a content-generation problem with a dependency, a cost model, a licensing question, and a nondeterminism problem — all of which are real, none of which the platform needs. The renderer draws shapes; a generative pipeline produces images; they meet at `PartDef.shape = { kind: 'image' }`, which already exists.
+**Why premature:** it is a content-generation problem with a dependency, a cost model, a licensing question, and a nondeterminism problem — all of which are real, none of which the platform needs. The renderer draws shapes; a generative pipeline produces images; they meet where an `ImageResolver` feeds decoded bitmaps to the renderer. The `{ kind: 'image' }` shape variant was removed in Phase 15 (R5) as dead code and is reinstated here.
 
 **Signal:** an art pipeline is needed, at which point the seam is `ImageResolver` and the generator is a separate concern entirely.
 

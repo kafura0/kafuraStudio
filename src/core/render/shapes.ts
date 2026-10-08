@@ -24,7 +24,6 @@ export function shapeBounds(shape: ShapeDef): ShapeBounds {
       return { width: shape.rx * 2, height: shape.ry * 2, cx: 0, cy: 0 };
     case 'rect':
     case 'roundRect':
-    case 'image':
       return { width: shape.w, height: shape.h, cx: 0, cy: 0 };
     case 'path': {
       const points = shape.points;
@@ -78,9 +77,6 @@ export function buildShapePath(ctx: Canvas2DLike, shape: ShapeDef): void {
       if (shape.closed) ctx.closePath();
       return;
     }
-    case 'image':
-      // Image parts are blitted, not pathed.
-      return;
     default: {
       const exhaustive: never = shape;
       void exhaustive;

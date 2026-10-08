@@ -206,14 +206,13 @@ smirk be `browL: rotate(-6deg) + mouth: narrow` and reuse across every character
 It also means the app produces a real animated scene with **zero binary art
 assets**, which is what makes the MVP achievable before any artwork exists.
 
-Parts are `ShapeDef`s — the vector primitives `ellipse`, `rect`, `roundRect`, `path`,
-plus `image` for painted art. A part may be authored as vectors today and swapped for
-`{ kind: 'image', src, w, h }` later, because the renderer already implements both
-branches. One caveat, stated so nobody counts on it: nothing in the app supplies the
-`RenderOptions.images` map the image branch reads, and no seed part uses `kind:
-'image'`, so that branch is implemented and reachable through the pure API but is not
-yet exercised by real content. Replacing vector parts with painted art is a data change
-plus an image resolver; it is not a renderer change.
+Parts are `ShapeDef`s — the vector primitives `ellipse`, `rect`, `roundRect` and
+`path`. Painted-art parts are planned, not present: the image branch that existed in
+`render.ts` was deleted in Phase 15 (R5) because no caller supplied the `images` map
+it read — a dead code path in the pure core was a liability, not a feature. When the
+art pipeline lands, `{ kind: 'image', src, w, h }` returns together with an
+`ImageResolver` that supplies decoded bitmaps; that addition is a data change plus a
+resolver, not a change to the existing vector path.
 
 ---
 
