@@ -70,11 +70,15 @@ not shown to matter. Environment layers are sorted by `z` once when the render i
 for a scene is built — not per frame, and not by the author. Revisit only if profiling
 a heavy scene justifies it.
 
-**The loop does not currently skip idle frames.** `src/ui/Stage.tsx` redraws on every
-`requestAnimationFrame` whenever a project and scene are open, and returns early only
-when there is no project or no scene. A dirty check — compare the scene id, the
-`sceneTime`, and a document revision — would make an idle editor nearly free, and it is
-a small, contained change. It is **not** implemented, so this document does not claim it.
+**The loop skips idle frames.** `src/ui/Stage.tsx` redraws only when something the
+renderer reads has changed: the resolved library, the scene object, the scene-local
+time, the subtitle flag, the device pixel ratio, or the stage width. Documents are
+immutable, so object identity is the revision — an edit to another scene leaves this
+scene's object untouched and the pixels provably unchanged, while an edit to this
+scene produces a new object and redraws. An idle editor costs a store read and a
+`requestAnimationFrame` tick, not a full redraw; the transport's own clock never
+advances while paused (`advancePlayback` is a no-op), so a paused scene is exactly
+still, every frame.
 
 ---
 
@@ -361,7 +365,7 @@ RULE 3 made mechanical.
 | No lip sync | Dialogue looks static | Mouth shapes swap per line; real phoneme sync is a later phase |
 | Single user, no cloud | Can't collaborate | Repository interface is the seam; no editor code assumes local storage |
 | No audio assets ship | Exported mixdown is silent or near-silent | The audio pipeline is real and tested with synthesised buffers, but the seed content has no real audio, so a fresh export is silent unless audio is attached. Shipping sample audio is a content task, not an engineering one |
-| No dirty check on the stage loop | Idle editor redraws at 60 fps | Accepted for now; the cost is a few hundred allocations and a handful of fills per frame, and the fix is a small change isolated to `src/ui/Stage.tsx` |
+| Stage loop redraw cost | Idle editor could redraw at 60 fps | **Resolved in Phase 15.** The loop compares the renderer's inputs — library, scene object, scene time, subtitle flag, pixel ratio, width — against the previous draw and skips the draw when nothing changed (`src/ui/Stage.tsx`). An idle editor costs a store read and a rAF tick |
 | Layer rule is unenforced | An upward import could land unnoticed | **Resolved in Phase 14.** `local/no-upward-imports` covers the lint half; `src/arch/layering.test.ts` walks the import graph, bans browser globals outside `*.browser.ts`, and closes the `core → data` edge |
 
 **Honest status labels** are used throughout the docs and UI: *implemented*,
@@ -378,6 +382,6 @@ React re-renders panels on state change; the canvas redraws independently at dis
 refresh. A 60 fps playhead would otherwise cause 60 React renders/second of the
 whole panel tree.
 
-The loop draws every frame while a scene is open, so an idle editor currently
-redraws at display refresh. React owns chrome; the loop owns pixels. See §2 for why
-there is no dirty check yet.
+The loop skips the draw while the renderer's inputs are unchanged (§2), so an idle
+editor holds its last frame at display refresh instead of repainting it. React owns
+chrome; the loop owns pixels.

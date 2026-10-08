@@ -13,6 +13,14 @@
  * everywhere else, which is how the scrubber and the timeline playhead end up sitting
  * still during playback.
  *
+ * The draw itself is dirty-checked (ARCHITECTURE.md §2): every input `renderScene`
+ * reads — the library, the scene object, the scene-local time, the subtitle flag, the
+ * pixel ratio, the stage width — is compared against the previous draw, and the draw
+ * is skipped when nothing changed. Documents are immutable, so identity is revision:
+ * an edit to another scene leaves this scene's object untouched and the pixels
+ * provably unchanged, while an edit to this scene produces a new object and redraws.
+ * An idle editor therefore costs a store read and a rAF tick, not a full redraw.
+ *
  * The stage renders one scene at a time, and it is handed that scene plus its
  * scene-local time. Choosing which scene and which local time is the transport's job
  * (see `src/core/timeline/episode.ts`); the renderer is not asked to know what an
@@ -21,6 +29,7 @@
 
 import { useEffect, useRef } from 'react';
 import { renderScene } from '../core/render/render';
+import type { Project, Scene, SceneContext } from '../core/types';
 import { useEditor } from '../state/editorStore';
 
 export interface StageProps {
@@ -43,6 +52,14 @@ export function Stage({ width }: StageProps): React.JSX.Element {
 
     let frame = 0;
     let last = performance.now();
+    // What the previous draw actually read, so the next frame can be skipped if that
+    // set is unchanged. Identity is the revision: an edited document is a new object.
+    let drawnLibrary: SceneContext | Project | null = null;
+    let drawnScene: Scene | null = null;
+    let drawnTime = Number.NaN;
+    let drawnSubtitles: boolean | null = null;
+    let drawnDpr = 0;
+    let drawnWidth = 0;
 
     const draw = (now: number): void => {
       const dt = Math.min((now - last) / 1000, 0.25);
@@ -71,30 +88,45 @@ export function Stage({ width }: StageProps): React.JSX.Element {
       // same object for both.
       const library = context ?? project;
       const scene = project.scenes.find((s) => s.id === sceneId) ?? null;
-      const stageWidth = widthRef.current;
-      const stageHeight =
-        (stageWidth * library.settings.height) / library.settings.width;
 
       if (scene) {
         // Match the backing store to the device pixel ratio so 1920p is crisp. The
         // transform itself is `renderScene`'s job, given `pixelRatio` below — setting
         // it here as well is how the two drifted apart and drew into one corner.
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const targetWidth = Math.round(stageWidth * dpr);
-        const targetHeight = Math.round(stageHeight * dpr);
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-          canvas.width = targetWidth;
-          canvas.height = targetHeight;
-        }
-        canvas.style.width = `${stageWidth}px`;
-        canvas.style.height = `${stageHeight}px`;
+        const dirty =
+          library !== drawnLibrary ||
+          scene !== drawnScene ||
+          sceneTime !== drawnTime ||
+          showSubtitles !== drawnSubtitles ||
+          dpr !== drawnDpr ||
+          widthRef.current !== drawnWidth;
+        if (dirty) {
+          drawnLibrary = library;
+          drawnScene = scene;
+          drawnTime = sceneTime;
+          drawnSubtitles = showSubtitles;
+          drawnDpr = dpr;
+          drawnWidth = widthRef.current;
 
-        renderScene(ctx, library, scene, sceneTime, {
-          width: stageWidth,
-          height: stageHeight,
-          pixelRatio: dpr,
-          subtitles: showSubtitles,
-        });
+          const stageWidth = widthRef.current;
+          const stageHeight = (stageWidth * library.settings.height) / library.settings.width;
+          const targetWidth = Math.round(stageWidth * dpr);
+          const targetHeight = Math.round(stageHeight * dpr);
+          if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+          }
+          canvas.style.width = `${stageWidth}px`;
+          canvas.style.height = `${stageHeight}px`;
+
+          renderScene(ctx, library, scene, sceneTime, {
+            width: stageWidth,
+            height: stageHeight,
+            pixelRatio: dpr,
+            subtitles: showSubtitles,
+          });
+        }
       }
 
       frame = requestAnimationFrame(draw);

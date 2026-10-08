@@ -159,4 +159,56 @@ describe('Stage', () => {
     expect(last?.[2]?.id).toBe(first.id);
     expect(last?.[3]).toBe(first.duration);
   });
+
+  it('skips the redraw while nothing that affects the canvas has changed', async () => {
+    // One draw on mount; then the loop keeps ticking but draws nothing, because the
+    // paused transport leaves every renderer input untouched. (ARCHITECTURE.md §2.)
+    render(<Stage width={320} />);
+    await act(async () => {
+      await nextFrames(3);
+    });
+    expect(vi.mocked(renderScene).mock.calls.length).toBe(1);
+
+    vi.mocked(renderScene).mockClear();
+    await act(async () => {
+      await nextFrames(6);
+    });
+    expect(vi.mocked(renderScene)).not.toHaveBeenCalled();
+  });
+
+  it('redraws when the playhead moves, then goes quiet again', async () => {
+    render(<Stage width={320} />);
+    await act(async () => {
+      await nextFrames(3);
+    });
+
+    vi.mocked(renderScene).mockClear();
+    act(() => useEditor.setState({ playhead: 1 }));
+    await act(async () => {
+      await nextFrames(4);
+    });
+    expect(vi.mocked(renderScene).mock.calls.length).toBe(1);
+    expect(lastOptions().width).toBe(320);
+
+    vi.mocked(renderScene).mockClear();
+    await act(async () => {
+      await nextFrames(6);
+    });
+    expect(vi.mocked(renderScene)).not.toHaveBeenCalled();
+  });
+
+  it('redraws when the stage is resized', async () => {
+    const { rerender } = render(<Stage width={320} />);
+    await act(async () => {
+      await nextFrames(3);
+    });
+
+    vi.mocked(renderScene).mockClear();
+    rerender(<Stage width={480} />);
+    await act(async () => {
+      await nextFrames(4);
+    });
+    expect(vi.mocked(renderScene).mock.calls.length).toBe(1);
+    expect(lastOptions().width).toBe(480);
+  });
 });
