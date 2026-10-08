@@ -123,6 +123,16 @@ export interface CharacterDef {
   /** Semantic colour slots, e.g. { skin, hair, top, bottom, accent }. */
   palette: Record<string, string>;
   rig: PartDef[];
+  /**
+   * The rig slot the talk pulse opens while the actor has a live dialogue line.
+   *
+   * `'mouth'` is the convention every current rig uses (the normaliser fills it in,
+   * so older documents need no migration), but naming it here rather than inside the
+   * renderer is what lets a rig call its mouth something else and still animate. A
+   * character whose rig has no matching slot simply never pulses — silent, not wrong
+   * (ARCHITECTURE_SPEC.md §18.2 R2).
+   */
+  mouthSlot: string;
   /** Pixel height at scale 1. The character's feet sit at y = 0. */
   height: number;
   defaultPoseId: Id;

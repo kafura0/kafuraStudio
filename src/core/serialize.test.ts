@@ -548,3 +548,25 @@ describe('v2 -> v3: render neutrality (G4)', () => {
     }
   });
 });
+
+describe('normaliseProject — mouthSlot (R2)', () => {
+  it('fills mouthSlot for a character that predates the field', () => {
+    // A pre-Phase-15 document carries no mouthSlot at all. The normaliser must give it
+    // the house convention so the talk pulse keeps working with no migration step.
+    const project = normaliseProject({
+      id: 'proj_mouth',
+      name: 'Mouth',
+      assets: { characters: [{ id: 'char.old', name: 'Old' }] },
+    });
+    expect(project.assets.characters[0]?.mouthSlot).toBe('mouth');
+  });
+
+  it('keeps an authored mouthSlot that is not the house convention', () => {
+    const project = normaliseProject({
+      id: 'proj_mouth',
+      name: 'Mouth',
+      assets: { characters: [{ id: 'char.jaw', name: 'Jaw', mouthSlot: 'jaw' }] },
+    });
+    expect(project.assets.characters[0]?.mouthSlot).toBe('jaw');
+  });
+});

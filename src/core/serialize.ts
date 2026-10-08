@@ -10,9 +10,10 @@
  */
 
 import { CURRENT_FORMAT_VERSION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from './constants';
-import type { AssetLibrary, AudioDef, Project, SeriesDef } from './types';
+import type { AssetLibrary, AudioDef, CharacterDef, Project, SeriesDef } from './types';
 import { validateProject, validateSeries } from './document/invariants';
 import { emptyAssetLibrary } from './document/factories';
+import { DEFAULT_MOUTH_SLOT } from './render/resolve';
 
 // Re-exported so callers have one obvious place to ask "what version is current?", and
 // so the import graph stays acyclic. Defined in `constants` because the project factory
@@ -467,13 +468,30 @@ function normaliseAssetLibrary(value: unknown): AssetLibrary {
   const assetsRaw = asRecord(value ?? {}, 'assets');
   return {
     ...emptyAssetLibrary(),
-    characters: asArray(assetsRaw.characters, 'assets.characters'),
+    characters: asArray(assetsRaw.characters, 'assets.characters').map(normaliseCharacter),
     environments: asArray(assetsRaw.environments, 'assets.environments'),
     poses: asArray(assetsRaw.poses, 'assets.poses'),
     expressions: asArray(assetsRaw.expressions, 'assets.expressions'),
     props: asArray(assetsRaw.props, 'assets.props'),
     audio: asArray(assetsRaw.audio, 'assets.audio').map(normaliseAudioDef),
   };
+}
+
+/**
+ * Fill in the character defaults a document may legitimately omit.
+ *
+ * Only `mouthSlot` has a default to fill: `'mouth'` is the rig convention every
+ * current character uses, and defaulting it here is what lets a pre-Phase-15
+ * document open with no migration at all (ARCHITECTURE_SPEC.md §18.2 R2). The
+ * constant is imported rather than restated so the literal slot name has exactly
+ * one home in `src/core` — the G2 content-blindness gate allows it only there.
+ */
+function normaliseCharacter(value: unknown): CharacterDef {
+  const record = asRecord(value, 'assets.characters[]');
+  return {
+    ...record,
+    mouthSlot: asString(record.mouthSlot, DEFAULT_MOUTH_SLOT),
+  } as CharacterDef;
 }
 
 /**

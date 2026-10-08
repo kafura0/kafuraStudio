@@ -120,6 +120,7 @@ export const STARTER_CHARACTER: CharacterDef = {
   palette: { ...STARTER_PALETTE },
   rig: buildHumanRig(proportions(640, 'average'), { hairStyle: 'bald' }),
   defaultPoseId: STARTER_POSE.id,
+  mouthSlot: 'mouth',
   defaultExpressionId: STARTER_EXPRESSION.id,
 };
 

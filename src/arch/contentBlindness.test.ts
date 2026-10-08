@@ -18,11 +18,11 @@
  *   (`proj_`, `ep_`, `scene_`, `char.`, `env.`, …). The migration's two generic sentinels,
  *   `proj_imported` and `series_imported`, are format defaults for an unreadable id, not
  *   content, and are pinned to `serialize.ts`.
- * - The hardcoded slot name `'mouth'` is the one documented default: `mouthSlot` has not been
- *   authored yet (Phase 15), so the talk-pulse widens the part whose slot is literally
- *   `'mouth'` at `src/core/render/resolve.ts`. Every other rig-slot literal — arm/hand/thigh
- *   and the rest — is forbidden everywhere; the moment `mouthSlot` lands, no `'mouth'`
- *   literal may remain either.
+ * - The hardcoded slot name `'mouth'` exists in exactly one place: `DEFAULT_MOUTH_SLOT`
+ *   at `src/core/render/resolve.ts`, the documented default for `CharacterDef.mouthSlot`
+ *   (Phase 15 authored the field; `serialize.ts` imports the constant rather than
+ *   restating the string). Every other rig-slot literal — arm/hand/thigh and the rest —
+ *   is forbidden everywhere, engine included.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -107,8 +107,8 @@ describe('G2 — the renderer is content-blind', () => {
   });
 
   it('contains no magic rig slot name outside the one documented default', () => {
-    // F2's regression gate. The only rig-slot literal the engine may hold is the `mouth`
-    // default at resolve.ts, which exists until Phase 15 authors `mouthSlot`.
+    // F2's regression gate. The only rig-slot literal the engine may hold is
+    // `DEFAULT_MOUTH_SLOT` at resolve.ts — the fallback for `CharacterDef.mouthSlot`.
     const RIG_SLOT =
       /['"]((?:arm|thigh|shin|forearm|hand|foot|eye|brow|ear)[LR]|(?:head|torso|neck|nose|mouth|hairFront|hairBack))['"]/g;
     const DOCUMENTED_DEFAULT = 'mouth';
@@ -131,7 +131,11 @@ describe('G2 — the renderer is content-blind', () => {
     // And the documented default must still exist where it is claimed to — a gate that
     // passes because the engine lost its talk-pulse would be a wrong kind of green.
     const resolveCode = codeOf(join(ROOT, DEFAULT_HOME));
-    expect(resolveCode).toMatch(/\bslot\s*===\s*'mouth'/);
+    expect(resolveCode).toMatch(/DEFAULT_MOUTH_SLOT\s*=\s*'mouth'/);
+    // The normaliser must reach for the constant rather than restating the literal,
+    // or the default would exist in two homes and only one of them would be gated.
+    const serializeCode = codeOf(join(ROOT, 'src', 'core', 'serialize.ts'));
+    expect(serializeCode).toMatch(/mouthSlot:\s*asString\(\s*record\.mouthSlot,\s*DEFAULT_MOUTH_SLOT\s*\)/);
     expect(offenders).toEqual([]);
   });
 });

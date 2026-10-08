@@ -46,6 +46,7 @@ function makeSyntheticCharacter(): CharacterDef {
     },
     rig: buildHumanRig(proportions(620, 'broad'), { hairStyle: 'bun' }),
     defaultPoseId: 'pose.standing',
+    mouthSlot: 'mouth',
     defaultExpressionId: 'expr.neutral',
   };
 }

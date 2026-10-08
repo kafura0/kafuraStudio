@@ -121,6 +121,48 @@ describe('resolveRig hierarchy', () => {
   });
 });
 
+describe('mouthSlot (R2)', () => {
+  const rig = () => buildHumanRig(proportions(620), { hairStyle: 'short' });
+
+  it('opens a differently-named mouth part, and nothing else', () => {
+    // A rig that calls its mouth 'jaw': the case the old hardcoded literal got wrong.
+    const renamed = rig().map((p) => (p.slot === 'mouth' ? { ...p, slot: 'jaw' } : p));
+    const resting = resolveRig(renamed, {}, { ...OPTIONS, mouthSlot: 'jaw' });
+    const pulsed = resolveRig(renamed, {}, { ...OPTIONS, mouthSlot: 'jaw', mouthScale: 1.3 });
+
+    const jaw = resting.find((p) => p.slot === 'jaw');
+    const openJaw = pulsed.find((p) => p.slot === 'jaw');
+    expect(jaw).toBeDefined();
+    expect(openJaw).toBeDefined();
+    if (!jaw || !openJaw) return;
+    expect(openJaw.scaleY).toBeCloseTo(jaw.scaleY * 1.3, 10);
+
+    for (const part of resting) {
+      if (part.slot === 'jaw') continue;
+      const pulsedPart = pulsed.find((q) => q.id === part.id);
+      expect(pulsedPart?.scaleY).toBeCloseTo(part.scaleY, 10);
+    }
+  });
+
+  it('is silent for a character with no mouth part: the pulse reaches nothing', () => {
+    const mouthless = rig().filter((p) => p.slot !== 'mouth');
+    const resting = resolveRig(mouthless, {}, { ...OPTIONS });
+    const pulsed = resolveRig(mouthless, {}, { ...OPTIONS, mouthScale: 1.3 });
+    // No error, no wrong part opening — the pulse simply has nowhere to land.
+    expect(pulsed).toEqual(resting);
+  });
+
+  it("still opens a part slotted 'mouth' when the caller names no slot", () => {
+    const resting = resolveRig(rig(), {}, { ...OPTIONS });
+    const pulsed = resolveRig(rig(), {}, { ...OPTIONS, mouthScale: 1.3 });
+    const mouth = resting.find((p) => p.slot === 'mouth');
+    const open = pulsed.find((p) => p.slot === 'mouth');
+    expect(mouth).toBeDefined();
+    if (!mouth || !open) return;
+    expect(open.scaleY).toBeCloseTo(mouth.scaleY * 1.3, 10);
+  });
+});
+
 function part(id: string, parent: string | null, z: number, rest: Transform2D): PartDef {
   return {
     id,

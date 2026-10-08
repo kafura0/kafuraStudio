@@ -86,9 +86,26 @@ export interface ResolveRigOptions {
   alpha: number;
   /** An extra transform on the resolved mouth part, used for the talk pulse. */
   mouthScale?: number;
+  /**
+   * Which slot `mouthScale` applies to, from `CharacterDef.mouthSlot`.
+   *
+   * Absent for props (they never pulse) and for callers that want the house
+   * convention; `resolveRig` falls back to `DEFAULT_MOUTH_SLOT`.
+   */
+  mouthSlot?: string;
   pose?: PoseDef | null;
   expression?: ExpressionDef | null;
 }
+
+/**
+ * The one documented rig-slot literal in the engine: the talk pulse's slot name for
+ * a character that has not said otherwise.
+ *
+ * It lives here — and the normaliser imports it rather than repeating the string —
+ * so `'mouth'` appears in exactly one core file. The G2 content-blindness gate
+ * allows it at this home and nowhere else (`src/arch/contentBlindness.test.ts`).
+ */
+export const DEFAULT_MOUTH_SLOT = 'mouth';
 
 /**
  * Order the parts so every parent is resolved before any of its children.
@@ -142,6 +159,7 @@ export function resolveRig(
   const out: ResolvedPart[] = [];
   // World transform per part, indexed by its position in `ordered`.
   const stack: Transform2D[] = new Array<Transform2D>(ordered.length);
+  const mouthSlot = options.mouthSlot ?? DEFAULT_MOUTH_SLOT;
 
   ordered.forEach((part, index) => {
     const poseOverride = options.pose?.slots[part.slot];
@@ -184,8 +202,10 @@ export function resolveRig(
     const colorKey = expressionOverride?.colorKey ?? poseOverride?.colorKey ?? part.colorKey;
 
     // The talk pulse widens the mouth on the Y axis only, so it reads as an open
-    // jaw rather than a shrunken head.
-    const mouthBoost = part.slot === 'mouth' ? (options.mouthScale ?? 1) : 1;
+    // jaw rather than a shrunken head. The slot is data (`CharacterDef.mouthSlot`),
+    // not a literal: a rig may call its mouth anything it likes, and a rig with no
+    // matching slot has no part to pulse and is therefore silent rather than wrong.
+    const mouthBoost = part.slot === mouthSlot ? (options.mouthScale ?? 1) : 1;
 
     out.push({
       id: part.id,

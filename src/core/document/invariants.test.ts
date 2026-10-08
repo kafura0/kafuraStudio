@@ -35,6 +35,7 @@ const CHARACTER: CharacterDef = {
   palette: { skin: '#c98a5b' },
   rig: [],
   defaultPoseId: 'pose.standing',
+  mouthSlot: 'mouth',
   defaultExpressionId: 'expr.neutral',
 };
 

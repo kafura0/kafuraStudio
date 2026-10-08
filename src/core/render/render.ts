@@ -218,6 +218,7 @@ function collectDrawNodes(
           pose,
           expression,
           mouthScale,
+          mouthSlot: character.mouthSlot,
         });
         drawParts(ctx, parts, images);
       },

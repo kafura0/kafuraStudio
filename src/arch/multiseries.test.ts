@@ -145,6 +145,7 @@ const drifter: CharacterDef = {
     ),
   ],
   defaultPoseId: REEF.poseHover,
+  mouthSlot: 'mouth',
   defaultExpressionId: REEF.exprFlare,
 };
 

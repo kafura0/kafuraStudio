@@ -34,6 +34,7 @@ export const NIA: CharacterDef = {
   },
   rig: buildHumanRig(proportions(640, 'slim'), { hairStyle: 'locs' }),
   defaultPoseId: 'pose.standing',
+  mouthSlot: 'mouth',
   defaultExpressionId: 'expr.neutral',
 };
 
@@ -58,6 +59,7 @@ export const KITO: CharacterDef = {
   },
   rig: buildHumanRig(proportions(680, 'average', { armLength: 680 * 0.4 }), { hairStyle: 'short' }),
   defaultPoseId: 'pose.standing',
+  mouthSlot: 'mouth',
   defaultExpressionId: 'expr.neutral',
 };
 
@@ -82,6 +84,7 @@ export const MAMA_NIA: CharacterDef = {
   },
   rig: buildHumanRig(proportions(580, 'broad', { headRadius: 580 * 0.096 }), { hairStyle: 'bun' }),
   defaultPoseId: 'pose.standing',
+  mouthSlot: 'mouth',
   defaultExpressionId: 'expr.neutral',
 };
 
@@ -108,6 +111,7 @@ export const THE_LANDLORD: CharacterDef = {
     hairStyle: 'bald',
   }),
   defaultPoseId: 'pose.standing',
+  mouthSlot: 'mouth',
   defaultExpressionId: 'expr.deadpan',
 };
 
