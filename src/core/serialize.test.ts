@@ -28,6 +28,7 @@ import {
   ProjectParseError,
   readProjectFile,
   serializeProject,
+  serializeProjectFile,
 } from './serialize';
 import { createProject, emptyAssetLibrary } from './document/factories';
 import { validateProject } from './document/invariants';
@@ -324,6 +325,35 @@ describe('version reconciliation', () => {
     expect(() =>
       parseProject(JSON.stringify({ formatVersion: CURRENT_FORMAT_VERSION + 1, project: {} })),
     ).toThrow(ProjectParseError);
+  });
+});
+
+describe('colour keys at load (R3)', () => {
+  /**
+   * The pilot with one rig part given a colour key that resolves to nothing. The typo is
+   * on a series character so the check runs against the merged library, exactly as it
+   * will for real content.
+   */
+  const fileWithTypo = (): string => {
+    const series = structuredClone(SEED_SERIES);
+    const character = series.assets.characters[0];
+    const first = character?.rig[0];
+    if (!character || !first) throw new Error('Seed has no characters or rig parts');
+    character.rig = [{ ...first, colorKey: 'skinn' }, ...character.rig.slice(1)];
+    return serializeProjectFile(SEED_PROJECT, series);
+  };
+
+  it('refuses a file whose colour key resolves to nothing', () => {
+    expect(() => readProjectFile(fileWithTypo())).toThrow(
+      expect.objectContaining({
+        issues: expect.arrayContaining([expect.stringContaining('.colorKey')]),
+      }),
+    );
+  });
+
+  it('warns instead when the same file is read in authoring mode', () => {
+    const { warnings } = readProjectFile(fileWithTypo(), { mode: 'authoring' });
+    expect(warnings.some((w) => w.includes('.colorKey'))).toBe(true);
   });
 });
 

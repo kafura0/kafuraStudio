@@ -14,8 +14,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { createProject, createScene, emptyAssetLibrary } from './factories';
-import { validateProject } from './invariants';
-import type { CharacterDef, EnvironmentDef, Project } from '../types';
+import { isProjectValid, validateProject } from './invariants';
+import { rect } from '../render/shapes';
+import { IDENTITY_TRANSFORM } from '../types';
+import type { CharacterDef, EnvironmentDef, PartDef, Project, PropDef } from '../types';
 
 const paths = (project: Project): string[] => validateProject(project).map((i) => i.path);
 
@@ -102,5 +104,107 @@ describe('validateProject — library population', () => {
       scenes: [createScene('SC01', 'env.nowhere')],
     };
     expect(paths(dangling)).toContain('scenes[0].environmentId');
+  });
+});
+
+describe('validateProject — colour keys (R3)', () => {
+  const RIG_PART: PartDef = {
+    id: 'p_body',
+    slot: 'body',
+    z: 0,
+    shape: rect(10, 10),
+    colorKey: 'skinn',
+    pivot: { x: 0.5, y: 0.5 },
+    rest: IDENTITY_TRANSFORM,
+    visible: true,
+    parent: null,
+  };
+
+  const PROJ = (): Project => ({
+    ...createProject('Colour'),
+    assets: {
+      ...emptyAssetLibrary(),
+      characters: [{ ...CHARACTER, rig: [RIG_PART] }],
+      environments: [ENVIRONMENT],
+      props: [],
+    },
+    scenes: [createScene('SC01', ENVIRONMENT.id)],
+  });
+
+  it('warns at authoring time when a colour key is neither palette nor literal', () => {
+    const issues = validateProject(PROJ());
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      path: 'characters[char.blank].rig[p_body].colorKey',
+      severity: 'warning',
+    });
+  });
+
+  it('errors at load time for the same document', () => {
+    const issues = validateProject(PROJ(), null, { mode: 'load' });
+    expect(issues[0]?.severity).toBe('error');
+  });
+
+  it('accepts a key the character palette defines', () => {
+    const project = PROJ();
+    const character = project.assets.characters[0];
+    if (!character) throw new Error('fixture');
+    const rigged: Project = {
+      ...project,
+      assets: {
+        ...project.assets,
+        characters: [{ ...character, rig: [{ ...RIG_PART, colorKey: 'skin' }] }],
+      },
+    };
+    expect(validateProject(rigged)).toEqual([]);
+  });
+
+  it('accepts literal colours in every form the renderer honours', () => {
+    for (const colour of ['#8d5524', 'rgba(0,0,0,0.5)', 'red']) {
+      const project = PROJ();
+      const character = project.assets.characters[0];
+      if (!character) throw new Error('fixture');
+      const decorated: Project = {
+        ...project,
+        assets: {
+          ...project.assets,
+          characters: [{ ...character, rig: [{ ...RIG_PART, colorKey: colour }] }],
+        },
+      };
+      expect(validateProject(decorated)).toEqual([]);
+    }
+  });
+
+  it('flags a non-literal colour on a prop, which has no palette to resolve against', () => {
+    const prop: PropDef = {
+      id: 'prop.blank',
+      name: 'Blank',
+      description: 'A throwaway prop used only by this test.',
+      tags: ['test'],
+      pivot: { x: 0.5, y: 0.5 },
+      defaultScale: 1,
+      parts: [RIG_PART],
+    };
+    const base = PROJ();
+    const character = base.assets.characters[0];
+    if (!character) throw new Error('fixture');
+    const project: Project = {
+      ...base,
+      assets: {
+        ...base.assets,
+        characters: [{ ...character, rig: [] }],
+        props: [prop],
+      },
+    };
+    const issues = validateProject(project);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('props[prop.blank].parts[p_body].colorKey');
+    expect(issues[0]?.severity).toBe('warning');
+  });
+
+  it('isProjectValid treats a wording as valid and a structural break as invalid', () => {
+    expect(isProjectValid(PROJ())).toBe(true);
+    const dangling: Project = { ...PROJ(), scenes: [createScene('SC_BAD', 'env.nowhere')] };
+    expect(isProjectValid(dangling)).toBe(false);
   });
 });

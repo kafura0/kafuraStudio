@@ -11,7 +11,7 @@
 
 import { CURRENT_FORMAT_VERSION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from './constants';
 import type { AssetLibrary, AudioDef, CharacterDef, Project, SeriesDef } from './types';
-import { validateProject, validateSeries } from './document/invariants';
+import { validateProject, validateSeries, type ValidationMode } from './document/invariants';
 import { emptyAssetLibrary } from './document/factories';
 import { DEFAULT_MOUTH_SLOT } from './render/resolve';
 
@@ -176,7 +176,10 @@ export interface ParsedProject {
  * own, so validating it against `project.assets` would report every character in the show
  * as unknown — which is the correct answer to the wrong question.
  */
-export function readProjectFile(input: string | unknown): ParsedProject {
+export function readProjectFile(
+  input: string | unknown,
+  options: { mode?: ValidationMode } = {},
+): ParsedProject {
   const file = asRecord(parseJson(input), 'root');
   const version = typeof file.formatVersion === 'number' ? file.formatVersion : 1;
   if (version > CURRENT_FORMAT_VERSION) {
@@ -201,12 +204,21 @@ export function readProjectFile(input: string | unknown): ParsedProject {
   }
 
   const { project, series } = migrateProjectRecord(rawProject, version, file.series);
-  const issues = validateProject(project, series);
-  if (issues.length > 0) {
+  // Default mode is `load`: a file arriving from the outside is refused unless it is
+  // sound, and in `load` mode every colour-key issue is an error (§18.2 R3). The one
+  // caller that re-reads the workspace's own rows — the IndexedDB repository — passes
+  // `authoring` instead, so a document it wrote is never quarantined over a colour-key
+  // warning: the warning is surfaced by IssuePanel once the project is open.
+  const issues = validateProject(project, series, { mode: options.mode ?? 'load' });
+  const errors = issues.filter((issue) => issue.severity === 'error');
+  if (errors.length > 0) {
     throw new ProjectParseError(
-      `Project failed validation (${issues.length} issue${issues.length === 1 ? '' : 's'}).`,
-      issues.slice(0, 12).map((i) => `${i.path}: ${i.message}`),
+      `Project failed validation (${errors.length} issue${errors.length === 1 ? '' : 's'}).`,
+      errors.slice(0, 12).map((i) => `${i.path}: ${i.message}`),
     );
+  }
+  for (const issue of issues) {
+    if (issue.severity === 'warning') warnings.push(`${issue.path}: ${issue.message}`);
   }
   return { project, series, warnings };
 }
@@ -221,8 +233,11 @@ export function readProjectFile(input: string | unknown): ParsedProject {
  * `input` is a whole `ProjectFile`, not a bare project, because the ladder is driven by the
  * outer version field — see `readProjectFile`.
  */
-export function migrateProjectFile(input: string | unknown): ParsedProject {
-  return readProjectFile(input);
+export function migrateProjectFile(
+  input: string | unknown,
+  options: { mode?: ValidationMode } = {},
+): ParsedProject {
+  return readProjectFile(input, options);
 }
 
 function parseJson(input: string | unknown): unknown {

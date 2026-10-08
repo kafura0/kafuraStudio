@@ -24,8 +24,10 @@ import { NIA_APARTMENT } from '../data/environments';
 import { NIA } from '../data/characters';
 import { attachAudioMedia } from '../core/document/projectOps';
 import { resolveAssets } from '../core/document/scopes';
+import { rect } from '../core/render/shapes';
+import { transform } from '../core/types';
 import { useEditor, episodeExportTarget } from './editorStore';
-import type { Project, SeriesDef } from '../core/types';
+import type { CharacterDef, Project, SeriesDef } from '../core/types';
 import type { SeriesSummary } from '../core/persistence/repository';
 
 // jsdom has no IndexedDB, so the repository is stubbed. `vi.mock` is hoisted above
@@ -75,6 +77,28 @@ function currentProject(): Project {
   if (project === null) throw new Error('Expected a project to be open');
   return project;
 }
+
+/**
+ * A character whose one rig part carries a colour key that resolves to nothing — the
+ * shape of mistake R3 is about: structurally fine, draws wrong, no error anywhere.
+ */
+const TYPO_CHARACTER: CharacterDef = {
+  ...NIA,
+  id: 'char.typo',
+  rig: [
+    {
+      id: 'p_body',
+      slot: 'body',
+      z: 0,
+      shape: rect(10, 10),
+      colorKey: 'skinn',
+      pivot: { x: 0.5, y: 0.5 },
+      rest: transform(),
+      visible: true,
+      parent: null,
+    },
+  ],
+};
 
 const reset = (): void => {
   repository.save.mockClear();
@@ -299,7 +323,7 @@ describe('editorStore history', () => {
     expect(useEditor.getState().playhead).toBe(3);
   });
 
-  it('clears the redo stack once a new edit follows an undo', () => {
+it('clears the redo stack once a new edit follows an undo', () => {
     const first = SEED_PROJECT.scenes[0];
     if (!first) throw new Error('Seed project has no scenes');
 
@@ -309,6 +333,36 @@ describe('editorStore history', () => {
 
     useEditor.getState().commit(setSceneDuration(SEED_PROJECT, first.id, 12), 'b');
     expect(useEditor.getState().future).toHaveLength(0);
+  });
+});
+
+describe('editorStore commit validation (R3)', () => {
+  beforeEach(reset);
+
+  it('commits a document with a colour-key warning, because it must be fixable', () => {
+    // A warning is not a refusal: the document is structurally sound and the mistake can
+    // only be corrected from inside the editor, so the commit that creates it must land.
+    // It is surfaced by IssuePanel, not blocked by the store.
+    const withWarning: Project = {
+      ...currentProject(),
+      assets: { ...currentProject().assets, characters: [TYPO_CHARACTER] },
+    };
+    useEditor.getState().commit(withWarning, 'typo');
+    expect(currentProject()).toBe(withWarning);
+    expect(useEditor.getState().past).toHaveLength(1);
+  });
+
+  it('still refuses a structually broken document either way', () => {
+    // DEV builds throw; production builds return silently. The contract to assert is the
+    // one both share: the broken document never reaches the store.
+    const broken: Project = { ...currentProject(), scenes: [createScene('SC_BAD', 'env.nowhere')] };
+    const before = currentProject();
+    try {
+      useEditor.getState().commit(broken, 'break');
+    } catch {
+      // Dev builds refuse loudly; production refuses quietly. Either is correct.
+    }
+    expect(currentProject()).toBe(before);
   });
 });
 

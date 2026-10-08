@@ -499,6 +499,8 @@ const NO_EXPORT_TARGET: ExportTarget = { episodeId: null, episodeTime: 0 };
  */
 export type ResolveFailure =
   | { kind: 'dangling-series'; seriesId: Id }
+  // Errors only: a warning-opened project would draw something (wrongly, visibly), and
+  // `issues` is the list that refuses an open — warnings must not be in it.
   | { kind: 'invalid'; issues: ValidationIssue[] };
 
 export function describeResolveFailure(failure: ResolveFailure): string {
@@ -539,8 +541,12 @@ export function resolveProjectContext(
   if (project.seriesId !== null && (series === null || series.id !== project.seriesId)) {
     return { kind: 'dangling-series', seriesId: project.seriesId };
   }
-  const issues = validateProject(project, series);
-  if (issues.length > 0) return { kind: 'invalid', issues };
+const issues = validateProject(project, series);
+  // A warning opens just fine: `issues` here only ever refuses what would draw nothing,
+  // and a colour-key warning still draws something (the wrong colour, which IssuePanel
+  // names). Refusing it would make the document unfixable (§18.2 R3).
+  const errors = issues.filter((issue) => issue.severity === 'error');
+  if (errors.length > 0) return { kind: 'invalid', issues: errors };
   return { context: resolveAssets(project, series), series };
 }
 
@@ -1031,17 +1037,22 @@ previewAudio: async (audioId) => {
       const state = get();
       if (next === state.project || state.project === null) return;
 
-      // Against the *merged* library. A project that overrides nothing has an empty
+// Against the *merged* library. A project that overrides nothing has an empty
       // `assets`, so validating `next` alone would report every character in the show as
       // unknown and refuse every edit to a migrated project.
       const issues = validateProject(next, state.series);
-      if (issues.length > 0) {
+      // Warnings are not refusals: they are the IssuePanel's half of the contract. A
+      // document with a colour-key warning is structurally sound — the mistake must be
+      // fixable, which means the commit that creates it has to land — so only a structural
+      // error refuses the document (§18.2 R3).
+      const errors = issues.filter((issue) => issue.severity === 'error');
+      if (errors.length > 0) {
         // A mutation that breaks an invariant is a bug, not a user error. Refuse it
         // loudly in dev rather than letting a broken document into history.
         if (import.meta.env.DEV) {
           throw new Error(
             `Refusing to commit an invalid document${label ? ` (${label})` : ''}: ` +
-              issues.map((i) => `${i.path}: ${i.message}`).join('; '),
+              errors.map((i) => `${i.path}: ${i.message}`).join('; '),
           );
         }
         return;

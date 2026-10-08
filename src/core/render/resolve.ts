@@ -49,6 +49,58 @@ export function resolveColor(colorKey: string, palette: Record<string, string>):
 }
 
 /**
+ * The CSS named colours.
+ *
+ * A `colorKey` may legitimately be a plain word, so `red` must not be mistaken for a
+ * dangling palette key. Only the names the Canvas actually accepts belong here — a
+ * set of every colour word would let a typo like `skinn` through.
+ */
+const NAMED_COLORS: ReadonlySet<string> = new Set([
+  'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige', 'bisque', 'black',
+  'blanchedalmond', 'blue', 'blueviolet', 'brown', 'burlywood', 'cadetblue', 'chartreuse',
+  'chocolate', 'coral', 'cornflowerblue', 'cornsilk', 'crimson', 'cyan', 'darkblue',
+  'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgreen', 'darkgrey', 'darkkhaki',
+  'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred', 'darksalmon',
+  'darkseagreen', 'darkslateblue', 'darkslategray', 'darkslategrey', 'darkturquoise',
+  'darkviolet', 'deeppink', 'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick',
+  'floralwhite', 'forestgreen', 'fuchsia', 'gainsboro', 'ghostwhite', 'gold', 'goldenrod',
+  'gray', 'green', 'greenyellow', 'grey', 'honeydew', 'hotpink', 'indianred', 'indigo',
+  'ivory', 'khaki', 'lavender', 'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue',
+  'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen', 'lightgrey',
+  'lightpink', 'lightsalmon', 'lightseagreen', 'lightskyblue', 'lightslategray',
+  'lightslategrey', 'lightsteelblue', 'lightyellow', 'lime', 'limegreen', 'linen',
+  'magenta', 'maroon', 'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple',
+  'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise',
+  'mediumvioletred', 'midnightblue', 'mintcream', 'mistyrose', 'moccasin', 'navajowhite',
+  'navy', 'oldlace', 'olive', 'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod',
+  'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip', 'peachpuff', 'peru', 'pink',
+  'plum', 'powderblue', 'purple', 'rebeccapurple', 'red', 'rosybrown', 'royalblue',
+  'saddlebrown', 'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna', 'silver',
+  'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen', 'steelblue',
+  'tan', 'teal', 'thistle', 'tomato', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke',
+  'yellow', 'yellowgreen',
+]);
+
+/**
+ * Is this `colorKey` a colour the Canvas will paint when handed the string as-is?
+ *
+ * `resolveColor` treats an unknown key as a literal, which is exactly how a typo'd
+ * palette key becomes a part that paints wrong and nobody is told: the fallback is
+ * silent, and assigning an invalid `fillStyle` is ignored, so the part draws with
+ * whatever fill was last set. This is the question `validateProject` asks before
+ * accepting that fallback — a literal is a legitimate authoring choice (every prop
+ * part is one), a word that is neither a palette key nor a colour is a mistake
+ * (ARCHITECTURE_SPEC.md §18.2 R3).
+ */
+export function isColorLiteral(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (v === 'transparent' || v === 'currentcolor') return true;
+  if (NAMED_COLORS.has(v)) return true;
+  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(v)) return true;
+  return /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/.test(v);
+}
+
+/**
  * Fold one slot override into a transform.
  *
  * Translation and rotation offsets are additive; scale and alpha are multiplicative.

@@ -13,17 +13,38 @@
  * looking at `project.assets` alone.
  */
 
+import { isColorLiteral } from '../render/resolve';
 import type { Camera, Id, Project, SeriesDef } from '../types';
 import { resolveAssets } from './scopes';
+
+export type ValidationSeverity = 'error' | 'warning';
 
 export interface ValidationIssue {
   path: string;
   message: string;
+  severity: ValidationSeverity;
 }
 
-export function validateProject(project: Project, series: SeriesDef | null = null): ValidationIssue[] {
+/**
+ * Who is asking the question.
+ *
+ * `authoring` is the editor mid-edit, `load` is a file arriving from the outside. The
+ * same document can legitimately get different answers in the two modes: a colour-key
+ * that resolves to nothing warns at authoring time (the part draws wrong and the author
+ * can still fix it, and refusing the document would lock it exactly when it needs
+ * editing) but errors at load, so a file carrying one never enters the editor at all.
+ */
+export type ValidationMode = 'authoring' | 'load';
+
+export function validateProject(
+  project: Project,
+  series: SeriesDef | null = null,
+  options: { mode?: ValidationMode } = {},
+): ValidationIssue[] {
+  const mode = options.mode ?? 'authoring';
   const issues: ValidationIssue[] = [];
-  const add = (path: string, message: string) => issues.push({ path, message });
+  const add = (path: string, message: string, severity: ValidationSeverity = 'error') =>
+    issues.push({ path, message, severity });
 
   // A project file carries its document, not its library. When the project is series-owned
   // and no series was supplied, the character and environment ids simply are not in this
@@ -216,11 +237,55 @@ export function validateProject(project: Project, series: SeriesDef | null = nul
     }
   });
 
+  // A part's colour must be something the renderer can actually paint: either a key the
+  // character's own palette defines, or a literal colour. The third case — neither — is a
+  // mistake no one would be told about: `resolveColor` falls back to treating an unknown
+  // key as a literal, and handing the Canvas a non-colour is silently ignored, so the part
+  // draws with whatever fill was last set and nothing reports it. Props carry no palette,
+  // so every prop part that is not a literal is unresolvable by construction.
+  //
+  // The fallback itself stays: a literal `colorKey` is a deliberate authoring choice. The
+  // reported case is the one nothing deliberate can explain.
+  //
+  // Severity is why this runs in two modes (§18.2 R3). Authoring: a warning — the document
+  // is structurally sound and the mistake must be fixable, which means the commit has to
+  // accept it long enough for the author to. Load: an error, so a file with a colour that
+  // resolves to nothing never enters the editor.
+  const colourSeverity: ValidationSeverity = mode === 'load' ? 'error' : 'warning';
+  library.characters.forEach((character) => {
+    // Validation runs on data that may not have been through the parser (a test's
+    // hand-assembled row, a row from a newer build). A missing rig is not this rule's
+    // business; crashing on it would turn a tolerated document into a broken open.
+    if (!Array.isArray(character.rig)) return;
+    character.rig.forEach((part) => {
+      if (Object.hasOwn(character.palette, part.colorKey)) return;
+      if (isColorLiteral(part.colorKey)) return;
+      add(
+        `characters[${character.id}].rig[${part.id}].colorKey`,
+        `Part colour is neither a palette key of this character nor a literal colour`,
+        colourSeverity,
+      );
+    });
+  });
+  library.props.forEach((prop) => {
+    if (!Array.isArray(prop.parts)) return;
+    prop.parts.forEach((part) => {
+      if (isColorLiteral(part.colorKey)) return;
+      add(
+        `props[${prop.id}].parts[${part.id}].colorKey`,
+        `Part colour is not a literal colour (props resolve against no palette)`,
+        colourSeverity,
+      );
+    });
+  });
+
   return issues;
 }
 
 export function isProjectValid(project: Project, series: SeriesDef | null = null): boolean {
-  return validateProject(project, series).length === 0;
+  // Warnings mean "the document is open but something draws wrong", which is not the same
+  // as invalid; a colour-key warning must not make the document unopenable.
+  return validateProject(project, series).every((issue) => issue.severity !== 'error');
 }
 
 /**
@@ -238,7 +303,7 @@ export function isProjectValid(project: Project, series: SeriesDef | null = null
  */
 export function validateSeries(series: SeriesDef): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const add = (path: string, message: string) => issues.push({ path, message });
+  const add = (path: string, message: string) => issues.push({ path, message, severity: 'error' });
 
   if (series.id === '') add('id', 'A series needs an id');
   if (series.name.trim() === '') add('name', 'A series needs a name');

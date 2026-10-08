@@ -11,7 +11,7 @@ import { validateProject } from '../core/document/invariants';
 import { findScene } from '../core/document/lookups';
 import { episodeScenes } from '../core/document/projectOps';
 import { parseProject, ProjectParseError, serializeProject } from '../core/serialize';
-import { SEED_PROJECT } from './seed';
+import { SEED_PROJECT, SEED_SERIES } from './seed';
 import { CHARACTERS, KITO, MAMA_NIA, NIA, THE_LANDLORD } from './characters';
 import { ENVIRONMENTS, NIA_APARTMENT, ZANZA_LOUNGE, ZANZA_STREET } from './environments';
 import { EXPRESSIONS } from './expressions';
@@ -22,6 +22,13 @@ describe('seed project', () => {
   it('passes every invariant with zero issues', () => {
     const issues = validateProject(SEED_PROJECT);
     expect(issues).toEqual([]);
+  });
+
+  it('passes every invariant at load time too, with no colour-key surprises (R3)', () => {
+    // Authoring mode tolerates a colour-key warning; load mode turns it into a refusal, so
+    // the seed must be clean under the strictest lens — every rig part has to resolve
+    // against its own palette or be a literal colour.
+    expect(validateProject(SEED_PROJECT, SEED_SERIES, { mode: 'load' })).toEqual([]);
   });
 
   it('survives a serialize/parse round trip unchanged', () => {

@@ -150,7 +150,11 @@ export class IndexedDbProjectRepository implements ProjectRepository {
     let project: Project;
     let implied: SeriesDef | null;
     try {
-      ({ project, series: implied } = migrateProjectFile(record.document));
+      // Authoring mode on purpose: this row was written by us, so a colour-key warning in
+      // it means work in progress, not a hostile file — and refusing it would quarantine a
+      // document the editor itself produced (its own "missing series" lockout §18.2 R3).
+      // The warning is surfaced by IssuePanel once the project is open.
+      ({ project, series: implied } = migrateProjectFile(record.document, { mode: 'authoring' }));
     } catch (error) {
       await this.quarantine(record, error);
       throw error;
