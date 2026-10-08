@@ -1,12 +1,16 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 14 — SERIES & ASSET SCOPE.** In progress: the series lifecycle,
-> the `SeriesBrowser`, the derivation and the three architecture gates (G1, G2, G12)
-> are landed and green. Not yet closed — the Phase 14 acceptance row below will record
-> completion against the §24.5 gate when the manual runs are walked.
+> **Current phase: Phase 16 — Commands, Transactions & Provenance.** In progress.
+> **Previous: Phase 15 — Engine Correctness & Render Performance.** Complete as
+> implementation and automated gates (§18.2 R1/R2/R3/R8/R9, §18.3 R4/R5/R6/R10, the
+> golden fixtures with draw-op ceilings, and the adaptive undo cap). The manual
+> 600-frame RULE 14 perf run from §24.6 is still open and is recorded with the Phase
+> 14 acceptance walk rather than redefined to pass.
+> **Phase 14 — Series & Asset Scope.** Implementation, derivation and the G1/G2/G12
+> gates are landed and green; the phase is not yet closed because the acceptance row
+> below records completion against the §24.5 gate when the manual runs are walked.
 > **Previous: Phase 13 — MVP ACCEPTANCE & DOCUMENTATION TRUTH.** Complete — closed as
 > verification, with checks 4 and 8 reported unmet rather than redefined to pass.
-> **Next: Phase 15 — Engine Correctness & Render Performance.**
 
 Scope and ordering for this phase are [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md)
 § Phase 13, which is the authority.
@@ -54,6 +58,8 @@ numbering is reconciled against
 | 11 | Project IO & Session Lifecycle | **complete** | `Project \| null` + project browser, `.zanza.json` import/export, media store, starter project, F4/F5/F6 fixed. 627 tests green. |
 | 12 | Export | **complete** | `frameSequence` is pure and tested; PNG still and PNG sequence; the exporter's draw log is deep-equal to the stage's; mixdown via `OfflineAudioContext`; `ExportPanel` reports capability honestly; scenes join cuts and slots join scenes from the editor. 727 tests green, 47/47 real-Chrome export checks. |
 | 13 | MVP Acceptance & Documentation Truth | **complete** | Twelve manual checks walked at 1440p and 1920p, a docs-link test added, and every stale claim in `docs/` corrected against the source. Ten of twelve pass; checks 4 and 8 reported unmet rather than redefined. See the phase section below. |
+| 14 | Series & Asset Scope | **in progress** | Series registry and lifecycle, `SeriesBrowser`, the `seriesId` picker on creation, `resolveAssets` derived library (`SceneContext`), migrated seed, and the G1/G2/G12 architecture gates all landed and green. The manual acceptance walk against §24.5 is still open. See the phase section below. |
+| 15 | Engine Correctness & Render Performance | **complete** | §18.2 R1/R2/R3/R8/R9 and §18.3 R4/R5/R6/R10 landed; golden render fixtures byte-identical to the pre-index renderer with draw-op ceilings; Stage dirty check; adaptive undo cap; every corrected renderer claim in `docs/`. Automated gates green at 868 tests across 63 files; the manual 600-frame RULE 14 run remains open. See the phase section below. |
 
 ### Phase 13 — MVP Acceptance & Documentation Truth
 
@@ -99,6 +105,58 @@ cannot pass without a muxer, and `docs/adr/001-video-encoding.md` decided agains
 per-actor inspector behind capability rows 7, 8 and 9 does not exist, so check 4's drag leg
 has nothing to drag. Both are Phase 14+ work or a decision to revisit, not documentation
 debt.
+
+### Phase 14 — Series & Asset Scope
+
+Implementation is landed; the phase is not yet closed, because its gate (§24.5) is a
+manual acceptance walk and the walk has been deferred rather than redefined. What is
+genuinely in place: the series registry and lifecycle (create, open, close, switch,
+archive/restore, delete), the `SeriesBrowser`, the `seriesId` picker on project
+creation, `resolveAssets` producing the derived `SceneContext` that Phase 15's renderer
+and validator read, the migration path for projects into series scope, and the three
+architecture gates G1, G2 and G12 (series-aware content blindness, multiseries
+coexistence, and the layer rule). The manual walk is scheduled jointly with Phase 15's
+600-frame RULE 14 perf run.
+
+### Phase 15 — Engine Correctness & Render Performance
+
+Closed as implementation plus automated gates; the §24.6 manual perf run stays open.
+What was built, per the spec:
+
+- **R1** — an actor `scaleY` override reaches the draw log, with a regression test
+  written first (`resolve.test.ts`).
+- **R2** — a custom `mouthSlot` on a character drives the talk pulse, and a character
+  with no mouth part is silent, with the F2 regression test (`resolve.test.ts`).
+- **R3** — an unresolvable `colorKey` is a warning at authoring and an error at load,
+  via `validateProject` severity (`document/validate.ts`).
+- **R8** — `ProjectSettings.subtitleStyle` as data: alignment, margin, a left
+  preferential two-line wrap, and a character fill — the default reproduces the old
+  pixels byte-for-byte (`render/subtitleStyle.ts`).
+- **R9** — `Lighting` gains `ambientOpacity`, `overlayOpacity`, `vignetteOpacity` and
+  `vignetteRadius` fields with defaults that reproduce today's pixels exactly
+  (`render/lighting.test.ts`).
+- **R4 + R10** — `RenderIndex` built once per `(context, scene)` identity
+  (`render/renderIndex.ts`), with environment layers pre-sorted by `z` and the talking
+  set computed once per frame. The parity proof: the **golden fixtures** in
+  `src/data/fixtures/golden/` were recorded under the *pre-index* renderer and are
+  still byte-identical, and the draw-op count sits under its ceiling per beat
+  (`src/data/goldenRender.test.ts`).
+- **R5** — the dead `{ kind: 'image' }` branch deleted from `ShapeDef`.
+- **R6** — `src/ui/Stage.tsx` skips the draw while no renderer input changed; the
+  1920p-and-1440p drawing note in `ARCHITECTURE.md` now matches the code.
+- **Adaptive undo cap** — `historyLimitFor` in `src/core/document/history.ts` keeps the
+  retained serialized history near a 2 MB budget, clamped between `HISTORY_LIMIT = 100`
+  and a floor of 20 (§22.4).
+
+**The renderer claims in `docs/` are now true.** `ARCHITECTURE.md` §2 states what the
+code does — index memo by identity, layers sorted into the index, the loop skipping
+idle frames — and `lookups.ts` no longer claims to run in the render hot path. The
+spec's per-frame and redraw audit rows are resolved; the fix is in the code, the
+fixtures prove the parity, and `ARCHITECTURE_SPEC.md` §0.2 records the phase's close.
+
+**Still open, recorded rather than closed:** the §24.6 600-frame acceptance-scene
+budget run on the RULE 14 machine is a manual check, and it is scheduled with the Phase
+14 acceptance walk.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:

@@ -48,6 +48,18 @@ These are not carried over from the audit. Each was verified in the source at `3
 | F8 | **Fixed** | `MIGRATIONS` carries a real v1 → v2 step, applied on read and idempotent, and `CURRENT_FORMAT_VERSION` is the single owner of the ladder's top. A v1 record still opens with every audio slot honestly `null` rather than guessed at from a string that looks like a path. |
 | F1, F2, F3, F7 | **Open — Phase 15** | Not touched. F7's per-frame `find` is the reason the Phase 12 exporter needs an index before it can claim 60 fps on an episode. |
 
+**Status after Phase 15 (2026-10-08).** F1, F2, F3 and F7 are **fixed**. Every §18.2
+defect now has a regression test that fails on the pre-fix code, the render loop's
+per-frame `find`/scan work is gone, and the golden fixtures prove the pre-index and
+post-index renderers produce byte-identical draw logs for every seed scene:
+
+| # | Status | What was done |
+|---|---|---|
+| F1 | **Fixed** | `ResolveRigOptions` gains `scaleY` and the renderer applies actor/pose/expression `scaleY` to the draw log (R1). The regression test is `resolve.test.ts`. |
+| F2 | **Fixed** | The talk pulse is keyed to `CharacterDef.mouthSlot` (default `'mouth'`) rather than the slot-name literal (R2); a character with no mouth part is silent, and the F2 regression test is green. |
+| F3 | **Fixed** | `resolveColor` no longer falls back silently on an unresolvable `colorKey`: severity policy makes it a warning at authoring time and an error at load (R3). |
+| F7 | **Fixed** | The per-frame lookups and the per-actor talking walk are replaced by `RenderIndex` built once per `(context, scene)` identity (R4) with `speakingAt` computed once per frame, and the environment layers pre-sort into the index (R10). Draw-op counts sit under per-beat ceilings in `goldenRender.test.ts`. |
+
 ### 0.3 The roadmap in one line
 
 Finish and prove the MVP (Phases 9–13) → widen scope to `Series` (14) → repair engine correctness and performance (15) → build the command/transaction layer (16) → build plans, validation and compilation (17) → build human review (18) → then, and only then, the AI boundary (19).
@@ -2774,6 +2786,12 @@ Step order within each phase, chosen to minimise rewrites. Each phase's first st
 
 *Why this order:* step 1 is a pure performance refactor with an exact behavioural proof, so it is safe to land first and makes every subsequent change cheaper to verify. Steps 3–5 are bug fixes with failing tests written first.
 
+**Status: closed 2026-10-08** as implementation plus the automated gates — every step
+above is landed, the golden-fixture parity holds, and the corrected renderer claims are
+in `docs/ARCHITECTURE.md`. The one manual item, the 600-frame RULE 14 budget run
+(§24.6 Tests), is recorded open alongside the Phase 14 acceptance walk; §0.2 carries
+the F1/F2/F3/F7 resolution rows.
+
 ### Phase 16 — Commands, transactions & provenance
 1. `Command`, `CommandContext`, `CommandResult`, `CommandError` types.
 2. `applyCommand` + the registry, wrapping **one** operation. No UI change yet.
@@ -3471,7 +3489,7 @@ false citations nobody had written down.
 | Audio engine | `src/core/audio/audioEngine.browser.ts` | 15 (D1, D2) | No — browser |
 | Renderer | `src/core/render/render.ts` | 14, 15 | Yes |
 | Rig resolution | `src/core/render/resolve.ts` | 15 (R1, R2) | Yes |
-| Render index | `src/core/render/index.ts` | 15 | Yes |
+| Render index | `src/core/render/renderIndex.ts` | 15 | Yes |
 | Export | `src/core/export/**` | 12 | Partly |
 | Media store | `src/core/media/**` | 11 | No — browser |
 | IO | `src/core/io/**` | 11 | Partly |

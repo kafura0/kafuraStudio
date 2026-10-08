@@ -70,6 +70,17 @@ not shown to matter. Environment layers are sorted by `z` once when the render i
 for a scene is built — not per frame, and not by the author. Revisit only if profiling
 a heavy scene justifies it.
 
+**The render index.** `renderScene` reads nothing by scanning: `renderIndexFor`
+(`src/core/render/renderIndex.ts`) builds asset maps, per-kind/per-target clip lists,
+the pre-sorted environment layers, and the dialogue windows once per `(context, scene)`
+identity and memoises the result in a `WeakMap` keyed by that pair. Documents are
+immutable, so an edited scene is a new object and the memo can never serve a stale
+answer — it is a cache over a pure function, not retained state (R4). The talk check is
+one `speakingAt(index, time)` per frame that yields a `Set` of speaking actor ids, not
+a per-actor `dialogue.find` (R4). Golden draw logs, recorded under the pre-index
+renderer, are checked byte-for-byte so the refactor is proven non-breaking
+(`src/data/goldenRender.test.ts`).
+
 **The loop skips idle frames.** `src/ui/Stage.tsx` redraws only when something the
 renderer reads has changed: the resolved library, the scene object, the scene-local
 time, the subtitle flag, the device pixel ratio, or the stage width. Documents are
