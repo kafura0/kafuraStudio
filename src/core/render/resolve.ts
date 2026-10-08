@@ -71,7 +71,16 @@ function applyOverride(base: Transform2D, override: SlotOverride | undefined): T
 export interface ResolveRigOptions {
   /** Placed on the origin of the rig. Usually the actor's feet. */
   origin: Vec2;
-  scale: number;
+  /**
+   * Instance scale on the X axis, composed against the rest and pose scale.
+   *
+   * X and Y are distinct on purpose: the transform model allows an author (or a
+   * keyframe) to squash an instance with `scaleY: 0.5`, and a single `scale` field
+   * silently discarded the Y half of that (ARCHITECTURE_SPEC.md §18.2 R1).
+   */
+  scaleX: number;
+  /** Instance scale on the Y axis. Composed independently of `scaleX`. */
+  scaleY: number;
   flipX: boolean;
   rotation: number;
   alpha: number;
@@ -177,7 +186,6 @@ export function resolveRig(
     // The talk pulse widens the mouth on the Y axis only, so it reads as an open
     // jaw rather than a shrunken head.
     const mouthBoost = part.slot === 'mouth' ? (options.mouthScale ?? 1) : 1;
-    const uniformScale = options.scale * world.scaleX;
 
     out.push({
       id: part.id,
@@ -189,8 +197,8 @@ export function resolveRig(
       x: world.x,
       y: world.y,
       rotation: world.rotation + options.rotation,
-      scaleX: (options.flipX ? -1 : 1) * uniformScale,
-      scaleY: options.scale * world.scaleY * mouthBoost,
+      scaleX: (options.flipX ? -1 : 1) * options.scaleX * world.scaleX,
+      scaleY: options.scaleY * world.scaleY * mouthBoost,
       pivot: part.pivot,
     });
   });

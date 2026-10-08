@@ -15,7 +15,8 @@ import { transform } from '../core/types';
 
 const OPTIONS = {
   origin: { x: 1000, y: 900 },
-  scale: 1,
+  scaleX: 1,
+  scaleY: 1,
   flipX: false,
   rotation: 0,
   alpha: 1,

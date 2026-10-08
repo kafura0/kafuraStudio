@@ -48,6 +48,33 @@ describe('renderScene', () => {
     expect(fills).toBeGreaterThan(20);
   });
 
+  /**
+   * R1 (ARCHITECTURE_SPEC.md §18.2). The renderer used to read only `scaleX` off the
+   * instance transform, so `scaleY: 0.5` on an actor was authored, serialized, undone,
+   * and then silently never drawn. The assertion is on the draw log because the draw
+   * log *is* the renderer's output contract: every non-mouth part of the scaled actor
+   * resolves to `0.5 * restScaleY` with no talk pulse in play, so a `ctx.scale` whose
+   * Y argument is exactly 0.5 can only come from the instance `scaleY` reaching pixels.
+   */
+  it('honours instance scaleY: scaleY 0.5 reaches ctx.scale (R1)', () => {
+    const nia = scene1.actors.find((a) => a.characterId === 'char.nia');
+    expect(nia).toBeDefined();
+    if (!nia) return;
+
+    const scene = {
+      ...scene1,
+      actors: scene1.actors.map((a) =>
+        a.id === nia.id ? { ...a, transform: { ...a.transform, scaleY: 0.5 } } : a,
+      ),
+    };
+    const ctx = new RecordingContext();
+    renderScene(ctx, seedContext(), scene, 3);
+
+    expect(ctx.opsFor('scale').some((op) => op.args[1] === 0.5)).toBe(true);
+    // And the X axis is untouched: a squash must not shrink the actor's width.
+    expect(ctx.opsFor('scale').some((op) => op.args[0] === 0.5)).toBe(false);
+  });
+
   it('shows the subtitle for the line that is speaking at that time', () => {
     const speakingAt3 = renderAt(3.0).textDrawn();
     expect(speakingAt3.join(' | ')).toContain('Building my empire.');

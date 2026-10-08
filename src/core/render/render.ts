@@ -177,7 +177,8 @@ function collectDrawNodes(
       draw: () => {
         const parts = resolveProp(propDef, {
           origin: { x: numberAt(sampled.x, sceneProp.transform.x), y: numberAt(sampled.y, sceneProp.transform.y) },
-          scale: numberAt(sampled.scaleX, sceneProp.transform.scaleX),
+          scaleX: numberAt(sampled.scaleX, sceneProp.transform.scaleX),
+          scaleY: numberAt(sampled.scaleY, sceneProp.transform.scaleY),
           flipX: boolAt(sampled.flipX, sceneProp.flipX),
           rotation: numberAt(sampled.rotation, sceneProp.transform.rotation),
           alpha: numberAt(sampled.alpha, sceneProp.transform.alpha),
@@ -209,7 +210,8 @@ function collectDrawNodes(
             x: numberAt(sampled.x, actor.transform.x),
             y: numberAt(sampled.y, actor.transform.y),
           },
-          scale: numberAt(sampled.scaleX, actor.transform.scaleX),
+          scaleX: numberAt(sampled.scaleX, actor.transform.scaleX),
+          scaleY: numberAt(sampled.scaleY, actor.transform.scaleY),
           flipX: boolAt(sampled.flipX, actor.flipX),
           rotation: numberAt(sampled.rotation, actor.transform.rotation),
           alpha: numberAt(sampled.alpha, actor.transform.alpha),
