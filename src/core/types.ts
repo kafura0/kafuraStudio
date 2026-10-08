@@ -186,6 +186,18 @@ export interface Lighting {
   overlayColor: string | null;
   /** 0 = no vignette, 1 = maximum. */
   vignette: number;
+  /**
+   * Strength of the `ambient` multiply wash. Absent means the renderer's default,
+   * which is what every environment authored before the field existed draws with
+   * (ARCHITECTURE_SPEC.md §18.3 R9).
+   */
+  ambientOpacity?: number;
+  /** Strength of the `overlayColor` overlay wash. Absent means the default. */
+  overlayOpacity?: number;
+  /** The vignette's `vignette` value is capped at this darkest alpha. Absent means the default. */
+  vignetteOpacity?: number;
+  /** Vignette radius as a share of `max(width, height)`. Absent means the default. */
+  vignetteRadius?: number;
 }
 
 export interface EnvironmentDef {

@@ -168,7 +168,12 @@ interface EnvironmentDef {
   width: number; height: number;     // the authored camera frame
   layers: EnvLayer[];                // background | midground | foreground, by `z`
   anchors: StagingAnchor[];
-  lighting: { ambient: string; overlayColor: string | null; vignette: number };
+  lighting: {
+    ambient: string; overlayColor: string | null; vignette: number;
+    // optional strengths; absent means the renderer default (0.28 / 0.18 / 0.85 / 0.75)
+    ambientOpacity?: number; overlayOpacity?: number;
+    vignetteOpacity?: number; vignetteRadius?: number;
+  };
 }
 ```
 

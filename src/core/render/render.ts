@@ -29,6 +29,7 @@ import type {
   DialogueLine,
   EnvironmentDef,
   ExpressionDef,
+  Lighting,
   PoseDef,
   ProjectSettings,
   Scene,
@@ -85,6 +86,32 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
 /** The style a document's settings resolve to, defaults filling any absent field. */
 function subtitleStyleOf(settings: ProjectSettings): SubtitleStyle {
   return { ...DEFAULT_SUBTITLE_STYLE, ...settings.subtitleStyle };
+}
+
+/**
+ * Lighting strengths when an environment says nothing about them (§18.3 R9).
+ *
+ * Today's pixels: the numbers the renderer once hardcoded. An environment that never
+ * declared the fields draws exactly as it always did, and a declared value overrides
+ * only itself.
+ */
+export const DEFAULT_LIGHTING = {
+  ambientOpacity: 0.28,
+  overlayOpacity: 0.18,
+  vignetteOpacity: 0.85,
+  vignetteRadius: 0.75,
+} as const;
+
+/**
+ * The vignette gradient's two colour stops.
+ *
+ * The second stop is the environment's `vignette` strength capped at `opacity` — the
+ * cap is what stops a document from painting an opaque black oval over its own scene.
+ * Exported because it is a string built from two numbers, and a draw-log test is the
+ * only way to pin the exact value the pixels get.
+ */
+export function vignetteStops(vignette: number, opacity: number): [string, string] {
+  return ['rgba(0,0,0,0)', `rgba(0,0,0,${Math.min(opacity, vignette).toFixed(3)})`];
 }
 
 export function renderScene(
@@ -282,7 +309,7 @@ function drawLighting(
   environment: {
     width: number;
     height: number;
-    lighting: { ambient: string; overlayColor: string | null; vignette: number };
+    lighting: Lighting;
   },
   cameraX: number,
   cameraY: number,
@@ -292,7 +319,7 @@ function drawLighting(
   if (lighting.ambient && lighting.ambient !== 'transparent') {
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = lighting.ambientOpacity ?? DEFAULT_LIGHTING.ambientOpacity;
     ctx.fillStyle = lighting.ambient;
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
@@ -301,14 +328,14 @@ function drawLighting(
   if (lighting.overlayColor) {
     ctx.save();
     ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = 0.18;
+    ctx.globalAlpha = lighting.overlayOpacity ?? DEFAULT_LIGHTING.overlayOpacity;
     ctx.fillStyle = lighting.overlayColor;
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
   }
 
   if (lighting.vignette > 0) {
-    const radius = Math.max(width, height) * 0.75;
+    const radius = Math.max(width, height) * (lighting.vignetteRadius ?? DEFAULT_LIGHTING.vignetteRadius);
     const vignette = ctx.createRadialGradient(
       cameraX,
       cameraY,
@@ -317,8 +344,12 @@ function drawLighting(
       cameraY,
       radius,
     );
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, `rgba(0,0,0,${Math.min(0.85, lighting.vignette).toFixed(3)})`);
+    const [inner, outer] = vignetteStops(
+      lighting.vignette,
+      lighting.vignetteOpacity ?? DEFAULT_LIGHTING.vignetteOpacity,
+    );
+    vignette.addColorStop(0, inner);
+    vignette.addColorStop(1, outer);
     ctx.save();
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
