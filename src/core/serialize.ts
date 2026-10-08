@@ -10,10 +10,11 @@
  */
 
 import { CURRENT_FORMAT_VERSION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from './constants';
-import type { AssetLibrary, AudioDef, CharacterDef, Project, SeriesDef } from './types';
+import type { AssetLibrary, AudioDef, CharacterDef, Project, SeriesDef, SubtitleStyle } from './types';
 import { validateProject, validateSeries, type ValidationMode } from './document/invariants';
 import { emptyAssetLibrary } from './document/factories';
 import { DEFAULT_MOUTH_SLOT } from './render/resolve';
+import { DEFAULT_SUBTITLE_STYLE } from './render/render';
 
 // Re-exported so callers have one obvious place to ask "what version is current?", and
 // so the import graph stays acyclic. Defined in `constants` because the project factory
@@ -437,6 +438,12 @@ export function normaliseProject(raw: Record<string, unknown>): Project {
       height: asNumber(settingsRaw.height, STAGE_HEIGHT),
       fps: asNumber(settingsRaw.fps, STAGE_FPS),
       autosave: typeof settingsRaw.autosave === 'boolean' ? settingsRaw.autosave : true,
+      // Carried only when the document declares one: the renderer falls back to its
+      // defaults when the field is absent, so injecting one here would change nothing
+      // on screen and churn every round-trip of a doc that never chose a style.
+      ...(settingsRaw.subtitleStyle === undefined
+        ? {}
+        : { subtitleStyle: normaliseSubtitleStyle(settingsRaw.subtitleStyle) }),
     },
     assets: normaliseAssetLibrary(raw.assets),
     cameraPresets: asArray(raw.cameraPresets, 'project.cameraPresets'),
@@ -507,6 +514,27 @@ function normaliseCharacter(value: unknown): CharacterDef {
     ...record,
     mouthSlot: asString(record.mouthSlot, DEFAULT_MOUTH_SLOT),
   } as CharacterDef;
+}
+
+/**
+ * Fill in the subtitle style defaults a declared-but-partial object omitted.
+ *
+ * `ProjectSettings.subtitleStyle` is itself optional — a document that never mentions a
+ * style renders with the renderer's defaults — so the style is only normalised when the
+ * field is present (see `normaliseProject`), and this then gives that partial object the
+ * fields its author skipped.
+ */
+function normaliseSubtitleStyle(value: unknown): SubtitleStyle {
+  const raw = asRecord(value, 'project.settings.subtitleStyle');
+  return {
+    font: asString(raw.font, DEFAULT_SUBTITLE_STYLE.font),
+    textColor: asString(raw.textColor, DEFAULT_SUBTITLE_STYLE.textColor),
+    boxColor: asString(raw.boxColor, DEFAULT_SUBTITLE_STYLE.boxColor),
+    boxOpacity: asNumber(raw.boxOpacity, DEFAULT_SUBTITLE_STYLE.boxOpacity),
+    boxHeight: asNumber(raw.boxHeight, DEFAULT_SUBTITLE_STYLE.boxHeight),
+    lineHeight: asNumber(raw.lineHeight, DEFAULT_SUBTITLE_STYLE.lineHeight),
+    maxWidthRatio: asNumber(raw.maxWidthRatio, DEFAULT_SUBTITLE_STYLE.maxWidthRatio),
+  };
 }
 
 /**

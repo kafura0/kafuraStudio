@@ -24,6 +24,7 @@ import {
 import { addKeyframe, addSimpleClip } from '../core/document/trackOps';
 import { emptyAssetLibrary } from '../core/document/factories';
 import { resolveAssets } from '../core/document/scopes';
+import { DEFAULT_SUBTITLE_STYLE } from '../core/render/render';
 import type { EaseType, Id, KeyframeTarget, Project, SceneContext, SeriesDef } from '../core/types';
 import { CURRENT_FORMAT_VERSION } from '../core/constants';
 import { AUDIO } from './audio';
@@ -176,7 +177,7 @@ export function createSeedProject(seriesId: Id = 'series_zanza'): Project {
     updatedAt: '2026-01-01T00:00:00.000Z',
     formatVersion: CURRENT_FORMAT_VERSION,
     seriesId,
-    settings: { width: 1920, height: 1080, fps: 24, autosave: true },
+    settings: { width: 1920, height: 1080, fps: 24, autosave: true, subtitleStyle: { ...DEFAULT_SUBTITLE_STYLE } },
     assets: emptyAssetLibrary(),
     cameraPresets: [],
     episodes: [],

@@ -30,7 +30,10 @@ vi.mock('../core/persistence/indexedDb.browser', () => ({
   })),
 }));
 
-vi.mock('../core/render/render', () => ({ renderScene: vi.fn() }));
+vi.mock('../core/render/render', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, renderScene: vi.fn() };
+});
 
 /** jsdom's canvas has no 2d context; the stage only needs one to exist. */
 function stubContext(): void {

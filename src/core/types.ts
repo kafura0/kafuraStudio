@@ -423,6 +423,37 @@ export interface ProjectSettings {
   height: number;
   fps: number;
   autosave: boolean;
+  /**
+   * Subtitle presentation. Absent means the renderer's defaults, which is how every
+   * document authored before the field existed keeps rendering identically
+   * (ARCHITECTURE_SPEC.md §18.3 R8).
+   */
+  subtitleStyle?: SubtitleStyle;
+}
+
+/**
+ * Everything visual about a subtitle.
+ *
+ * The values are the renderer's today-pixels defaults; a document only needs to set the
+ * fields it wants to differ. Single-line subtitles reproduce the historical layout
+ * exactly, and a line that cannot fit is wrapped into a two-line stack instead of being
+ * squashed horizontally by `fillText`'s `maxWidth`.
+ */
+export interface SubtitleStyle {
+  /** The `ctx.font` used to measure and paint the text. */
+  font: string;
+  /** Text colour. */
+  textColor: string;
+  /** Box fill colour. */
+  boxColor: string;
+  /** Box fill opacity. */
+  boxOpacity: number;
+  /** Height of a one-line box. */
+  boxHeight: number;
+  /** Vertical gap between the two lines of a stacked subtitle. */
+  lineHeight: number;
+  /** Box and text together may span at most this share of the stage width. */
+  maxWidthRatio: number;
 }
 
 /**

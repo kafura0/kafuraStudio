@@ -30,9 +30,11 @@ import type {
   EnvironmentDef,
   ExpressionDef,
   PoseDef,
+  ProjectSettings,
   Scene,
   SceneContext,
   ShapeDef,
+  SubtitleStyle,
   TrackKind,
   Vec2,
 } from '../types';
@@ -63,9 +65,27 @@ interface DrawNode {
   draw(): void;
 }
 
-const SUBTITLE_FONT = '600 34px "Inter", "Segoe UI", system-ui, sans-serif';
-const SUBTITLE_BOX_HEIGHT = 56;
-const MAX_SUBTITLE_WIDTH_RATIO = 0.86;
+/**
+ * The subtitle presentation when a document says nothing about it.
+ *
+ * Today's pixels: the colour pair, the box, the cap share of the stage width — all
+ * reproduce what the renderer drew when these were module constants. A document may
+ * override any field via `ProjectSettings.subtitleStyle` (§18.3 R8).
+ */
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
+  font: '600 34px "Inter", "Segoe UI", system-ui, sans-serif',
+  textColor: '#f4f6fb',
+  boxColor: '#05070c',
+  boxOpacity: 0.82,
+  boxHeight: 56,
+  lineHeight: 40,
+  maxWidthRatio: 0.86,
+};
+
+/** The style a document's settings resolve to, defaults filling any absent field. */
+function subtitleStyleOf(settings: ProjectSettings): SubtitleStyle {
+  return { ...DEFAULT_SUBTITLE_STYLE, ...settings.subtitleStyle };
+}
 
 export function renderScene(
   ctx: Canvas2DLike,
@@ -131,7 +151,7 @@ export function renderScene(
   ctx.restore();
 
   if (options.subtitles !== false) {
-    drawSubtitle(ctx, scene, time, width, height);
+    drawSubtitle(ctx, scene, time, width, height, subtitleStyleOf(context.settings));
   }
 }
 
@@ -371,29 +391,95 @@ function drawSubtitle(
   time: number,
   width: number,
   height: number,
+  style: SubtitleStyle,
 ): void {
   const text = activeSubtitle(scene, time);
   if (!text) return;
 
-  const maxWidth = width * MAX_SUBTITLE_WIDTH_RATIO;
+  const maxWidth = width * style.maxWidthRatio;
   const baseline = height - Math.round(height * 0.07);
 
   ctx.save();
-  ctx.font = SUBTITLE_FONT;
+  ctx.font = style.font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
 
-  const boxWidth = Math.min(maxWidth, ctx.measureText(text).width + 48);
+  // A line that fits stays one line, byte for byte as before. One that does not is
+  // wrapped into a two-line stack rather than squashed by `fillText`'s `maxWidth`.
+  const lines = wrapSubtitle(text, maxWidth, (line) => ctx.measureText(line).width);
+  const first = lines[0] ?? text;
+  const second = lines[1];
 
-  ctx.globalAlpha = 0.82;
-  ctx.fillStyle = '#05070c';
-  fillRoundRect(ctx, width / 2 - boxWidth / 2, baseline - SUBTITLE_BOX_HEIGHT + 12, boxWidth, SUBTITLE_BOX_HEIGHT, 8);
+  const textWidth = second
+    ? Math.max(ctx.measureText(first).width, ctx.measureText(second).width)
+    : ctx.measureText(first).width;
+  const boxWidth = Math.min(maxWidth, textWidth + 48);
+  const boxHeight = style.boxHeight + (second ? style.lineHeight : 0);
+
+  ctx.globalAlpha = style.boxOpacity;
+  ctx.fillStyle = style.boxColor;
+  fillRoundRect(ctx, width / 2 - boxWidth / 2, baseline - boxHeight + 12, boxWidth, boxHeight, 8);
   ctx.fill();
 
   ctx.globalAlpha = 1;
-  ctx.fillStyle = '#f4f6fb';
-  ctx.fillText(text, width / 2, baseline - 6, maxWidth);
+  ctx.fillStyle = style.textColor;
+  if (second) {
+    ctx.fillText(first, width / 2, baseline - 6 - style.lineHeight);
+    ctx.fillText(second, width / 2, baseline - 6);
+  } else {
+    ctx.fillText(first, width / 2, baseline - 6, maxWidth);
+  }
   ctx.restore();
+}
+
+/**
+ * Split a subtitle into at most two lines that each fit `maxWidth`.
+ *
+ * A subtitle that already fits is returned whole — an unchanged single line, so an
+ * existing document draws exactly as before. The stack is greedy per word, and a word
+ * wider than the allowance alone still gets a line of its own rather than being
+ * squashed. Anything that would need a third line is cut with an ellipsis: a ZANZA
+ * subtitle is two lines, and text arriving mid-sentence is honestly truncated rather
+ * than silently dropped.
+ */
+export function wrapSubtitle(
+  text: string,
+  maxWidth: number,
+  measure: (line: string) => number,
+): string[] {
+  const whole = text.trim();
+  if (whole.length === 0) return [];
+  if (measure(whole) <= maxWidth) return [whole];
+
+  const words = whole.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  const flush = (): void => {
+    if (current !== '') lines.push(current);
+    current = '';
+  };
+
+  for (const word of words) {
+    if (current === '') {
+      current = word;
+      continue;
+    }
+    const candidate = `${current} ${word}`;
+    if (measure(candidate) > maxWidth) {
+      flush();
+      // A third line needs to start, but a subtitle is two lines. The remainder is
+      // cut off with an ellipsis so the truncation is visible rather than silent.
+      if (lines.length === 2) {
+        lines[1] = `${lines[1]}…`;
+        return lines;
+      }
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  flush();
+  return lines;
 }
 
 function fillRoundRect(

@@ -33,6 +33,7 @@ import {
 import { createProject, emptyAssetLibrary } from './document/factories';
 import { validateProject } from './document/invariants';
 import { resolveAssets } from './document/scopes';
+import { DEFAULT_SUBTITLE_STYLE } from './render/render';
 import { audioPlan } from './audio/audioPlan';
 import { SEED_PROJECT, SEED_SERIES, seedContext } from '../data/seed';
 import { renderToRecording } from '../test/recordingContext';
@@ -392,6 +393,27 @@ describe('normaliseProject', () => {
     expect(project.id).toBe('proj_imported');
     expect(project.name).toBe('Untitled Project');
     expect(project.metadata).toEqual({ archived: null, duplicatedFrom: null, snapshotOf: null });
+  });
+
+  it('carries a declared subtitleStyle and fills the fields it omitted (R8)', () => {
+    const project = normaliseProject({
+      ...v1Project(),
+      settings: { width: 1280, height: 720, fps: 30, autosave: true, subtitleStyle: { textColor: '#e8d9a0' } },
+    });
+    expect(project.settings.subtitleStyle).toEqual({
+      font: DEFAULT_SUBTITLE_STYLE.font,
+      textColor: '#e8d9a0',
+      boxColor: DEFAULT_SUBTITLE_STYLE.boxColor,
+      boxOpacity: DEFAULT_SUBTITLE_STYLE.boxOpacity,
+      boxHeight: DEFAULT_SUBTITLE_STYLE.boxHeight,
+      lineHeight: DEFAULT_SUBTITLE_STYLE.lineHeight,
+      maxWidthRatio: DEFAULT_SUBTITLE_STYLE.maxWidthRatio,
+    });
+  });
+
+  it('leaves settings untouched for a document with no subtitleStyle (R8)', () => {
+    const project = normaliseProject(v1Project());
+    expect('subtitleStyle' in project.settings).toBe(false);
   });
 });
 
