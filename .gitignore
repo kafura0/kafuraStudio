@@ -26,3 +26,6 @@ vite.log
 # resolves Playwright's default against the working directory, which lands a stray
 # `.zanza.json` here. Local artifact, not something to review.
 out/
+
+.vercel
+.env*

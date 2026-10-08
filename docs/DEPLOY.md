@@ -6,9 +6,13 @@
 > is, and it is not a simplification of a real deployment — there is nothing else to
 > deploy.
 >
-> **A deployed build is not a finished product.** It will load the EP001 demo and
-> play it. It has no timeline, no editing controls, and no export. See
-> [`USER_GUIDE.md`](USER_GUIDE.md) § 9 and [`../README.md`](../README.md) § STATUS.
+> **A deployed build is a working editor.** It loads the ZANZA series, opens
+> projects in the series browser, plays and scrubs episodes, and provides the
+> full staged-picture workflow — timeline, dialogue, camera, audio, undo/redo and
+> export (frame render and audio mixdown). The one honest operational caveat is
+> that the application is **local-first**: everything a user can do beyond the
+> built-in seed lives in the browser's IndexedDB, so the per-origin storage and
+> import/export limits in § 9 apply.
 
 ---
 
@@ -151,9 +155,11 @@ export default defineConfig({
 
 Then `PUBLIC_BASE=/zanza-studio/ npm run build`.
 
-**No git remote is currently configured on this repository**, so there is no
-determined deployment target yet. Decide on a host, then apply the matching section
-above. Do not add a deployment section to this guide for a host that is not in use.
+**The repository is configured with a `git` remote at
+`https://github.com/kafura0/kafuraStudio.git` (branch `main`).** A Vercel
+project has been linked to it; push to `main` to trigger a production
+deployment. If you deploy elsewhere, apply the matching section above. Do not add
+a deployment section to this guide for a host that is not in use.
 
 ---
 
@@ -209,11 +215,18 @@ not a website — it is a local tool with no server-side copy of anything.**
   machine, destroys it.
 
 This is a deliberate consequence of `AGENTS.md` RULE 10, not an oversight. The
-mitigation is project import/export, which is planned for Phase 12 and **does not
-exist yet**.
+mitigation is **project import/export, which is implemented** (§ `src/core/io/projectIo.ts`,
+reached from the Import/Export controls in the workspace): a user can export a
+portable project file and import it to recover work on another origin, browser
+or machine. Because a deployed build is static, export is a file download and
+import is a file picker — there is no server to push a file to, and the file is
+self-contained (media blobs referenced by a project are embedded in or beside
+the portable file where they are in scope).
 
-**Until Phase 12 ships, do not tell users to rely on this application for work they
-cannot afford to lose.** That is the honest operational position.
+**That is the honest operational position:** work is browser-local, and the
+recovery path is "export the project file, store it somewhere of your choosing,
+import it when you need it." Tell users this up front — § 9 is a catalog of the
+consequences, not a footnote.
 
 ---
 
@@ -258,5 +271,6 @@ Until (1) exists, treat the four gates as a manual ritual, not an enforced one.
 - [ ] Served over `http`/`https`, never `file://` (§ 4)
 - [ ] `index.html` is not cached; hashed assets are (§ 7)
 - [ ] Previous `dist/` retained for rollback
-- [ ] Users told their work is browser-local and not backed up (§ 9)
-- [ ] You have accepted that this deploy is a demo, not a usable editor (§ 9, `USER_GUIDE.md` § 9)
+- [ ] Users told their work is browser-local, and export/import is the recovery path (§ 9)
+- [ ] You have accepted that this deploy is a working editor, and any per-origin
+  storage limits are covered by § 9's import/export guidance
