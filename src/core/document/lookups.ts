@@ -1,9 +1,11 @@
 /**
  * Read-only lookups over the project.
  *
- * These run in the render hot path, so they are written as plain scans over small
- * arrays rather than building indexes. An MVP project holds tens of scenes and
- * hundreds of assets; a Map index would cost more to maintain than it saves.
+ * These are plain scans over small arrays. As of §18.2 R4 the render hot path no longer
+ * runs them: it reads the `RenderIndex` (`src/core/render/renderIndex.ts`), built once
+ * per `(context, scene)` identity instead of once per frame. What is left here serves
+ * the editor, the exporter and the audio planner — call sites where a scan over an MVP
+ * project's tens of scenes and hundreds of assets costs less than an index to maintain.
  *
  * Note the split in what these take. Scene, episode and clip lookups take a `Project`,
  * because that is where production lives. The six *asset* lookups take a resolved

@@ -2,7 +2,10 @@
  * The renderer.
  *
  * `renderScene(ctx, context, scene, time)` is a pure function: the same context and
- * time always produce the same pixels, with no retained state anywhere. That single
+ * time always produce the same pixels. The document-index work is cached across frames
+ * by `renderIndexFor` on `(context, scene)` identity (§18.2 R4) — a cache, not state:
+ * documents are immutable, so a memo hit can only reuse an answer derived from inputs
+ * the caller still holds, and no cached value can alter what a call draws. That single
  * property buys three things at once — deterministic unit tests, frame-accurate
  * export, and an editor loop that can redraw from scratch after any undo.
  *
@@ -16,27 +19,22 @@
 
 import { fitScale } from '../geometry';
 import { resolveCamera, sampleKeyframes, talkPulseAt } from '../animation/sample';
-import {
-  allClips,
-  findExpression as lookupExpression,
-  findPose as lookupPose,
-} from '../document/lookups';
+import { allClips } from '../document/lookups';
 import type { Canvas2DLike } from './canvas';
 import { resolveCharacter, resolveProp, type ResolvedPart } from './resolve';
 import { buildShapePath, shapeBounds } from './shapes';
+import { dialogueAt, renderIndexFor, speakingAt, type RenderIndex } from './renderIndex';
 import type {
   Clip,
   DialogueLine,
   EnvironmentDef,
-  ExpressionDef,
+  EnvLayer,
   Lighting,
-  PoseDef,
   ProjectSettings,
   Scene,
   SceneContext,
   ShapeDef,
   SubtitleStyle,
-  TrackKind,
   Vec2,
 } from '../types';
 
@@ -114,6 +112,9 @@ export function vignetteStops(vignette: number, opacity: number): [string, strin
   return ['rgba(0,0,0,0)', `rgba(0,0,0,${Math.min(opacity, vignette).toFixed(3)})`];
 }
 
+/** The empty clip list for a scene with no camera track — shared, never mutated. */
+const NO_CLIPS: Clip[] = [];
+
 export function renderScene(
   ctx: Canvas2DLike,
   context: SceneContext,
@@ -125,7 +126,11 @@ export function renderScene(
   const height = options.height ?? context.settings.height;
   const pixelRatio = options.pixelRatio ?? 1;
 
-  const environment = context.assets.environments.find((e) => e.id === scene.environmentId);
+  // Built once per (context, scene) identity, not per frame — §18.2 R4. Everything this
+  // index answers depends only on the document, never on `time`, so a 60 fps loop that
+  // reuses the same scene object reuses the same index.
+  const index = renderIndexFor(context, scene);
+  const environment = index.environment;
 
   ctx.save();
   // Establish the base transform explicitly. Deriving it from `pixelRatio` rather
@@ -142,7 +147,7 @@ export function renderScene(
 
   const camera = resolveCamera(
     scene.camera,
-    clipsFor(scene, 'camera'),
+    index.clipsByKind.get('camera') ?? NO_CLIPS,
     time,
   );
 
@@ -162,11 +167,11 @@ export function renderScene(
   ctx.translate(-camera.x, -camera.y);
 
   if (environment) {
-    drawEnvironment(ctx, environment, camera.x, camera.y);
+    drawEnvironment(ctx, environment, index.layers, camera.x, camera.y);
     drawLighting(ctx, environment, camera.x, camera.y);
   }
 
-  const nodes = collectDrawNodes(ctx, context, scene, time);
+  const nodes = collectDrawNodes(ctx, scene, time, index);
   for (const node of nodes) node.draw();
 
   ctx.restore();
@@ -178,7 +183,7 @@ export function renderScene(
   ctx.restore();
 
   if (options.subtitles !== false) {
-    drawSubtitle(ctx, scene, time, width, height, subtitleStyleOf(context.settings));
+    drawSubtitle(ctx, time, width, height, subtitleStyleOf(context.settings), index);
   }
 }
 
@@ -195,18 +200,21 @@ export function renderScene(
  */
 function collectDrawNodes(
   ctx: Canvas2DLike,
-  context: SceneContext,
   scene: Scene,
   time: number,
+  index: RenderIndex,
 ): DrawNode[] {
   const nodes: DrawNode[] = [];
   let order = 0;
+  // Who is talking, resolved once for the frame — §18.2 R4 replaced a whole clip-list
+  // walk *per actor* with one pass over the index's pre-resolved dialogue.
+  const speaking = speakingAt(index, time);
 
   for (const sceneProp of scene.props) {
-    const propDef = context.assets.props.find((p) => p.id === sceneProp.propId);
+    const propDef = index.props.get(sceneProp.propId);
     if (!propDef) continue;
 
-    const sampled = sampleTarget(scene, 'prop', sceneProp.id, time);
+    const sampled = sampleTarget(index, 'prop', sceneProp.id, time);
     if (!boolAt(sampled.visible, sceneProp.visible)) continue;
 
     const nodeOrder = order++;
@@ -229,15 +237,15 @@ function collectDrawNodes(
   }
 
   for (const actor of scene.actors) {
-    const character = context.assets.characters.find((c) => c.id === actor.characterId);
+    const character = index.characters.get(actor.characterId);
     if (!character) continue;
 
-    const sampled = sampleTarget(scene, 'actor', actor.id, time);
+    const sampled = sampleTarget(index, 'actor', actor.id, time);
     if (!boolAt(sampled.visible, actor.visible)) continue;
 
-    const pose = findPose(context, stringAt(sampled.poseId, actor.poseId));
-    const expression = findExpression(context, stringAt(sampled.expressionId, actor.expressionId));
-    const mouthScale = isActorTalking(scene, actor.id, time) ? talkPulseAt(time) : 1;
+    const pose = index.poses.get(stringAt(sampled.poseId, actor.poseId)) ?? null;
+    const expression = index.expressions.get(stringAt(sampled.expressionId, actor.expressionId)) ?? null;
+    const mouthScale = speaking.has(actor.id) ? talkPulseAt(time) : 1;
 
     const nodeOrder = order++;
     const z = actor.z;
@@ -276,11 +284,12 @@ function collectDrawNodes(
 function drawEnvironment(
   ctx: Canvas2DLike,
   environment: EnvironmentDef,
+  layers: EnvLayer[],
   cameraX: number,
   cameraY: number,
 ): void {
-  const layers = [...environment.layers].sort((a, b) => a.z - b.z);
-
+  // `layers` arrives pre-sorted by the render index (§18.3 R10): the per-frame
+  // `[...environment.layers].sort(...)` this replaces allocated and sorted every frame.
   for (const layer of layers) {
     // Parallax: a layer with parallax > 1 reads as further away and drifts less
     // under camera movement; < 1 drifts more. A zero parallax pins the layer.
@@ -418,14 +427,15 @@ function drawShapeAtPivot(
 
 function drawSubtitle(
   ctx: Canvas2DLike,
-  scene: Scene,
   time: number,
   width: number,
   height: number,
   style: SubtitleStyle,
+  index: RenderIndex,
 ): void {
-  const text = activeSubtitle(scene, time);
-  if (!text) return;
+  const entry = dialogueAt(index, time);
+  if (!entry) return;
+  const text = entry.line.subtitle ?? entry.line.text;
 
   const maxWidth = width * style.maxWidthRatio;
   const baseline = height - Math.round(height * 0.07);
@@ -538,30 +548,24 @@ function fillRoundRect(
 /* Sampling helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Every unmuted clip of a kind, regardless of time. */
-function clipsFor(scene: Scene, kind: TrackKind): Clip[] {
-  const clips: Clip[] = [];
-  for (const track of scene.tracks) {
-    if (track.kind !== kind || track.muted) continue;
-    clips.push(...track.clips);
-  }
-  return clips;
-}
-
 type SampledValue = string | number | boolean | undefined;
 type Sampled = Partial<Record<'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY' | 'alpha' | 'poseId' | 'expressionId' | 'visible' | 'flipX', SampledValue>>;
 
 /**
  * Keyframed values for one target at a time, merged across every active clip.
  * Later-started clips win, so sequential clips on one track compose naturally.
+ *
+ * The clips come from the render index's `(kind, targetId)` bucket, so this reads no
+ * tracks at all — the per-target track scan it replaces ran for every actor and prop,
+ * every frame (§18.2 R4).
  */
-function sampleTarget(scene: Scene, kind: 'actor' | 'prop', targetId: string, time: number): Sampled {
+function sampleTarget(index: RenderIndex, kind: 'actor' | 'prop', targetId: string, time: number): Sampled {
+  const clips = index.tracksByKindTarget.get(kind)?.get(targetId);
+  if (clips === undefined) return {};
+
   const active: Clip[] = [];
-  for (const track of scene.tracks) {
-    if (track.kind !== kind || track.targetId !== targetId || track.muted) continue;
-    for (const clip of track.clips) {
-      if (time >= clip.start && time < clip.start + clip.duration) active.push(clip);
-    }
+  for (const clip of clips) {
+    if (time >= clip.start && time < clip.start + clip.duration) active.push(clip);
   }
   if (active.length === 0) return {};
 
@@ -586,18 +590,6 @@ function stringAt(sampled: SampledValue, fallback: string): string {
   return typeof sampled === 'string' ? sampled : fallback;
 }
 
-// Delegates to the shared lookups rather than scanning `context.assets` inline. The
-// difference is not stylistic: `findPose` takes a resolved library, so there is no way for
-// the renderer to accidentally search the project's override collection in isolation and
-// report a series pose as missing.
-function findPose(context: SceneContext, id: string): PoseDef | null {
-  return lookupPose(context.assets, id) ?? null;
-}
-
-function findExpression(context: SceneContext, id: string): ExpressionDef | null {
-  return lookupExpression(context.assets, id) ?? null;
-}
-
 /** The subtitle text under the playhead, or null when nothing is being said. */
 export function activeSubtitle(scene: Scene, time: number): string | null {
   for (const { track, clip } of allClips(scene)) {
@@ -617,15 +609,4 @@ export function activeDialogue(scene: Scene, time: number): DialogueLine | null 
     return scene.dialogue.find((d) => d.id === clip.dialogueLineId) ?? null;
   }
   return null;
-}
-
-/** True when an actor has an unmuted dialogue line playing right now. */
-export function isActorTalking(scene: Scene, actorId: string, time: number): boolean {
-  for (const { track, clip } of allClips(scene)) {
-    if (track.kind !== 'dialogue' || track.muted || clip.dialogueLineId === null) continue;
-    if (time < clip.start || time >= clip.start + clip.duration) continue;
-    const line = scene.dialogue.find((d) => d.id === clip.dialogueLineId);
-    if (line?.actorId === actorId) return true;
-  }
-  return false;
 }
