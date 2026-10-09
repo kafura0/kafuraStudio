@@ -247,7 +247,7 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   already has a camera track reuses it. The camera panel now dispatches those four
   commands and dropped every mutating `cameraOps` import. 27 new command tests (77 total).
 
-Still to come, in order: P7b the Timeline panel; P8 the command-coverage lint rule;
+Still to come, in order: P8 the command-coverage lint rule;
 P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
 acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
 recorded rather than redefined.
