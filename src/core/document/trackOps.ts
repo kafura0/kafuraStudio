@@ -63,34 +63,56 @@ export function updateTrack(
   sceneId: Id,
   trackId: Id,
   patch: Partial<Omit<Track, 'id' | 'kind' | 'targetId'>>,
+  now?: () => string,
 ): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    tracks: scene.tracks.map((t) => (t.id === trackId ? { ...t, ...patch } : t)),
-  }));
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      tracks: scene.tracks.map((t) => (t.id === trackId ? { ...t, ...patch } : t)),
+    }),
+    now,
+  );
 }
 
-export function removeTrack(project: Project, sceneId: Id, trackId: Id): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    tracks: scene.tracks.filter((t) => t.id !== trackId),
-  }));
+export function removeTrack(project: Project, sceneId: Id, trackId: Id, now?: () => string): Project {
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      tracks: scene.tracks.filter((t) => t.id !== trackId),
+    }),
+    now,
+  );
 }
 
 /** Move a track to another position, keeping its order relative to the others. */
-export function moveTrack(project: Project, sceneId: Id, trackId: Id, toIndex: number): Project {
+export function moveTrack(
+  project: Project,
+  sceneId: Id,
+  trackId: Id,
+  toIndex: number,
+  now?: () => string,
+): Project {
   const from = mapSceneLookup(project, sceneId, (scene) =>
     scene.tracks.findIndex((t) => t.id === trackId),
   );
   if (from === undefined || from < 0) return project;
-  return mapScene(project, sceneId, (scene) => {
-    const tracks = [...scene.tracks];
-    const [track] = tracks.splice(from, 1);
-    if (!track) return scene;
-    const target = Math.max(0, Math.min(toIndex, tracks.length));
-    tracks.splice(target, 0, track);
-    return { ...scene, tracks };
-  });
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => {
+      const tracks = [...scene.tracks];
+      const [track] = tracks.splice(from, 1);
+      if (!track) return scene;
+      const target = Math.max(0, Math.min(toIndex, tracks.length));
+      tracks.splice(target, 0, track);
+      return { ...scene, tracks };
+    },
+    now,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -197,17 +219,28 @@ function mapSceneLookup<T>(project: Project, sceneId: Id, fn: (scene: Scene) => 
   return undefined;
 }
 
-export function removeClip(project: Project, sceneId: Id, trackId: Id, clipId: Id): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    // A track emptied of clips disappears with the clip, the same rule `removeDialogueLine`
-    // already follows: an empty lane is noise the user cannot act on anyway.
-    tracks: scene.tracks.flatMap((track) => {
-      if (track.id !== trackId) return [track];
-      const clips = track.clips.filter((c) => c.id !== clipId);
-      return clips.length > 0 ? [{ ...track, clips }] : [];
+export function removeClip(
+  project: Project,
+  sceneId: Id,
+  trackId: Id,
+  clipId: Id,
+  now?: () => string,
+): Project {
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      // A track emptied of clips disappears with the clip, the same rule `removeDialogueLine`
+      // already follows: an empty lane is noise the user cannot act on anyway.
+      tracks: scene.tracks.flatMap((track) => {
+        if (track.id !== trackId) return [track];
+        const clips = track.clips.filter((c) => c.id !== clipId);
+        return clips.length > 0 ? [{ ...track, clips }] : [];
+      }),
     }),
-  }));
+    now,
+  );
 }
 
 /** Move a clip onto another track of the same kind (e.g. dialogue -> dialogue). */
@@ -217,6 +250,7 @@ export function relocateClip(
   fromTrackId: Id,
   toTrackId: Id,
   clipId: Id,
+  now?: () => string,
 ): Project {
   if (fromTrackId === toTrackId) return project;
   const kinds = mapSceneLookup(project, sceneId, (scene) => {
@@ -228,28 +262,33 @@ export function relocateClip(
   // No-op and refusal branches keep the caller's object identity, so the drag that
   // landed nowhere does not burn an undo step.
   if (!kinds || kinds.fromKind !== kinds.toKind) return project;
-  return mapScene(project, sceneId, (scene) => {
-    const from = scene.tracks.find((t) => t.id === fromTrackId);
-    const to = scene.tracks.find((t) => t.id === toTrackId);
-    if (!from || !to) return scene;
-    const clip = from.clips.find((c) => c.id === clipId);
-    if (!clip) return scene;
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => {
+      const from = scene.tracks.find((t) => t.id === fromTrackId);
+      const to = scene.tracks.find((t) => t.id === toTrackId);
+      if (!from || !to) return scene;
+      const clip = from.clips.find((c) => c.id === clipId);
+      if (!clip) return scene;
 
-    const withoutClip = from.clips.filter((c) => c.id !== clipId);
-    return {
-      ...scene,
-      tracks: scene.tracks.flatMap((track) => {
-        if (track.id === fromTrackId) {
-          // Same rule as removeClip: a source emptied of clips disappears.
-          return withoutClip.length > 0 ? [{ ...track, clips: withoutClip }] : [];
-        }
-        if (track.id === toTrackId) {
-          return [{ ...track, clips: sortClips([...track.clips, clip]) }];
-        }
-        return [track];
-      }),
-    };
-  });
+      const withoutClip = from.clips.filter((c) => c.id !== clipId);
+      return {
+        ...scene,
+        tracks: scene.tracks.flatMap((track) => {
+          if (track.id === fromTrackId) {
+            // Same rule as removeClip: a source emptied of clips disappears.
+            return withoutClip.length > 0 ? [{ ...track, clips: withoutClip }] : [];
+          }
+          if (track.id === toTrackId) {
+            return [{ ...track, clips: sortClips([...track.clips, clip]) }];
+          }
+          return [track];
+        }),
+      };
+    },
+    now,
+  );
 }
 
 /** Move a clip in time, keeping its duration. Snaps to nearby clip edges. */
@@ -433,11 +472,19 @@ export function removeKeyframe(
   trackId: Id,
   clipId: Id,
   keyframeId: Id,
+  now?: () => string,
 ): Project {
-  return mapClip(project, sceneId, trackId, clipId, (clip) => ({
-    ...clip,
-    keyframes: clip.keyframes.filter((kf) => kf.id !== keyframeId),
-  }));
+  return mapClip(
+    project,
+    sceneId,
+    trackId,
+    clipId,
+    (clip) => ({
+      ...clip,
+      keyframes: clip.keyframes.filter((kf) => kf.id !== keyframeId),
+    }),
+    now,
+  );
 }
 
 export function moveKeyframe(
@@ -447,25 +494,49 @@ export function moveKeyframe(
   clipId: Id,
   keyframeId: Id,
   time: number,
+  now?: () => string,
 ): Project {
-  return mapClip(project, sceneId, trackId, clipId, (clip) => {
-    const clipEnd = clip.start + clip.duration;
-    const clamped = Math.max(clip.start, Math.min(quantizeToFrame(time), clipEnd));
-    return {
-      ...clip,
-      keyframes: sortKeyframes(
-        clip.keyframes.map((kf) => (kf.id === keyframeId ? { ...kf, time: clamped } : kf)),
-      ),
-    };
-  });
+  return mapClip(
+    project,
+    sceneId,
+    trackId,
+    clipId,
+    (clip) => {
+      const clipEnd = clip.start + clip.duration;
+      const clamped = Math.max(clip.start, Math.min(quantizeToFrame(time), clipEnd));
+      return {
+        ...clip,
+        keyframes: sortKeyframes(
+          clip.keyframes.map((kf) => (kf.id === keyframeId ? { ...kf, time: clamped } : kf)),
+        ),
+      };
+    },
+    now,
+  );
 }
 
 /** Drop keyframes that the clip's duration no longer covers. */
-export function pruneKeyframesToClip(project: Project, sceneId: Id, trackId: Id, clipId: Id): Project {
-  return mapClip(project, sceneId, trackId, clipId, (clip) => {
-    const end = clip.start + clip.duration;
-    return { ...clip, keyframes: clip.keyframes.filter((kf) => kf.time >= clip.start && kf.time <= end) };
-  });
+export function pruneKeyframesToClip(
+  project: Project,
+  sceneId: Id,
+  trackId: Id,
+  clipId: Id,
+  now?: () => string,
+): Project {
+  return mapClip(
+    project,
+    sceneId,
+    trackId,
+    clipId,
+    (clip) => {
+      const end = clip.start + clip.duration;
+      return {
+        ...clip,
+        keyframes: clip.keyframes.filter((kf) => kf.time >= clip.start && kf.time <= end),
+      };
+    },
+    now,
+  );
 }
 
 /* ------------------------------------------------------------------ */

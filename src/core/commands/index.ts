@@ -20,6 +20,17 @@ import './setSceneCamera';
 import './applyCameraPreset';
 import './clearCameraMoves';
 import './frameSelection';
+import "./addClip";
+import "./moveClip";
+import "./trimClip";
+import "./moveClipToTrack";
+import "./removeClip";
+import "./addKeyframe";
+import "./moveKeyframe";
+import "./removeKeyframe";
+import "./moveTrack";
+import "./removeTrack";
+import "./updateTrack";
 
 export * from './errors';
 export * from './registry';
