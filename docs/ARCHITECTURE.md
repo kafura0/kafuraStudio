@@ -104,6 +104,7 @@ carries `sceneId`, `dirty`, the project list, and session status):
 export interface HistoryEntry {
   label: string;
   project: Project;
+  provenance: Provenance;   // who caused the whole change (§8.6 / §14.3)
 }
 
 interface EditorState {
@@ -117,7 +118,9 @@ interface EditorState {
 ```
 
 A `HistoryEntry` is a whole project snapshot plus the label the UI shows in the undo
-menu — not a patch and not a diff.
+menu — not a patch and not a diff — plus the provenance of the change: `human` for an
+edit made in the editor, `ai` (with provider/model) for an applied AI plan, `system` or
+`import` for tool-generated changes.
 
 Every mutation is a pure function in `src/core/document/`:
 

@@ -16,7 +16,7 @@ import { historyLimitFor } from '../core/document/history';
 import { probeAudioDuration } from '../core/audio/probe.browser';
 import { createId } from '../core/id';
 import { clamp } from '../core/geometry';
-import type { Id, Project, SceneContext, SeriesDef } from '../core/types';
+import type { Id, Project, Provenance, SceneContext, SeriesDef } from '../core/types';
 import {
   createProject as newProject,
   createSeries as newSeries,
@@ -94,10 +94,16 @@ export type PlaybackMode = 'scene-wrap' | 'episode-advance';
  * undo, look, and undo again to find out. The label describes the action that moved
  * *away* from `project`, so `undo()` can report "Undid: Move actor" without the caller
  * having to remember what it did.
+ *
+ * `provenance` is Level 1 provenance (§14.3): who caused the whole change. A human edit
+ * in the editor is stamped `human`; an applied AI plan passes its own (`ai` +
+ * `provider`/`model`). Together the two fields are what lets the undo menu say
+ * "Undo: Add dialogue line (AI, claude-sonnet-4)" instead of "Undo".
  */
 export interface HistoryEntry {
   label: string;
   project: Project;
+  provenance: Provenance;
 }
 
 /**
@@ -221,8 +227,8 @@ export interface EditorState {
   exportTarget: () => { episodeId: Id | null; episodeTime: number };
   select: (kind: SelectionKind, id: Id | null) => void;
 
-  /* --- history --- */
-  commit: (next: Project, label?: string) => void;
+/* --- history --- */
+  commit: (next: Project, label?: string, provenance?: Provenance) => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -598,6 +604,17 @@ function describe(error: unknown): string {
   if (error instanceof ProjectParseError) return error.message;
   if (error instanceof Error && error.message !== '') return error.message;
   return 'Something went wrong. Your project has not been changed.';
+}
+
+/**
+ * The provenance an edit made in the editor is stamped with when none is supplied.
+ *
+ * Attached at the point of provenance assignment (§14.3): a plain edit is a `human`
+ * action, and only a caller that knows better — an applied AI plan, an import, a
+ * migration — passes its own. This is the whole of Level 1 provenance within Phase 16.
+ */
+function humanProvenance(): Provenance {
+  return { actor: 'human', at: new Date().toISOString() };
 }
 
 /**
@@ -1034,7 +1051,7 @@ previewAudio: async (audioId) => {
      * an event handler, and pushing an identical snapshot would make undo feel
      * broken (one Ctrl+Z appearing to do nothing).
      */
-    commit: (next, label) => {
+commit: (next, label, provenance) => {
       const state = get();
       if (next === state.project || state.project === null) return;
 
@@ -1059,12 +1076,13 @@ previewAudio: async (audioId) => {
         return;
       }
 
-// The label goes on the state being *left behind*, so undo can name the action it
-      // is reversing without the caller telling it again. The cap is adaptive (§22.4):
-      // the larger the document, the fewer snapshots survive.
-      const past = [...state.past, { label: label ?? 'Edit', project: state.project }].slice(
-        -historyLimitFor(state.project),
-      );
+// The label and provenance go on the state being *left behind*, so undo can name the
+      // action it is reversing without the caller telling it again. The cap is adaptive
+      // (§22.4): the larger the document, the fewer snapshots survive.
+      const past = [
+        ...state.past,
+        { label: label ?? 'Edit', provenance: provenance ?? humanProvenance(), project: state.project },
+      ].slice(-historyLimitFor(state.project));
       set({
         project: next,
         // Recomputed here rather than by whichever action changed the overrides. Project
@@ -1098,7 +1116,7 @@ past: state.past.slice(0, -1),
         // Redo replays the action named by the entry we just consumed. The cap matches
         // the adaptive limit for the document being undone from.
         future: [
-          { label: entry.label, project: state.project },
+          { label: entry.label, provenance: entry.provenance, project: state.project },
           ...state.future,
         ].slice(0, historyLimitFor(state.project)),
         dirty: true,
@@ -1121,7 +1139,7 @@ past: state.past.slice(0, -1),
         // end - so it was wrong rather than merely unused, and it would have corrupted
         // history the moment the model grew a way to overflow. Written correctly so the two
         // paths cannot drift apart.
-        past: [...state.past, { label: entry.label, project: state.project }].slice(
+        past: [...state.past, { label: entry.label, provenance: entry.provenance, project: state.project }].slice(
           -historyLimitFor(entry.project),
         ),
         future: rest,

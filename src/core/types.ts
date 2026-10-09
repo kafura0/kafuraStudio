@@ -621,3 +621,25 @@ export interface DialogueCue {
   clip: Clip;
   trackId: Id;
 }
+
+/* ------------------------------------------------------------------ */
+/* Provenance (§9.4)                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Who or what authored a value. `ai` is a role, not a product.
+ *
+ * Optional everywhere it appears; `provider` and `model` are optional strings with no
+ * union type and no validation against a known list, so a new provider appearing
+ * tomorrow requires no schema change. `at` is ISO 8601.
+ */
+export interface Provenance {
+  actor: 'human' | 'ai' | 'system' | 'import';
+  /** Absent for human edits. */
+  provider?: string;
+  /** Free-form; never parsed. */
+  model?: string;
+  at: string;
+  /** Free text: the user's note on their own edit, or the prompt summary. */
+  note?: string;
+}

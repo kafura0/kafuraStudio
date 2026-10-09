@@ -200,17 +200,29 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   `invalid-result` naming the document path, fold determinism, and a 200-command rollback.
   27 command tests.
 
-Still to come, in order: P5 history labels reaching the store; P6 the dialogue-panel
-migration end to end; P7 the remaining panels; P8 the command-coverage lint rule;
-P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
-acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
-recorded rather than redefined.
+- **P5 — provenance reaches history (§8.6).** The store's `HistoryEntry` gained a
+  `provenance` field; `commit(next, label?, provenance?)` stamps a `human` provenance
+  (with an ISO `at`) when none is supplied and records an explicit one verbatim — so an
+  applied AI plan lands in the undo stack as `{ label: 'Apply AI scene plan: "Overheard"',
+  provenance: { actor: 'ai', provider: 'anthropic', model: 'claude-sonnet-4', at: ... } }`.
+  Undo and redo carry the whole entry through, provenance included. `Provenance` itself
+  (actor `human | ai | system | import`, optional `provider`/`model`/`note`, §9.4) now
+  exists in `src/core/types.ts`; docs/ARCHITECTURE.md's long-documented `HistoryEntry`
+  is at last true in the source. Tests: human default stamped, explicit AI provenance
+  recorded verbatim, provenance rides undo/redo; 3 new store tests.
+
+Still to come, in order: P6 the dialogue-panel migration end to end; P7 the remaining
+panels; P8 the command-coverage lint rule; P9 end-of-batch validation armed with the
+200-command timing test. Phase 14's manual acceptance walk and Phase 15's §24.6
+600-frame perf run remain scheduled jointly, recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-800 tests green across 57 files, all four gates clean. This is the state on the last
-verification run (Phase 14 gate work); Phase 13's snapshot at its close was 746 across 51.
+897 tests green across 64 files, all four gates clean. This is the state on the last
+verification run (P1–P5 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
+its 5000 ms window under full-suite load on this machine and is verified separately,
+where it passes. Phase 13's snapshot at its close was 746 across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.

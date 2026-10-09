@@ -24,7 +24,7 @@ import { validateProject } from '../core/document/invariants';
 import { setSceneDuration } from '../core/document/projectOps';
 import { SEED_PROJECT } from '../data/seed';
 import { useEditor } from './editorStore';
-import type { Project, SeriesDef } from '../core/types';
+import type { Project, Provenance, SeriesDef } from '../core/types';
 import type { SeriesSummary } from '../core/persistence/repository';
 
 /**
@@ -516,5 +516,63 @@ describe('history labels', () => {
     // The label rides with the state being left behind, so undo can say what it reversed
     // without the caller repeating itself.
     expect(useEditor.getState().future[0]?.label).toBe('Set duration');
+  });
+});
+
+describe('history provenance (§8.6)', () => {
+  it('stamps a human provenance on an edit made in the editor', async () => {
+    seedStored(SEED_PROJECT);
+    await useEditor.getState().openProject(SEED_PROJECT.id);
+    const sceneId = openProject().scenes[0]?.id ?? '';
+
+    useEditor.getState().commit(setSceneDuration(openProject(), sceneId, 25), 'Set duration');
+
+    const entry = useEditor.getState().past[useEditor.getState().past.length - 1];
+    expect(entry?.provenance.actor).toBe('human');
+    expect(new Date(entry?.provenance.at ?? '').toISOString()).toBe(entry?.provenance.at);
+  });
+
+  it('records an explicit provenance as given — an applied AI plan is labelled AI', async () => {
+    seedStored(SEED_PROJECT);
+    await useEditor.getState().openProject(SEED_PROJECT.id);
+    const sceneId = openProject().scenes[0]?.id ?? '';
+
+    useEditor.getState().commit(
+      setSceneDuration(openProject(), sceneId, 25),
+      'Apply AI scene plan: "Overheard"',
+      { actor: 'ai', provider: 'anthropic', model: 'claude-sonnet-4', at: '2026-09-29T10:00:00.000Z' },
+    );
+
+    const entry = useEditor.getState().past[useEditor.getState().past.length - 1];
+    expect(entry?.label).toBe('Apply AI scene plan: "Overheard"');
+    expect(entry?.provenance).toEqual({
+      actor: 'ai',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4',
+      at: '2026-09-29T10:00:00.000Z',
+    });
+  });
+
+  it("rides through undo and redo with the entry it was stamped on", async () => {
+    seedStored(SEED_PROJECT);
+    await useEditor.getState().openProject(SEED_PROJECT.id);
+    const sceneId = openProject().scenes[0]?.id ?? '';
+
+    const provenance: Provenance = {
+      actor: 'system',
+      at: '2026-10-01T08:00:00.000Z',
+      note: 'restored from snapshot',
+    };
+    useEditor.getState().commit(setSceneDuration(openProject(), sceneId, 25), 'Restore snapshot', provenance);
+    useEditor.getState().undo();
+
+    // Undo moved the whole entry — provenance included — into future.
+    expect(useEditor.getState().future[0]?.provenance).toEqual(provenance);
+
+    useEditor.getState().redo();
+
+    // Redo puts it back into past, still intact.
+    const entry = useEditor.getState().past[useEditor.getState().past.length - 1];
+    expect(entry?.provenance).toEqual(provenance);
   });
 });
