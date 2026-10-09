@@ -7,6 +7,12 @@
  */
 import './createScene';
 import './setActorPose';
+import './addDialogueLine';
+import './setDialogueLine';
+import './deleteDialogueLine';
+import './setDialogueCue';
+import './setDialogueVoice';
+import './setClipGain';
 
 export * from './errors';
 export * from './registry';

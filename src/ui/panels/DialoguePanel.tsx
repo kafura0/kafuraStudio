@@ -9,9 +9,11 @@
  * Fields commit on blur, not per keystroke. One typed sentence committed per character
  * is sixty undo steps, and the first Ctrl+Z would remove a single letter.
  *
- * Timing goes through `setDialogueCue`, the same op the timeline drag lands on, so a
- * number typed here and a clip dragged there produce the same document. The panel never
- * touches a clip or a track directly; it names a line.
+ * Every mutation goes through a command (§7.2): the panel names what it wants ("add a
+ * line at the playhead", "re-time this line's cue") and the command resolves it, so the
+ * panel never touches a clip or a track directly — the UNDERLYING op is the one the
+ * timeline drag shares, and a number typed here and a clip dragged there produce the
+ * same document.
  *
  * The gain slider commits on release, for the same reason: a drag is one gesture, and a
  * gesture is one undo step.
@@ -27,14 +29,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { inputClass, round2, useDraftField } from '../draftFields';
 import { Field } from '../fields';
 import { useEditor, useOpenContext, useOpenProject } from '../../state/editorStore';
-import {
-  addDialogueLineWithCue,
-  removeDialogueLine,
-  setDialogueCue,
-  setDialogueVoice,
-  updateDialogueLine,
-} from '../../core/document/dialogueOps';
-import { setClipGain } from '../../core/document/trackOps';
 import { hasRecording } from '../../core/audio/recording';
 import type { AudioDef, Clip, DialogueLine, Id, Scene, Track } from '../../core/types';
 
@@ -52,7 +46,7 @@ export function DialoguePanel(): React.JSX.Element {
   const library = useOpenContext().assets;
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
-  const commit = useEditor((s) => s.commit);
+  const dispatch = useEditor((s) => s.dispatch);
   const select = useEditor((s) => s.select);
   const setPlayhead = useEditor((s) => s.setPlayhead);
 
@@ -91,34 +85,41 @@ export function DialoguePanel(): React.JSX.Element {
   // project-local. An empty dropdown here would look like a show with no expressions.
   const emotionNames = library.expressions.map((e) => e.name);
 
-  const patchLine = (patch: Partial<Omit<DialogueLine, 'id'>>, label: string): void => {
+  const dispatchLine = (patch: Partial<Omit<DialogueLine, 'id'>>, label: string): void => {
     if (!line) return;
-    const next = updateDialogueLine(project, scene.id, line.id, patch);
-    if (next !== project) commit(next, label);
+    dispatch({ kind: 'SetDialogueLine', sceneId: scene.id, lineId: line.id, patch, label });
   };
 
   const addLine = (): void => {
     // The new cue starts where the playhead is: a line added while watching a scene
     // belongs at the moment the user is looking at, not at frame zero.
     const start = Math.max(0, Math.min(useEditor.getState().playhead, scene.duration));
-    const added = addDialogueLineWithCue(project, scene.id, {
+    const result = dispatch({
+      kind: 'AddDialogueLine',
+      sceneId: scene.id,
       speaker: scene.actors[0]?.displayName ?? 'Speaker',
       text: '',
       actorId: scene.actors[0]?.id ?? null,
       start,
       duration: 2,
+      label: 'Add line',
     });
-    if (added.project === project) return;
-    commit(added.project, 'Add line');
-    select('line', added.lineId);
+    if (!result.ok) return;
+    // The new line is the last in the scene's list — add appends and nothing else moved.
+    const addedScene = result.project.scenes.find((s) => s.id === scene.id);
+    const added = addedScene?.dialogue[addedScene.dialogue.length - 1];
+    if (added) select('line', added.id);
   };
 
   const deleteLine = (): void => {
     if (!line) return;
-    const next = removeDialogueLine(project, scene.id, line.id);
-    if (next === project) return;
-    select(null, null);
-    commit(next, 'Delete line');
+    const result = dispatch({
+      kind: 'DeleteDialogueLine',
+      sceneId: scene.id,
+      lineId: line.id,
+      label: 'Delete line',
+    });
+    if (result.ok) select(null, null);
   };
 
   return (
@@ -149,20 +150,36 @@ export function DialoguePanel(): React.JSX.Element {
           cueCount={cues.length}
           voices={voices}
           emotionNames={emotionNames}
-          onPatch={patchLine}
+          onPatch={dispatchLine}
           onVoice={(audioId) => {
-            const next = setDialogueVoice(project, scene.id, line.id, audioId);
-            if (next !== project) commit(next, 'Set voice');
+            dispatch({
+              kind: 'SetDialogueVoice',
+              sceneId: scene.id,
+              lineId: line.id,
+              audioId,
+              label: 'Set voice',
+            });
           }}
           onCue={(patch) => {
             if (!cue) return;
-            const next = setDialogueCue(project, scene.id, line.id, patch);
-            if (next !== project) commit(next, 'Retime cue');
+            dispatch({
+              kind: 'SetDialogueCue',
+              sceneId: scene.id,
+              lineId: line.id,
+              cue: patch,
+              label: 'Retime cue',
+            });
           }}
           onGain={(gain) => {
             if (!cue) return;
-            const next = setClipGain(project, scene.id, cue.track.id, cue.clip.id, gain);
-            if (next !== project) commit(next, 'Set gain');
+            dispatch({
+              kind: 'SetClipGain',
+              sceneId: scene.id,
+              trackId: cue.track.id,
+              clipId: cue.clip.id,
+              gain,
+              label: 'Set gain',
+            });
           }}
           onGoToCue={() => {
             if (cue) setPlayhead(cue.clip.start);

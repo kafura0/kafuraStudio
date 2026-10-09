@@ -34,10 +34,17 @@ export function findOrCreateTrack(
   kind: TrackKind,
   targetId: Id,
   name: string,
+  options: { id?: Id } = {},
 ): { scene: Scene; track: Track; created: boolean } {
   const existing = scene.tracks.find((t) => t.kind === kind && t.targetId === targetId);
   if (existing) return { scene, track: existing, created: false };
-  const track = createTrack(kind, targetId, name, TRACK_COLORS[kind]);
+  const track = createTrack(
+    kind,
+    targetId,
+    name,
+    TRACK_COLORS[kind],
+    { ...(options.id !== undefined ? { id: options.id } : {}) },
+  );
   return { scene: { ...scene, tracks: [...scene.tracks, track] }, track, created: true };
 }
 
@@ -96,15 +103,21 @@ function mapClip(
   trackId: Id,
   clipId: Id,
   fn: (clip: Clip) => Clip,
+  now?: () => string,
 ): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    tracks: scene.tracks.map((track) =>
-      track.id !== trackId
-        ? track
-        : { ...track, clips: track.clips.map((clip) => (clip.id === clipId ? fn(clip) : clip)) },
-    ),
-  }));
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      tracks: scene.tracks.map((track) =>
+        track.id !== trackId
+          ? track
+          : { ...track, clips: track.clips.map((clip) => (clip.id === clipId ? fn(clip) : clip)) },
+      ),
+    }),
+    now,
+  );
 }
 
 export function addClip(
@@ -229,8 +242,12 @@ export function moveClip(
   clipId: Id,
   start: number,
   options: { snap?: boolean } = {},
+  now?: () => string,
 ): Project {
-  return mapScene(project, sceneId, (scene) => {
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => {
     const track = scene.tracks.find((t) => t.id === trackId);
     if (!track) return scene;
     const clip = track.clips.find((c) => c.id === clipId);
@@ -277,7 +294,9 @@ export function moveClip(
           : t,
       ),
     };
-  });
+    },
+    now,
+  );
 }
 
 /** Trim a clip from either edge. At least `MIN_CLIP_DURATION` must remain. */
@@ -290,6 +309,7 @@ export function trimClip(
   clipId: Id,
   edge: 'start' | 'end',
   time: number,
+  now?: () => string,
 ): Project {
   return mapClip(project, sceneId, trackId, clipId, (clip) => {
     if (edge === 'start') {
@@ -313,7 +333,7 @@ export function trimClip(
       // surprise someone later: it would come back the moment the clip is stretched.
       keyframes: clip.keyframes.filter((kf) => kf.time <= nextEnd),
     };
-  });
+  }, now);
 }
 
 export function setClipGain(
@@ -322,11 +342,19 @@ export function setClipGain(
   trackId: Id,
   clipId: Id,
   gain: number,
+  now?: () => string,
 ): Project {
-  return mapClip(project, sceneId, trackId, clipId, (clip) => ({
-    ...clip,
-    gain: Math.max(0, Math.min(2, gain)),
-  }));
+  return mapClip(
+    project,
+    sceneId,
+    trackId,
+    clipId,
+    (clip) => ({
+      ...clip,
+      gain: Math.max(0, Math.min(2, gain)),
+    }),
+    now,
+  );
 }
 
 /* ------------------------------------------------------------------ */

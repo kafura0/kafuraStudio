@@ -15,6 +15,8 @@ import { AUTOSAVE_DEBOUNCE_MS } from '../core/constants';
 import { historyLimitFor } from '../core/document/history';
 import { probeAudioDuration } from '../core/audio/probe.browser';
 import { createId } from '../core/id';
+import { applyCommand, commandError } from '../core/commands';
+import type { Command, CommandResult } from '../core/commands';
 import { clamp } from '../core/geometry';
 import type { Id, Project, Provenance, SceneContext, SeriesDef } from '../core/types';
 import {
@@ -229,6 +231,18 @@ export interface EditorState {
 
 /* --- history --- */
   commit: (next: Project, label?: string, provenance?: Provenance) => void;
+  /**
+   * Apply one command from the vocabulary (ARCHITECTURE_SPEC.md §7.3, Phase 16 P6).
+   *
+   * The UI's single mutation seam: the store builds the context (the merged library,
+   * the series, a real allocator and a real clock), the command validates its own
+   * arguments and folds to a new document through `applyCommand`, and a success is
+   * committed under the command's label — so "Undo: Add line" appears, not "Undo:
+   * Edit". A failure is not committed; it surfaces as an error status and the document
+   * is untouched. Returns the command result so a caller can read a just-created
+   * document (e.g. the id of a freshly added line) without a second lookup.
+   */
+  dispatch: <C extends Command>(command: C) => CommandResult;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -1096,10 +1110,39 @@ commit: (next, label, provenance) => {
         future: [],
         dirty: true,
       });
-      // After the state is applied, never before. The autosave leads its burst by writing
+// After the state is applied, never before. The autosave leads its burst by writing
       // synchronously inside this call, so scheduling ahead of `set` would hand the write
       // the document being replaced and drop the edit.
       autosave.schedule();
+    },
+
+    dispatch: (command) => {
+      const state = get();
+      if (state.project === null || state.context === null) {
+        return {
+          ok: false,
+          error: commandError('internal', 'No project is open, so nothing can be applied.'),
+        };
+      }
+      const result = applyCommand(command, {
+        project: state.project,
+        assets: state.context.assets,
+        series: state.series,
+        allocate: createId,
+        now: () => new Date().toISOString(),
+      });
+      if (result.ok) {
+        // The command's label lands in history under the exact wording the UI chose
+        // ("Add line", "Edit speaker") — provenance is a human gesture, like any other
+        // commit from the editor (§8.6, §14.3).
+        get().commit(result.project, command.label);
+      } else {
+        set({
+          status: 'error',
+          statusMessage: `That edit could not be applied: ${result.error.message}`,
+        });
+      }
+      return result;
     },
 
     undo: () => {

@@ -211,16 +211,33 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   is at last true in the source. Tests: human default stamped, explicit AI provenance
   recorded verbatim, provenance rides undo/redo; 3 new store tests.
 
-Still to come, in order: P6 the dialogue-panel migration end to end; P7 the remaining
-panels; P8 the command-coverage lint rule; P9 end-of-batch validation armed with the
-200-command timing test. Phase 14's manual acceptance walk and Phase 15's §24.6
-600-frame perf run remain scheduled jointly, recorded rather than redefined.
+- **P6 — the dialogue panel rides the command seam end to end.** The store exposes a
+  generic `dispatch(command)` that runs a command through `applyCommand`, drives the
+  result through the one `commit()` path (undoable, labelled by the command's label),
+  and routes failures to the status line instead of silently maintaining a bad document.
+  The dialogue panel is the first fully-migrated surface: `AddDialogueLine` allocates
+  line/clip/track ids against the injected allocator in a fixed order, `SetDialogueLine`
+  and `SetDialogueCue` are no-ops (returning the original project by identity) when they
+  would not change anything, `SetClipGain` clamps its gain, and `SetDialogueVoice`
+  accepts `null` to clear a voice. The underlying ops now take injected `id`s where they
+  mint them (`createDialogueLine`, `createClip`, `createTrack`,
+  `findOrCreateTrack`, `addDialogueLineWithCue`) and thread `now` through
+  `moveClip`/`trimClip`/`setClipGain`/`updateDialogueLine`/`removeDialogueLine`/
+  `setDialogueCue`/`setDialogueVoice` — determinism requires it, and it is tested by
+  folding each command twice with independent counting allocators and a fixed clock.
+  Panel tests now route through the real store, exercising `dispatch` + `commit`.
+  24 new command tests (50 total) and 4 store tests.
+
+Still to come, in order: P7 the remaining panels; P8 the command-coverage lint rule;
+P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
+acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
+recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-897 tests green across 64 files, all four gates clean. This is the state on the last
-verification run (P1–P5 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
+925 tests green across 64 files, all four gates clean. This is the state on the last
+verification run (P6 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
 its 5000 ms window under full-suite load on this machine and is verified separately,
 where it passes. Phase 13's snapshot at its close was 746 across 51.
 

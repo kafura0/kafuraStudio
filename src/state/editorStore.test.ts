@@ -1033,7 +1033,103 @@ describe('episodeExportTarget', () => {
       return total + scene.duration;
     }, 0);
 
-    const target = episodeExportTarget(SEED_PROJECT, 'episode-advance', SECOND.id, 9999);
+const target = episodeExportTarget(SEED_PROJECT, 'episode-advance', SECOND.id, 9999);
     expect(target.episodeTime).toBeCloseTo(expected, 6);
+  });
+});
+
+describe('editorStore dispatch — the command seam (Phase 16 P6)', () => {
+  beforeEach(reset);
+
+  function firstSceneId(): string {
+    const first = SEED_PROJECT.scenes[0];
+    if (!first) throw new Error('Seed project has no scenes');
+    return first.id;
+  }
+
+  function firstActorId(): string {
+    const first = SEED_PROJECT.scenes[0];
+    const actorId = first?.actors[0]?.id;
+    if (!actorId) throw new Error('First scene has no actors');
+    return actorId;
+  }
+
+  it('applies a command, commits the result under the command label, one step in history', () => {
+    const sceneId = firstSceneId();
+    const result = useEditor.getState().dispatch({
+      kind: 'AddDialogueLine',
+      sceneId,
+      speaker: 'Kito',
+      text: 'Commanded line',
+      actorId: firstActorId(),
+      start: 0,
+      duration: 2,
+      label: 'Add line',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const scene = result.project.scenes.find((s) => s.id === sceneId);
+    const added = scene?.dialogue.find((l) => l.text === 'Commanded line');
+    expect(added).toBeDefined();
+    expect(currentProject()).toBe(result.project);
+    expect(useEditor.getState().past).toHaveLength(1);
+    expect(useEditor.getState().past[0]?.label).toBe('Add line');
+    // The dispatch is a human gesture, like any other edit from the panel (§8.6).
+    expect(useEditor.getState().past[0]?.provenance.actor).toBe('human');
+  });
+
+  it('does not record a failed command; the error reaches the status line', () => {
+    const sceneId = firstSceneId();
+    const result = useEditor.getState().dispatch({
+      kind: 'AddDialogueLine',
+      sceneId,
+      speaker: 'Kito',
+      text: '',
+      actorId: 'no-such-actor',
+      start: 0,
+      duration: 2,
+    });
+    expect(result.ok).toBe(false);
+    expect(useEditor.getState().past).toHaveLength(0);
+    expect(useEditor.getState().status).toBe('error');
+    expect(useEditor.getState().statusMessage).toContain('actor');
+  });
+
+  it('undoes the dispatched edit like any other, and redo restores it', () => {
+    const sceneId = firstSceneId();
+    const before = currentProject();
+    const result = useEditor.getState().dispatch({
+      kind: 'AddDialogueLine',
+      sceneId,
+      speaker: 'Kito',
+      text: 'Undo me',
+      actorId: firstActorId(),
+      start: 0,
+      duration: 2,
+      label: 'Add line',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    useEditor.getState().undo();
+    expect(currentProject().scenes.find((s) => s.id === sceneId)?.dialogue.some((l) => l.text === 'Undo me')).toBe(false);
+    useEditor.getState().redo();
+    expect(currentProject().scenes.find((s) => s.id === sceneId)?.dialogue.some((l) => l.text === 'Undo me')).toBe(true);
+    expect(currentProject()).not.toBe(before);
+  });
+
+  it('refuses with an internal error when nothing is open', () => {
+    useEditor.setState({ project: null, series: null, context: null });
+    const result = useEditor.getState().dispatch({
+      kind: 'AddDialogueLine',
+      sceneId: 'none',
+      speaker: 'Kito',
+      text: '',
+      start: 0,
+      duration: 2,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('internal');
   });
 });

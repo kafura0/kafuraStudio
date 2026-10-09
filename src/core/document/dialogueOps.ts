@@ -6,9 +6,8 @@
  * line, and there is no second copy of the timing to fall out of sync.
  */
 
-import { createId, ID_PREFIX } from '../id';
 import type { AudioDef, Clip, DialogueLine, Id, Project, Scene } from '../types';
-import { createDialogueLine } from './factories';
+import { createClip, createDialogueLine } from './factories';
 import { mapScene } from './projectOps';
 import {
   MIN_CLIP_DURATION,
@@ -44,38 +43,56 @@ export function addDialogueLineWithCue(
     duration: number;
     trackName?: string;
   },
+  options: { lineId?: Id; clipId?: Id; trackId?: Id; clock?: () => string } = {},
 ): { project: Project; lineId: Id; clipId: Id } {
+  // Ids and the timestamp travel in from outside when a command fold is running
+  // (§8.3): the injected allocator and clock, not crypto, decide the shape of the
+  // result. Without the options the op keeps its old behaviour for direct callers.
   const line: DialogueLine = {
-    ...createDialogueLine(input.speaker, input.text, input.actorId ?? null),
+    ...createDialogueLine(
+      input.speaker,
+      input.text,
+      input.actorId ?? null,
+      { ...(options.lineId !== undefined ? { id: options.lineId } : {}) },
+    ),
     emotion: input.emotion ?? 'neutral',
     voiceAudioId: input.voiceAudioId ?? null,
     subtitle: input.subtitle ?? null,
   };
 
   const clip: Clip = {
-    id: createId(ID_PREFIX.clip),
-    start: input.start,
-    duration: input.duration,
-    keyframes: [],
-    audioId: input.voiceAudioId ?? null,
-    dialogueLineId: line.id,
-    gain: 1,
+    ...createClip(input.start, input.duration, {
+      audioId: input.voiceAudioId ?? null,
+      dialogueLineId: line.id,
+      ...(options.clipId !== undefined ? { id: options.clipId } : {}),
+    }),
   };
 
-  const next = mapScene(project, sceneId, (scene) => {
-    const withLine: Scene = { ...scene, dialogue: [...scene.dialogue, line] };
-    const trackName = input.trackName ?? `Dialogue — ${input.speaker}`;
-    const { scene: withTrack, track } = findOrCreateTrack(withLine, 'dialogue', line.id, trackName);
-    // Append to the track that was just resolved, and to no other. Each line owns a
-    // track keyed by its own id, so broadcasting the clip put every line's cue on
-    // every other line's track and the scene rendered each subtitle once per track.
-    return {
-      ...withTrack,
-      tracks: withTrack.tracks.map((t) =>
-        t.id === track.id ? { ...t, clips: sortClips([...t.clips, clip]) } : t,
-      ),
-    };
-  });
+  const next = mapScene(
+    project,
+    sceneId,
+    (scene) => {
+      const withLine: Scene = { ...scene, dialogue: [...scene.dialogue, line] };
+      const trackName = input.trackName ?? `Dialogue — ${input.speaker}`;
+      const { scene: withTrack, track } = findOrCreateTrack(
+        withLine,
+        'dialogue',
+        line.id,
+        trackName,
+        { ...(options.trackId !== undefined ? { id: options.trackId } : {}) },
+      );
+      // Append to the track that was just resolved, and to no other. Each line owns a
+      // track keyed by its own id, so broadcasting the clip put every line's cue on
+      // every other line's track and the scene rendered each subtitle once per track.
+      return {
+        ...withTrack,
+        tracks: withTrack.tracks.map((t) =>
+          t.id === track.id ? { ...t, clips: sortClips([...t.clips, clip]) } : t,
+        ),
+      };
+    },
+    options.clock,
+  );
 
   return { project: next, lineId: line.id, clipId: clip.id };
 }
@@ -85,11 +102,17 @@ export function updateDialogueLine(
   sceneId: Id,
   lineId: Id,
   patch: Partial<Omit<DialogueLine, 'id'>>,
+  now?: () => string,
 ): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    dialogue: scene.dialogue.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
-  }));
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      dialogue: scene.dialogue.map((line) => (line.id === lineId ? { ...line, ...patch } : line)),
+    }),
+    now,
+  );
 }
 
 /**
@@ -99,21 +122,31 @@ export function updateDialogueLine(
  * dialogue track per line. Cleaning only the first dialogue track would orphan the
  * clip and leave an empty track behind, which `validateProject` reports as an error.
  */
-export function removeDialogueLine(project: Project, sceneId: Id, lineId: Id): Project {
-  return mapScene(project, sceneId, (scene) => {
-    const remaining = scene.dialogue.filter((line) => line.id !== lineId);
-    const withoutLine: Scene = { ...scene, dialogue: remaining };
+export function removeDialogueLine(
+  project: Project,
+  sceneId: Id,
+  lineId: Id,
+  now?: () => string,
+): Project {
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => {
+      const remaining = scene.dialogue.filter((line) => line.id !== lineId);
+      const withoutLine: Scene = { ...scene, dialogue: remaining };
 
-    const tracks = withoutLine.tracks
-      .map((track) =>
-        track.kind === 'dialogue'
-          ? { ...track, clips: track.clips.filter((c) => c.dialogueLineId !== lineId) }
-          : track,
-      )
-      .filter((track) => !(track.kind === 'dialogue' && track.clips.length === 0));
+      const tracks = withoutLine.tracks
+        .map((track) =>
+          track.kind === 'dialogue'
+            ? { ...track, clips: track.clips.filter((c) => c.dialogueLineId !== lineId) }
+            : track,
+        )
+        .filter((track) => !(track.kind === 'dialogue' && track.clips.length === 0));
 
-    return { ...withoutLine, tracks };
-  });
+      return { ...withoutLine, tracks };
+    },
+    now,
+  );
 }
 
 /**
@@ -137,6 +170,7 @@ export function setDialogueCue(
   sceneId: Id,
   lineId: Id,
   cue: { start?: number; duration?: number },
+  now?: () => string,
 ): Project {
   const scene = project.scenes.find((s) => s.id === sceneId);
   if (!scene) return project;
@@ -158,10 +192,10 @@ export function setDialogueCue(
 
   let next = project;
   if (Math.abs(start - clip.start) > 1e-6) {
-    next = moveClip(next, sceneId, trackId, clip.id, start, { snap: false });
+    next = moveClip(next, sceneId, trackId, clip.id, start, { snap: false }, now);
   }
   if (Math.abs(duration - clip.duration) > 1e-6) {
-    next = trimClip(next, sceneId, trackId, clip.id, 'end', start + duration);
+    next = trimClip(next, sceneId, trackId, clip.id, 'end', start + duration, now);
   }
   return next;
 }
@@ -172,21 +206,27 @@ export function setDialogueVoice(
   sceneId: Id,
   lineId: Id,
   audioId: Id | null,
+  now?: () => string,
 ): Project {
-  let result = updateDialogueLine(project, sceneId, lineId, { voiceAudioId: audioId });
-  result = mapScene(result, sceneId, (scene) => ({
-    ...scene,
-    tracks: scene.tracks.map((track) =>
-      track.kind !== 'dialogue'
-        ? track
-        : {
-            ...track,
-            clips: track.clips.map((clip) =>
-              clip.dialogueLineId === lineId ? { ...clip, audioId } : clip,
-            ),
-          },
-    ),
-  }));
+  let result = updateDialogueLine(project, sceneId, lineId, { voiceAudioId: audioId }, now);
+  result = mapScene(
+    result,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      tracks: scene.tracks.map((track) =>
+        track.kind !== 'dialogue'
+          ? track
+          : {
+              ...track,
+              clips: track.clips.map((clip) =>
+                clip.dialogueLineId === lineId ? { ...clip, audioId } : clip,
+              ),
+            },
+      ),
+    }),
+    now,
+  );
   return result;
 }
 

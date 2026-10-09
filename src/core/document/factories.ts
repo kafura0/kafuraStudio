@@ -243,9 +243,18 @@ export function createSceneProp(propId: string, transformOverrides: Partial<Scen
   };
 }
 
-export function createTrack(kind: TrackKind, targetId: string, name: string, color: string): Track {
+export function createTrack(
+  kind: TrackKind,
+  targetId: string,
+  name: string,
+  color: string,
+  options: { id?: Id } = {},
+): Track {
   return {
-    id: createId(ID_PREFIX.track),
+    // Injection mirrors `createScene`: a command fold hands ids in, never lets crypto
+    // run (§8.3). `addDialogueLineWithCue` needs this so the dialogue track its clip
+    // sits on is deterministic under a fixed allocator.
+    id: options.id ?? createId(ID_PREFIX.track),
     kind,
     targetId,
     name,
@@ -259,10 +268,10 @@ export function createTrack(kind: TrackKind, targetId: string, name: string, col
 export function createClip(
   start: number,
   duration: number,
-  extras: { audioId?: string | null; dialogueLineId?: string | null; gain?: number } = {},
+  extras: { audioId?: string | null; dialogueLineId?: string | null; gain?: number; id?: Id } = {},
 ): Clip {
   return {
-    id: createId(ID_PREFIX.clip),
+    id: extras.id ?? createId(ID_PREFIX.clip),
     start,
     duration,
     keyframes: [],
@@ -281,9 +290,16 @@ export function createKeyframe(time: number, props: KeyframeTarget, ease: EaseTy
   };
 }
 
-export function createDialogueLine(speaker: string, text: string, actorId: string | null = null): DialogueLine {
+export function createDialogueLine(
+  speaker: string,
+  text: string,
+  actorId: string | null = null,
+  options: { id?: Id } = {},
+): DialogueLine {
   return {
-    id: createId(ID_PREFIX.dialogue),
+    // Injection mirrors `createTrack`/`createScene`: ids come from the caller when a
+    // command fold is running, never from crypto (§8.3).
+    id: options.id ?? createId(ID_PREFIX.dialogue),
     speaker,
     actorId,
     text,
