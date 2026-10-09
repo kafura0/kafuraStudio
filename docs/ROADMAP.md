@@ -184,13 +184,27 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   determinism test folds `[CreateScene, SetActorPose]` twice with independent
   counting allocators and a fixed clock and asserts the documents are deeply identical,
   that a different allocator changes only the allocated ids, and that a different clock
-  changes only the timestamp. 18 command tests now.
+  changes only the timestamp (now `command.test`, updated through `createSceneInProject`
+  threading). 18 command tests then.
 
-Still to come, in order: P4 `applyCommands` batch semantics plus rollback; P5 history
-labels reaching the store; P6 the dialogue-panel migration end to end; P7 the remaining
-panels; P8 the command-coverage lint rule; P9 end-of-batch validation armed with the
-200-command timing test. Phase 14's manual acceptance walk and Phase 15's §24.6
-600-frame perf run remain scheduled jointly, recorded rather than redefined.
+- **P4 — `applyCommands`: the batch fold with once-at-end validation (§8.3, §22.3).**
+  `applyCommands(commands, ctx)` folds a whole batch through the handlers and validates
+  exactly once, against the final document — the property P9's plan transaction name,
+  and the reason a 200-command plan costs the validator one pass. Per-command failures
+  are addressed `commands[i].Kind[.path]` via `batchPath` and return the *original*
+  project (the folded intermediates are unreachable, so rollback is structural, not a
+  step-back routine). `runHandler` is the shared half both `applyCommand` (validates, §22.3)
+  and `applyCommands` (validates once) build their differing ownership models on; both keep
+  the promise that a failing command returns the document untouched. Tests: in-order fold,
+  original-return on middle failure, error-path marker, empty-batch identity, end-of-batch
+  `invalid-result` naming the document path, fold determinism, and a 200-command rollback.
+  27 command tests.
+
+Still to come, in order: P5 history labels reaching the store; P6 the dialogue-panel
+migration end to end; P7 the remaining panels; P8 the command-coverage lint rule;
+P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
+acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
+recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:

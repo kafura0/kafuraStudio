@@ -8,7 +8,7 @@ import { createEpisode, createActor, createProject, createScene } from '../docum
 import { validateProject } from '../document/invariants';
 import type { Project } from '../types';
 import type { Command, CommandContext, CommandResult } from './types';
-import { applyCommand, defineCommand } from './index';
+import { applyCommand, applyCommands, defineCommand } from './index';
 
 const POSE_A = { id: 'pose-a', name: 'A', description: '', tags: [], slots: {} };
 const POSE_B = { id: 'pose-b', name: 'B', description: '', tags: [], slots: {} };
@@ -280,6 +280,120 @@ describe('CreateScene — the first allocating command', () => {
     const before = JSON.stringify(project);
     applyCommand({ kind: 'CreateScene', name: 'Void', environmentId: 'env.nope' }, ctxFor(project));
     expect(JSON.stringify(project)).toBe(before);
+  });
+});
+
+describe('applyCommands — the batch fold (§8.3)', () => {
+  it('applies every command in order and returns the folded document', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const commands = [
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      { kind: 'SetActorPose', sceneId, actorId, poseId: POSE_B.id },
+    ] as const;
+    const result = applyCommands(commands, ctxFor(project, { allocate: countingAllocator() }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.project.scenes.some((s) => s.name === 'Lobby')).toBe(true);
+    expect(result.project.scenes.some((s) => s.id === 'scene_seed0')).toBe(true);
+    expect(actorOf(result.project, actorId)?.poseId).toBe(POSE_B.id);
+  });
+
+  it('returns the ORIGINAL project when a middle command fails — nothing is applied', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const before = JSON.stringify(project);
+    const commands = [
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      { kind: 'SetActorPose', sceneId, actorId, poseId: 'not-a-pose' },
+    ] as const;
+    const result = applyCommands(commands, ctxFor(project, { allocate: countingAllocator() }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+    expect(result.error.path).toBe('commands[1].SetActorPose');
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it('marks the failing command, not the batch conclusion, in the error path', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const commands = [
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      { kind: 'SetActorPose', sceneId, actorId, poseId: 'not-a-pose' },
+    ] as const;
+    const result = applyCommands(commands, ctxFor(project, { allocate: countingAllocator() }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.path).toBe('commands[1].SetActorPose');
+  });
+
+  it('an empty batch is an identity fold', () => {
+    const { project } = makeProject();
+    const result = applyCommands([], ctxFor(project));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.project).toBe(project);
+  });
+
+  it('validates the folded document exactly once at the end (invalid-result, §22.3)', () => {
+    const { project } = makeProject();
+    // test.BreakDocument produces an invalid document. In a single command that failure
+    // surfaces from applyCommand's own validation; in a batch it must surface from the
+    // single end-of-batch pass, naming the document path rather than a command index.
+    const result = applyCommands([{ kind: 'test.BreakDocument' }], ctxFor(project));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid-result');
+    expect(result.error.path).toMatch(/^episodes/);
+    expect(JSON.stringify(project)).toBe(JSON.stringify(project));
+  });
+
+  it('is deterministic under a fixed allocator and clock — previews can be exact', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const commands = [
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      { kind: 'SetActorPose', sceneId, actorId, poseId: POSE_B.id },
+    ] as const;
+    const base = { project, series: null as null, now: () => '2026-01-01T00:00:00.000Z' };
+    const a = applyCommands(commands, { ...base, allocate: countingAllocator() });
+    const b = applyCommands(commands, { ...base, allocate: countingAllocator() });
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.project).toEqual(b.project);
+    expect(a.project.scenes.some((s) => s.id === 'scene_seed0')).toBe(true);
+  });
+
+  it('a long fold rolls back completely on a mid-sequence failure (§8.3)', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const manyScenes = Array.from({ length: 199 }, (_, n) => ({
+      kind: 'CreateScene',
+      name: `Lobby ${n}`,
+      environmentId: ENV.id,
+    }));
+    const commands = [...manyScenes, { kind: 'SetActorPose', sceneId, actorId, poseId: 'not-a-pose' }];
+    const before = JSON.stringify(project);
+    const result = applyCommands(commands, ctxFor(project, { allocate: countingAllocator() }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+    expect(result.error.path).toBe('commands[199].SetActorPose');
+    expect(JSON.stringify(project)).toBe(before);
+  });
+
+  it('a batch that yields an invalid document returns a failure, not the fold (§22.3)', () => {
+    const { project } = makeProject();
+    const commands = [
+      {
+        kind: 'SetActorPose',
+        sceneId: project.scenes[0]?.id ?? 'missing-scene',
+        actorId: project.scenes[0]?.actors[0]?.id ?? 'missing-actor',
+        poseId: POSE_B.id,
+      },
+      { kind: 'test.BreakDocument' },
+    ] as const;
+    const result = applyCommands(commands, ctxFor(project));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid-result');
+    expect(JSON.stringify(project)).toBe(JSON.stringify(ctxFor(project).project));
   });
 });
 
