@@ -1,6 +1,7 @@
 /**
- * Command layer surface (Phase 16 P2): dispatch, argument validation, the §22.3
- * post-validation on the single command, and the immutable-on-failure promise.
+ * Command layer surface (Phase 16 P2 + P3): dispatch, argument validation, the §22.3
+ * post-validation on the single command, the immutable-on-failure promise, and the
+ * fold determinism that the injected `allocate`/`now` buy (§7.4).
  */
 import { describe, expect, it } from 'vitest';
 import { createEpisode, createActor, createProject, createScene } from '../document/factories';
@@ -70,6 +71,23 @@ function ctxFor(project: Project, patches: Partial<CommandContext> = {}): Comman
 
 function actorOf(project: Project, actorId: string) {
   return project.scenes[0]?.actors.find((a) => a.id === actorId);
+}
+
+/** A deterministic id allocator: separate calls (same seed) produce the same sequence. */
+function countingAllocator(startAt = 0): (prefix: string) => string {
+  let i = startAt;
+  return (prefix) => `${prefix}_seed${i++}`;
+}
+
+/** Fold a command sequence with `applyCommand`, as the plan layer will (§8.3). */
+function fold(commands: readonly Command[], ctx: CommandContext): { project: Project; errors: string[] } {
+  let project = ctx.project;
+  for (const command of commands) {
+    const result = applyCommand(command, { ...ctx, project });
+    if (!result.ok) return { project: ctx.project, errors: [result.error.message] };
+    project = result.project;
+  }
+  return { project, errors: [] };
 }
 
 // Throwaway kinds exercised only by the tests below. Registered once per file — the
@@ -209,5 +227,106 @@ describe('defineCommand', () => {
     expect(() => defineCommand<Command>('test.Throws', () => ({ ok: false, error: { code: 'internal', message: 'x' } }))).toThrow(
       /already registered/,
     );
+  });
+});
+
+describe('CreateScene — the first allocating command', () => {
+  it('asks the allocator for the scene id and the clock for the timestamp', () => {
+    const { project } = makeProject();
+    const result = applyCommand(
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id, duration: 6 },
+      ctxFor(project, { allocate: countingAllocator(), now: () => '2026-05-01T00:00:00.000Z' }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const scene = result.project.scenes.find((s) => s.id === 'scene_seed0');
+    expect(scene).toBeDefined();
+    if (!scene) return;
+    expect(scene.name).toBe('Lobby');
+    expect(scene.environmentId).toBe(ENV.id);
+    expect(scene.duration).toBe(6);
+    expect(result.project.updatedAt).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('rejects an environment that is in neither the project library nor ctx.assets', () => {
+    const { project } = makeProject();
+    const result = applyCommand({ kind: 'CreateScene', name: 'Void', environmentId: 'env.nope' }, ctxFor(project));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+  });
+
+  it('treats ctx.assets as the authority for the environment, not the project alone', () => {
+    const { project } = makeProject();
+    // The project owns env-1, but a series-owned merged view might not expose it.
+    const merged = { ...project.assets, environments: [] };
+    const rejected = applyCommand(
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      ctxFor(project, { assets: merged }),
+    );
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) return;
+    expect(rejected.error.code).toBe('not-found');
+
+    const accepted = applyCommand(
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      ctxFor(project, { assets: { ...merged, environments: [ENV] } }),
+    );
+    expect(accepted.ok).toBe(true);
+  });
+
+  it('leaves the document unchanged when it fails', () => {
+    const { project } = makeProject();
+    const before = JSON.stringify(project);
+    applyCommand({ kind: 'CreateScene', name: 'Void', environmentId: 'env.nope' }, ctxFor(project));
+    expect(JSON.stringify(project)).toBe(before);
+  });
+});
+
+describe('fold determinism — injected allocate/now (§7.4, §8.3)', () => {
+  const stableClock = () => '2026-01-01T00:00:00.000Z';
+
+  const sequence = (sceneId: string, actorId: string) =>
+    [
+      { kind: 'CreateScene', name: 'Lobby', environmentId: ENV.id },
+      { kind: 'SetActorPose', sceneId, actorId, poseId: POSE_B.id },
+    ] as const;
+
+  it('two folds with the same allocator and clock produce identical documents', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const ctx = {
+      project,
+      series: null,
+      allocate: countingAllocator(),
+      now: stableClock,
+    };
+    const a = fold(sequence(sceneId, actorId), ctx);
+    const b = fold(sequence(sceneId, actorId), { ...ctx, allocate: countingAllocator() });
+    expect(a).toEqual(b);
+    expect(a.errors).toHaveLength(0);
+    expect(b.errors).toHaveLength(0);
+    // And the allocated id really came from the injected allocator.
+    expect(a.project.scenes.some((s) => s.id === 'scene_seed0')).toBe(true);
+  });
+
+  it('a different allocator produces a different document', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const ctx = { project, series: null, allocate: countingAllocator(100), now: stableClock };
+    const result = fold(sequence(sceneId, actorId), ctx);
+    expect(result.errors).toHaveLength(0);
+    expect(result.project.scenes.some((s) => s.id === 'scene_seed100')).toBe(true);
+    expect(result.project.scenes.some((s) => s.id === 'scene_seed0')).toBe(false);
+  });
+
+  it('a different clock produces a different timestamp but the same shape', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const base = { project, series: null as null, now: stableClock };
+    const a = fold(sequence(sceneId, actorId), { ...base, allocate: countingAllocator() });
+    const b = fold(sequence(sceneId, actorId), { ...base, allocate: countingAllocator(), now: () => '2026-02-01T00:00:00.000Z' });
+    expect(a.errors).toHaveLength(0);
+    expect(b.errors).toHaveLength(0);
+    expect(a.project.scenes).toEqual(b.project.scenes);
+    expect(a.project.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(b.project.updatedAt).toBe('2026-02-01T00:00:00.000Z');
   });
 });

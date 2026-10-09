@@ -14,8 +14,8 @@ import { findEnvironment, findScene, requireScene, scenesOfEpisode } from './loo
 /* Project                                                             */
 /* ------------------------------------------------------------------ */
 
-export function touch(project: Project): Project {
-  return { ...project, updatedAt: new Date().toISOString() };
+export function touch(project: Project, now: () => string = () => new Date().toISOString()): Project {
+  return { ...project, updatedAt: now() };
 }
 
 export function renameProject(project: Project, name: string): Project {
@@ -126,17 +126,25 @@ export function reorderEpisodeScene(
 export function createSceneInProject(
   project: Project,
   library: AssetLibrary,
-  options: { name: string; environmentId: string; description?: string; duration?: number },
+  options: {
+    name: string;
+    environmentId: string;
+    description?: string;
+    duration?: number;
+    id?: Id;
+    clock?: () => string;
+  },
 ): { project: Project; sceneId: Id } {
   const environment = findEnvironment(library, options.environmentId);
   const camera: Camera = environment ? defaultCamera(environment) : { x: 0, y: 0, zoom: 1, rotation: 0 };
   const scene = createScene(options.name, options.environmentId, {
     ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.duration !== undefined ? { duration: options.duration } : {}),
+    ...(options.id !== undefined ? { id: options.id } : {}),
     camera,
   });
   return {
-    project: touch({ ...project, scenes: [...project.scenes, scene] }),
+    project: touch({ ...project, scenes: [...project.scenes, scene] }, options.clock),
     sceneId: scene.id,
   };
 }
@@ -178,11 +186,19 @@ export function replaceScene(project: Project, next: Scene): Project {
 }
 
 /** Transform helper for scene-level state that lives outside a specific array. */
-export function mapScene(project: Project, sceneId: Id, fn: (scene: Scene) => Scene): Project {
-  return touch({
-    ...project,
-    scenes: project.scenes.map((scene) => (scene.id === sceneId ? fn(scene) : scene)),
-  });
+export function mapScene(
+  project: Project,
+  sceneId: Id,
+  fn: (scene: Scene) => Scene,
+  now?: () => string,
+): Project {
+  return touch(
+    {
+      ...project,
+      scenes: project.scenes.map((scene) => (scene.id === sceneId ? fn(scene) : scene)),
+    },
+    now,
+  );
 }
 
 /* ------------------------------------------------------------------ */

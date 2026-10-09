@@ -175,12 +175,22 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   cleared its Phase 16 `commands/` entries (`types.ts`, `registry.ts`, the directory) the
   moment they became real; `compile.ts` stays planned.
 
-Still to come, in order: P3 injected `allocate`/`now` with a determinism test; P4
-`applyCommands` batch semantics plus rollback; P5 history labels reaching the store; P6
-the dialogue-panel migration end to end; P7 the remaining panels; P8 the command-coverage
-lint rule; P9 end-of-batch validation armed with the 200-command timing test. Phase 14's
-manual acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
-recorded rather than redefined.
+- **P3 — injected `allocate`/`now` with a determinism test.** The two sources of
+  freshness in a fold are now injected, exactly as §7.4/§8.3 demand: `touch` takes a
+  clock (`now`), `mapScene`/`updateActor`/`setActorPose` thread it, `createScene` takes
+  an `id`, and `createSceneInProject` takes both `id` and `clock`. The new `CreateScene`
+  command asks `ctx.allocate(ID_PREFIX.scene)` for its scene id and `ctx.now` for its
+  timestamp — nothing in the handler touches `Date`, `crypto`, or the store. The
+  determinism test folds `[CreateScene, SetActorPose]` twice with independent
+  counting allocators and a fixed clock and asserts the documents are deeply identical,
+  that a different allocator changes only the allocated ids, and that a different clock
+  changes only the timestamp. 18 command tests now.
+
+Still to come, in order: P4 `applyCommands` batch semantics plus rollback; P5 history
+labels reaching the store; P6 the dialogue-panel migration end to end; P7 the remaining
+panels; P8 the command-coverage lint rule; P9 end-of-batch validation armed with the
+200-command timing test. Phase 14's manual acceptance walk and Phase 15's §24.6
+600-frame perf run remain scheduled jointly, recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:

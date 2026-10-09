@@ -36,6 +36,6 @@ defineCommand<SetActorPoseCommand>('SetActorPose', (command, ctx: CommandContext
   }
   return {
     ok: true,
-    project: setActorPose(ctx.project, command.sceneId, command.actorId, command.poseId),
+    project: setActorPose(ctx.project, command.sceneId, command.actorId, command.poseId, ctx.now),
   };
 });

@@ -173,10 +173,10 @@ export function createEpisode(title: string, description = ''): Episode {
 export function createScene(
   name: string,
   environmentId: string,
-  options: { description?: string; duration?: number; camera?: Camera } = {},
+  options: { description?: string; duration?: number; camera?: Camera; id?: Id } = {},
 ): Scene {
   return {
-    id: createId(ID_PREFIX.scene),
+    id: options.id ?? createId(ID_PREFIX.scene),
     name,
     description: options.description ?? '',
     environmentId,

@@ -5,6 +5,7 @@
  * module below must appear as a bare import. Import the command layer through this path,
  * never through `./registry` directly — the registry alone holds no kinds.
  */
+import './createScene';
 import './setActorPose';
 
 export * from './errors';

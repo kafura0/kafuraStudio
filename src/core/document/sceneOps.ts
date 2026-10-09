@@ -81,11 +81,17 @@ export function updateActor(
   sceneId: Id,
   actorId: Id,
   patch: Partial<Omit<SceneActor, 'id'>>,
+  now?: () => string,
 ): Project {
-  return mapScene(project, sceneId, (scene) => ({
-    ...scene,
-    actors: scene.actors.map((a) => (a.id === actorId ? { ...a, ...patch } : a)),
-  }));
+  return mapScene(
+    project,
+    sceneId,
+    (scene) => ({
+      ...scene,
+      actors: scene.actors.map((a) => (a.id === actorId ? { ...a, ...patch } : a)),
+    }),
+    now,
+  );
 }
 
 export function setActorTransform(
@@ -104,8 +110,14 @@ export function setActorTransform(
   }));
 }
 
-export function setActorPose(project: Project, sceneId: Id, actorId: Id, poseId: Id): Project {
-  return updateActor(project, sceneId, actorId, { poseId });
+export function setActorPose(
+  project: Project,
+  sceneId: Id,
+  actorId: Id,
+  poseId: Id,
+  now?: () => string,
+): Project {
+  return updateActor(project, sceneId, actorId, { poseId }, now);
 }
 
 export function setActorExpression(
