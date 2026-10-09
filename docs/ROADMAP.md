@@ -228,7 +228,26 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   Panel tests now route through the real store, exercising `dispatch` + `commit`.
   24 new command tests (50 total) and 4 store tests.
 
-Still to come, in order: P7 the remaining panels; P8 the command-coverage lint rule;
+- **P7a — store scene/episode actions and the camera panel ride the seam.** The store's
+  four scene/episode mutations — `createScene`, `createEpisode`, `addSceneToEpisode`,
+  `deleteScene` — now dispatch commands instead of hand-building documents, so every one
+  of them flows through `applyCommand` (argument validation, `not-found` refusals, the
+  status line) and the single `commit()` path. Seven new commands: `CreateEpisode`
+  (refuses a blank title), `DeleteScene` (pre-validates so `deleteScene`'s throw becomes
+  a `not-found`, cascades the episode cut lists), `AddSceneToEpisode` (identity no-op for
+  a scene already in the cut), `SetSceneCamera` (rejects non-finite fields), and the
+  camera trio `ApplyCameraPreset` / `ClearCameraMoves` / `FrameSelection`, where preset
+  resolution moved inside the command against the merged series view. Determinism
+  threading for the camera path: `addSimpleClip`/`addKeyframe`/`addCameraMove`/
+  `applyFraming`/`applyCameraPreset`/`frameSelection` now take injected `trackId`/
+  `clipId`/`keyframeId`/`clock` options, `setSceneCamera`/`clearCameraMoves` take `now`,
+  and `createKeyframe`/`createEpisode` accept injected ids — `ApplyCameraPreset` and
+  `FrameSelection` allocate track (only when none exists, matching `findOrCreateTrack`)
+  then clip then keyframe, so a fold preview is exact and re-applying to a scene that
+  already has a camera track reuses it. The camera panel now dispatches those four
+  commands and dropped every mutating `cameraOps` import. 27 new command tests (77 total).
+
+Still to come, in order: P7b the Timeline panel; P8 the command-coverage lint rule;
 P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
 acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
 recorded rather than redefined.
@@ -236,8 +255,8 @@ recorded rather than redefined.
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-925 tests green across 64 files, all four gates clean. This is the state on the last
-verification run (P6 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
+952 tests green across 64 files, all four gates clean. This is the state on the last
+verification run (P7a of Phase 16); the `multiseries` suite's IndexedDB write exceeds
 its 5000 ms window under full-suite load on this machine and is verified separately,
 where it passes. Phase 13's snapshot at its close was 746 across 51.
 

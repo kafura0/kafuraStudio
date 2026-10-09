@@ -33,9 +33,16 @@ export function updateProjectSettings(
 /* Episode                                                             */
 /* ------------------------------------------------------------------ */
 
-export function addEpisode(project: Project, title: string, description = ''): Project {
-  const episode = createEpisode(title, description);
-  return touch({ ...project, episodes: [...project.episodes, episode] });
+export function addEpisode(
+  project: Project,
+  title: string,
+  description = '',
+  options: { id?: Id; clock?: () => string } = {},
+): Project {
+  const episode = createEpisode(title, description, {
+    ...(options.id !== undefined ? { id: options.id } : {}),
+  });
+  return touch({ ...project, episodes: [...project.episodes, episode] }, options.clock);
 }
 
 export function updateEpisode(
@@ -62,19 +69,23 @@ export function addSceneToEpisode(
   episodeId: Id,
   sceneId: Id,
   index?: number,
+  clock?: () => string,
 ): Project {
   if (!findScene(project, sceneId)) throw new Error(`Cannot add unknown scene: ${sceneId}`);
-  return touch({
-    ...project,
-    episodes: project.episodes.map((episode) => {
-      if (episode.id !== episodeId) return episode;
-      if (episode.sceneIds.includes(sceneId)) return episode;
-      const next = [...episode.sceneIds];
-      const at = index === undefined ? next.length : Math.max(0, Math.min(index, next.length));
-      next.splice(at, 0, sceneId);
-      return { ...episode, sceneIds: next };
-    }),
-  });
+  return touch(
+    {
+      ...project,
+      episodes: project.episodes.map((episode) => {
+        if (episode.id !== episodeId) return episode;
+        if (episode.sceneIds.includes(sceneId)) return episode;
+        const next = [...episode.sceneIds];
+        const at = index === undefined ? next.length : Math.max(0, Math.min(index, next.length));
+        next.splice(at, 0, sceneId);
+        return { ...episode, sceneIds: next };
+      }),
+    },
+    clock,
+  );
 }
 
 export function removeSceneFromEpisode(project: Project, episodeId: Id, sceneId: Id): Project {
@@ -150,12 +161,15 @@ export function createSceneInProject(
 }
 
 /** Delete a scene, and drop it from every episode that referenced it. */
-export function deleteScene(project: Project, sceneId: Id): Project {
-  return touch({
-    ...project,
-    scenes: project.scenes.filter((s) => s.id !== sceneId),
-    episodes: project.episodes.map((e) => ({ ...e, sceneIds: e.sceneIds.filter((id) => id !== sceneId) })),
-  });
+export function deleteScene(project: Project, sceneId: Id, clock?: () => string): Project {
+  return touch(
+    {
+      ...project,
+      scenes: project.scenes.filter((s) => s.id !== sceneId),
+      episodes: project.episodes.map((e) => ({ ...e, sceneIds: e.sceneIds.filter((id) => id !== sceneId) })),
+    },
+    clock,
+  );
 }
 
 type ScenePatch = Partial<Omit<Scene, 'id'>>;

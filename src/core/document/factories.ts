@@ -159,9 +159,15 @@ export function createCameraPreset(
   };
 }
 
-export function createEpisode(title: string, description = ''): Episode {
+export function createEpisode(
+  title: string,
+  description = '',
+  options: { id?: Id } = {},
+): Episode {
+  // Injection mirrors `createTrack`/`createScene`: ids come from the caller when a
+  // command fold is running, never from crypto (§8.3).
   return {
-    id: createId(ID_PREFIX.episode),
+    id: options.id ?? createId(ID_PREFIX.episode),
     title,
     description,
     sceneIds: [],
@@ -281,9 +287,14 @@ export function createClip(
   };
 }
 
-export function createKeyframe(time: number, props: KeyframeTarget, ease: EaseType = 'linear'): Keyframe {
+export function createKeyframe(
+  time: number,
+  props: KeyframeTarget,
+  ease: EaseType = 'linear',
+  options: { id?: Id } = {},
+): Keyframe {
   return {
-    id: createId(ID_PREFIX.keyframe),
+    id: options.id ?? createId(ID_PREFIX.keyframe),
     time,
     ease,
     props,

@@ -138,6 +138,13 @@ export function addClip(
  * Add a clip, creating its track if one does not already exist for this target.
  * Returns the ids needed to keep editing the clip.
  */
+/** Options threaded through clip-adding so command folds stay deterministic (§8.3). */
+export interface AddClipOptions {
+  trackId?: Id;
+  clipId?: Id;
+  clock?: () => string;
+}
+
 export function addSimpleClip(
   project: Project,
   sceneId: Id,
@@ -147,18 +154,29 @@ export function addSimpleClip(
   start: number,
   duration: number,
   extras: { audioId?: string | null; dialogueLineId?: string | null; gain?: number } = {},
+  options: AddClipOptions = {},
 ): { project: Project; trackId: Id; clipId: Id } {
-  const clip = createClip(start, duration, extras);
-
-  const next = mapScene(project, sceneId, (scene) => {
-    const { scene: withTrack, track } = findOrCreateTrack(scene, kind, targetId, name);
-    return {
-      ...withTrack,
-      tracks: withTrack.tracks.map((t) =>
-        t.id === track.id ? { ...t, clips: sortClips([...t.clips, clip]) } : t,
-      ),
-    };
+  const clip = createClip(start, duration, {
+    ...extras,
+    ...(options.clipId !== undefined ? { id: options.clipId } : {}),
   });
+
+  const next = mapScene(
+    project,
+    sceneId,
+    (scene) => {
+      const { scene: withTrack, track } = findOrCreateTrack(scene, kind, targetId, name, {
+        ...(options.trackId !== undefined ? { id: options.trackId } : {}),
+      });
+      return {
+        ...withTrack,
+        tracks: withTrack.tracks.map((t) =>
+          t.id === track.id ? { ...t, clips: sortClips([...t.clips, clip]) } : t,
+        ),
+      };
+    },
+    options.clock,
+  );
 
   const trackId = trackIdFor(next, sceneId, kind, targetId);
   return { project: next, trackId, clipId: clip.id };
@@ -369,6 +387,7 @@ export function addKeyframe(
   time: number,
   props: KeyframeTarget,
   ease: EaseType = 'linear',
+  options: { keyframeId?: Id; clock?: () => string } = {},
 ): Project {
   return mapClip(project, sceneId, trackId, clipId, (clip) => {
     const existing = clip.keyframes.find((kf) => Math.abs(kf.time - time) < 1e-6);
@@ -382,9 +401,14 @@ export function addKeyframe(
     }
     return {
       ...clip,
-      keyframes: sortKeyframes([...clip.keyframes, createKeyframe(time, props, ease)]),
+      keyframes: sortKeyframes([
+        ...clip.keyframes,
+        createKeyframe(time, props, ease, {
+          ...(options.keyframeId !== undefined ? { id: options.keyframeId } : {}),
+        }),
+      ]),
     };
-  });
+  }, options.clock);
 }
 
 export function updateKeyframe(

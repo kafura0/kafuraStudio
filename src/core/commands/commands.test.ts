@@ -853,3 +853,432 @@ describe('dialogue commands (Phase 16 P6)', () => {
     expect(validateProject(result.project).some((i) => i.severity === 'error')).toBe(false);
   });
 });
+
+/** A preset the camera commands can resolve from `project.cameraPresets`. */
+const CLOSE_UP = {
+  id: 'preset-close-up',
+  name: 'Close-up',
+  description: '',
+  tags: [],
+  camera: { x: 100, y: 140, zoom: 2.2, rotation: 0 },
+};
+
+function withPresets(project: Project): Project {
+  return { ...project, cameraPresets: [CLOSE_UP] };
+}
+
+/**
+ * Episode, scene and camera commands (Phase 16 P7a). These are the store actions the
+ * editor runs on every new-scene / new-episode / cut-list / camera gesture, so they are
+ * held to the same bar as P3's commands: argument validation, `not-found` refusals,
+ * identity no-ops that record nothing, and fold determinism (§7.1, §7.4, §8.3).
+ */
+describe('episode, scene & camera commands (Phase 16 P7a)', () => {
+  describe('CreateEpisode', () => {
+    it('appends an episode whose id comes from the allocator, and honours the clock', () => {
+      const { project } = makeProject();
+      const result = applyCommand(
+        { kind: 'CreateEpisode', title: 'Cut 002' },
+        ctxFor(project, {
+          allocate: countingAllocator(),
+          now: () => '2026-06-01T00:00:00.000Z',
+        }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const episode = result.project.episodes.find((e) => e.id === 'ep_seed0');
+      expect(episode).toBeDefined();
+      expect(episode?.title).toBe('Cut 002');
+      expect(result.project.episodes).toHaveLength(project.episodes.length + 1);
+      expect(result.project.updatedAt).toBe('2026-06-01T00:00:00.000Z');
+    });
+
+    it('carries an optional description', () => {
+      const { project } = makeProject();
+      const result = applyCommand(
+        { kind: 'CreateEpisode', title: 'Cut 002', description: 'Act one' },
+        ctxFor(project, { allocate: countingAllocator() }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.episodes.find((e) => e.id === 'ep_seed0')?.description).toBe('Act one');
+    });
+
+    it('rejects a blank title', () => {
+      const { project } = makeProject();
+      const result = applyCommand({ kind: 'CreateEpisode', title: '   ' }, ctxFor(project));
+      expect(expectError(result).code).toBe('invalid-argument');
+    });
+
+    it('is deterministic under a fixed allocator and clock', () => {
+      const { project } = makeProject();
+      const command = { kind: 'CreateEpisode', title: 'Cut 002' } as const;
+      const clock = () => '2026-03-01T00:00:00.000Z';
+      const a = fold([command], ctxFor(project, { allocate: countingAllocator(), now: clock }));
+      const b = fold([command], ctxFor(project, { allocate: countingAllocator(), now: clock }));
+      expect(a.errors).toHaveLength(0);
+      expect(b.errors).toHaveLength(0);
+      expect(a).toEqual(b);
+      expect(a.project.episodes.some((e) => e.id === 'ep_seed0')).toBe(true);
+    });
+  });
+
+  describe('DeleteScene', () => {
+    it('removes a scene and drops it from every episode cut', () => {
+      const { project, sceneId } = makeProject();
+      const episodeId = project.episodes[0]?.id;
+      if (!episodeId) throw new Error('seed episode missing');
+      const cmds = [{ kind: 'AddSceneToEpisode', episodeId, sceneId }] as const;
+      const seeded = applyCommands(cmds, ctxFor(project, { allocate: countingAllocator() }));
+      expect(seeded.ok).toBe(true);
+      if (!seeded.ok) return;
+
+      const result = applyCommand(
+        { kind: 'DeleteScene', sceneId },
+        ctxFor(seeded.project, { now: () => '2026-07-01T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.scenes.some((s) => s.id === sceneId)).toBe(false);
+      expect(result.project.episodes.find((e) => e.id === episodeId)?.sceneIds).toEqual([]);
+      expect(result.project.updatedAt).toBe('2026-07-01T00:00:00.000Z');
+    });
+
+    it('refuses a scene that is not in the document', () => {
+      const { project } = makeProject();
+      const result = applyCommand({ kind: 'DeleteScene', sceneId: 'scene.ghost' }, ctxFor(project));
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('AddSceneToEpisode', () => {
+    it('appends a scene to the cut', () => {
+      const { project, sceneId } = makeProject();
+      const episodeId = project.episodes[0]?.id;
+      if (!episodeId) throw new Error('seed episode missing');
+      const result = applyCommand(
+        { kind: 'AddSceneToEpisode', episodeId, sceneId },
+        ctxFor(project, { now: () => '2026-11-01T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.episodes.find((e) => e.id === episodeId)?.sceneIds).toEqual([sceneId]);
+      expect(result.project.updatedAt).toBe('2026-11-01T00:00:00.000Z');
+    });
+
+    it('returns the document untouched when the scene is already in the cut', () => {
+      const { project, sceneId } = makeProject();
+      const episodeId = project.episodes[0]?.id;
+      if (!episodeId) throw new Error('seed episode missing');
+      const seeded = applyCommand(
+        { kind: 'AddSceneToEpisode', episodeId, sceneId },
+        ctxFor(project, { allocate: countingAllocator() }),
+      );
+      if (!seeded.ok) return;
+      const again = applyCommand(
+        { kind: 'AddSceneToEpisode', episodeId, sceneId },
+        ctxFor(seeded.project, { allocate: countingAllocator() }),
+      );
+      expect(again.ok).toBe(true);
+      if (!again.ok) return;
+      // Identity, not a new document — a no-op history entry is worse than none.
+      expect(again.project).toBe(seeded.project);
+    });
+
+    it('refuses an unknown episode or scene', () => {
+      const { project, sceneId } = makeProject();
+      const episodeId = project.episodes[0]?.id ?? '';
+      const noEpisode = applyCommand(
+        { kind: 'AddSceneToEpisode', episodeId: 'ep.ghost', sceneId },
+        ctxFor(project),
+      );
+      expect(expectError(noEpisode).code).toBe('not-found');
+      const noScene = applyCommand(
+        { kind: 'AddSceneToEpisode', episodeId, sceneId: 'scene.ghost' },
+        ctxFor(project),
+      );
+      expect(expectError(noScene).code).toBe('not-found');
+    });
+  });
+
+  describe('SetSceneCamera', () => {
+    it('sets a camera field', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        { kind: 'SetSceneCamera', sceneId, patch: { zoom: 1.7 } },
+        ctxFor(project, { now: () => '2026-10-01T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.scenes.find((s) => s.id === sceneId)?.camera.zoom).toBe(1.7);
+      expect(result.project.updatedAt).toBe('2026-10-01T00:00:00.000Z');
+    });
+
+    it('returns the document untouched when the patch changes nothing', () => {
+      const { project, sceneId } = makeProject();
+      const camera = project.scenes.find((s) => s.id === sceneId)?.camera;
+      if (!camera) throw new Error('seed scene has no camera');
+      const result = applyCommand(
+        { kind: 'SetSceneCamera', sceneId, patch: { zoom: camera.zoom } },
+        ctxFor(project),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project).toBe(project);
+    });
+
+    it('rejects a non-finite camera value', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        { kind: 'SetSceneCamera', sceneId, patch: { zoom: Number.NaN } },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('invalid-argument');
+    });
+
+    it('rejects an unknown scene', () => {
+      const { project } = makeProject();
+      const result = applyCommand(
+        { kind: 'SetSceneCamera', sceneId: 'scene.ghost', patch: { x: 1 } },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('ApplyCameraPreset', () => {
+    it('adopts the preset framing and lays one camera move, ids from the allocator', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+        ctxFor(withPresets(project), {
+          allocate: countingAllocator(),
+          now: () => '2026-08-01T00:00:00.000Z',
+        }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const scene = result.project.scenes.find((s) => s.id === sceneId);
+      expect(scene?.camera).toEqual(CLOSE_UP.camera);
+      const track = scene?.tracks.find((t) => t.kind === 'camera');
+      expect(track?.id).toBe('track_seed0');
+      expect(track?.clips[0]?.id).toBe('clip_seed1');
+      expect(track?.clips[0]?.keyframes[0]?.id).toBe('kf_seed2');
+      // The camera rides the transform it already has: zoom in `scaleX`.
+      expect(track?.clips[0]?.keyframes[0]?.props).toEqual({ x: 100, y: 140, scaleX: 2.2 });
+      expect(result.project.updatedAt).toBe('2026-08-01T00:00:00.000Z');
+    });
+
+    it('reuses an existing camera track instead of allocating a new one', () => {
+      const { project, sceneId } = makeProject();
+      const once = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+        ctxFor(withPresets(project), {
+          allocate: countingAllocator(),
+          now: () => '2026-08-01T00:00:00.000Z',
+        }),
+      );
+      expect(once.ok).toBe(true);
+      if (!once.ok) return;
+
+      const twice = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+        ctxFor(withPresets(once.project), {
+          allocate: countingAllocator(),
+          now: () => '2026-08-02T00:00:00.000Z',
+        }),
+      );
+      expect(twice.ok).toBe(true);
+      if (!twice.ok) return;
+      const scene = twice.project.scenes.find((s) => s.id === sceneId);
+      expect(scene?.tracks.filter((t) => t.kind === 'camera')).toHaveLength(1);
+      const track = scene?.tracks.find((t) => t.kind === 'camera');
+      // The conditional track allocation did not fire, so the clip restarts at seed0.
+      expect(track?.clips[0]?.id).toBe('clip_seed0');
+      expect(track?.clips[0]?.keyframes[0]?.id).toBe('kf_seed1');
+    });
+
+    it('refuses an unknown scene or preset', () => {
+      const { project, sceneId } = makeProject();
+      const noScene = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId: 'scene.ghost', presetId: CLOSE_UP.id },
+        ctxFor(withPresets(project)),
+      );
+      expect(expectError(noScene).code).toBe('not-found');
+      const noPreset = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId, presetId: 'preset.ghost' },
+        ctxFor(withPresets(project)),
+      );
+      expect(expectError(noPreset).code).toBe('not-found');
+    });
+
+    it('is deterministic under a fixed allocator and clock', () => {
+      const { project, sceneId } = makeProject();
+      const command = { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id } as const;
+      const clock = () => '2026-03-01T00:00:00.000Z';
+      const a = fold([command], ctxFor(withPresets(project), { allocate: countingAllocator(), now: clock }));
+      const b = fold([command], ctxFor(withPresets(project), { allocate: countingAllocator(), now: clock }));
+      expect(a.errors).toHaveLength(0);
+      expect(b.errors).toHaveLength(0);
+      expect(a).toEqual(b);
+    });
+
+    it('a different allocator changes only the used ids, not the geometry', () => {
+      const { project, sceneId } = makeProject();
+      const command = { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id } as const;
+      const clock = () => '2026-03-01T00:00:00.000Z';
+      const a = fold([command], ctxFor(withPresets(project), { allocate: countingAllocator(), now: clock }));
+      const b = fold([command], ctxFor(withPresets(project), { allocate: countingAllocator(100), now: clock }));
+      expect(a.errors).toHaveLength(0);
+      expect(b.errors).toHaveLength(0);
+      const clipOf = (r: { project: Project }) =>
+        r.project.scenes[0]?.tracks.find((t) => t.kind === 'camera')?.clips[0]?.id;
+      expect(clipOf(a)).toBe('clip_seed1');
+      expect(clipOf(b)).toBe('clip_seed101');
+      expect(a.project.scenes[0]?.camera).toEqual(b.project.scenes[0]?.camera);
+    });
+  });
+
+  describe('ClearCameraMoves', () => {
+    it('returns the document untouched when the scene has no camera move', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand({ kind: 'ClearCameraMoves', sceneId }, ctxFor(project));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project).toBe(project);
+    });
+
+    it('removes the moves when there is one', () => {
+      const { project, sceneId } = makeProject();
+      const withMove = applyCommand(
+        { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+        ctxFor(withPresets(project), {
+          allocate: countingAllocator(),
+          now: () => '2026-08-01T00:00:00.000Z',
+        }),
+      );
+      expect(withMove.ok).toBe(true);
+      if (!withMove.ok) return;
+
+      const cleared = applyCommand(
+        { kind: 'ClearCameraMoves', sceneId },
+        ctxFor(withMove.project, { now: () => '2026-08-02T00:00:00.000Z' }),
+      );
+      expect(cleared.ok).toBe(true);
+      if (!cleared.ok) return;
+      const track = cleared.project.scenes.find((s) => s.id === sceneId)?.tracks.find((t) => t.kind === 'camera');
+      expect(track?.clips).toEqual([]);
+      expect(cleared.project.updatedAt).toBe('2026-08-02T00:00:00.000Z');
+    });
+
+    it('rejects an unknown scene', () => {
+      const { project } = makeProject();
+      const result = applyCommand({ kind: 'ClearCameraMoves', sceneId: 'scene.ghost' }, ctxFor(project));
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('FrameSelection', () => {
+    function staged(): { project: Project; sceneId: string; actorId: string } {
+      const { project, sceneId } = makeProject();
+      const actor = createActor(CHARACTER.id, CHARACTER.name, POSE_A.id, EXPR.id, { x: 200, y: 90 });
+      return {
+        project: { ...project, scenes: [{ ...(project.scenes[0] as NonNullable<Project['scenes'][number]>), actors: [actor] }] },
+        sceneId,
+        actorId: actor.id,
+      };
+    }
+
+    it('frames the selected actor in one document', () => {
+      const { project, sceneId, actorId } = staged();
+      const result = applyCommand(
+        { kind: 'FrameSelection', sceneId, actorIds: [actorId] },
+        ctxFor(project, {
+          allocate: countingAllocator(),
+          now: () => '2026-09-01T00:00:00.000Z',
+        }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const scene = result.project.scenes.find((s) => s.id === sceneId);
+      // A single actor frames on its world bounds: centre x, centre of the 100px-tall
+      // box (feet at y 90, head at y -10). The zoom stays at the 1 floor because the
+      // subject is tiny against the 1280x720 world frame.
+      expect(scene?.camera.x).toBeCloseTo(200, 6);
+      expect(scene?.camera.y).toBeCloseTo(40, 6);
+      const track = scene?.tracks.find((t) => t.kind === 'camera');
+      expect(track?.clips[0]?.keyframes[0]?.id).toBe('kf_seed2');
+      expect(result.project.updatedAt).toBe('2026-09-01T00:00:00.000Z');
+    });
+
+    it('returns the document untouched when no actor matches', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        { kind: 'FrameSelection', sceneId, actorIds: ['actor.ghost'] },
+        ctxFor(project, { allocate: countingAllocator() }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project).toBe(project);
+    });
+
+    it('rejects an unknown scene', () => {
+      const { project } = makeProject();
+      const result = applyCommand(
+        { kind: 'FrameSelection', sceneId: 'scene.ghost', actorIds: [] },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('not-found');
+    });
+
+    it('is deterministic under a fixed allocator and clock', () => {
+      const { project, sceneId, actorId } = staged();
+      const command = { kind: 'FrameSelection', sceneId, actorIds: [actorId] } as const;
+      const clock = () => '2026-03-01T00:00:00.000Z';
+      const a = fold([command], ctxFor(project, { allocate: countingAllocator(), now: clock }));
+      const b = fold([command], ctxFor(project, { allocate: countingAllocator(), now: clock }));
+      expect(a.errors).toHaveLength(0);
+      expect(b.errors).toHaveLength(0);
+      expect(a).toEqual(b);
+    });
+  });
+
+  it('the whole P7a vocabulary leaves a document the validator clears', () => {
+    const { project: base, sceneId, actorId } = makeProject();
+    const ctx = { allocate: countingAllocator(), now: () => '2026-01-01T00:00:00.000Z' };
+    const commands = [
+      { kind: 'CreateEpisode', title: 'Cut 002' },
+      { kind: 'AddSceneToEpisode', episodeId: 'ep_seed0', sceneId },
+      { kind: 'SetSceneCamera', sceneId, patch: { x: 320, y: 180, zoom: 1.2 } },
+      { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+      { kind: 'FrameSelection', sceneId, actorIds: [actorId] },
+      { kind: 'ClearCameraMoves', sceneId },
+      { kind: 'DeleteScene', sceneId },
+    ] as const;
+    const result = applyCommands(commands, ctxFor(withPresets(base), ctx));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(validateProject(result.project).some((i) => i.severity === 'error')).toBe(false);
+    expect(result.project.scenes).toHaveLength(0);
+    expect(result.project.episodes[0]?.sceneIds).toEqual([]);
+  });
+
+  it('is deterministic when these commands fold as a batch', () => {
+    const { project: base, sceneId, actorId } = makeProject();
+    const commands = [
+      { kind: 'CreateEpisode', title: 'Cut 002' },
+      { kind: 'AddSceneToEpisode', episodeId: 'ep_seed0', sceneId },
+      { kind: 'SetSceneCamera', sceneId, patch: { x: 320, y: 180, zoom: 1.2 } },
+      { kind: 'ApplyCameraPreset', sceneId, presetId: CLOSE_UP.id },
+      { kind: 'FrameSelection', sceneId, actorIds: [actorId] },
+      { kind: 'ClearCameraMoves', sceneId },
+      { kind: 'DeleteScene', sceneId },
+    ] as const;
+    const clock = () => '2026-03-01T00:00:00.000Z';
+    const a = fold(commands, ctxFor(withPresets(base), { allocate: countingAllocator(), now: clock }));
+    const b = fold(commands, ctxFor(withPresets(base), { allocate: countingAllocator(), now: clock }));
+    expect(a.errors).toHaveLength(0);
+    expect(b.errors).toHaveLength(0);
+    expect(a).toEqual(b);
+  });
+});

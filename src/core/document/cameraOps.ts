@@ -32,6 +32,18 @@ export const CAMERA_TARGET_ID = 'camera';
 
 export const CAMERA_TRACK_NAME = 'Camera';
 
+/**
+ * Ids and clock a command fold injects so the move it writes is deterministic (§8.3).
+ * `trackId` is only *used* when the scene has no camera track yet — the conditional
+ * allocation matches what `findOrCreateTrack` will consume on the exact input document.
+ */
+export interface CameraMoveOptions {
+  trackId?: Id;
+  clipId?: Id;
+  keyframeId?: Id;
+  clock?: () => string;
+}
+
 /* ------------------------------------------------------------------ */
 /* Rest framing                                                        */
 /* ------------------------------------------------------------------ */
@@ -53,6 +65,7 @@ export function setSceneCamera(
   project: Project,
   sceneId: Id,
   patch: CameraPatch,
+  now?: () => string,
 ): Project {
   const scene = requireScene(project, sceneId);
   const next: Camera = {
@@ -66,7 +79,7 @@ export function setSceneCamera(
   // identical document in the undo stack, and the next undo press would appear to do
   // nothing.
   if (sameCamera(scene.camera, next)) return project;
-  return mapScene(project, sceneId, (s) => ({ ...s, camera: next }));
+  return mapScene(project, sceneId, (s) => ({ ...s, camera: next }), now);
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,6 +106,7 @@ export function addCameraMove(
   sceneId: Id,
   camera: Camera,
   span?: { start: number; duration: number },
+  options: CameraMoveOptions = {},
 ): { project: Project; handle: CameraMoveHandle } {
   const scene = requireScene(project, sceneId);
   const start = span?.start ?? 0;
@@ -106,6 +120,12 @@ export function addCameraMove(
     CAMERA_TRACK_NAME,
     start,
     duration,
+    {},
+    {
+      ...(options.trackId !== undefined ? { trackId: options.trackId } : {}),
+      ...(options.clipId !== undefined ? { clipId: options.clipId } : {}),
+      ...(options.clock !== undefined ? { clock: options.clock } : {}),
+    },
   );
 
   const withKeyframe = addKeyframe(
@@ -115,6 +135,11 @@ export function addCameraMove(
     clipId,
     start,
     cameraKeyframeProps(camera),
+    'linear',
+    {
+      ...(options.keyframeId !== undefined ? { keyframeId: options.keyframeId } : {}),
+      ...(options.clock !== undefined ? { clock: options.clock } : {}),
+    },
   );
 
   return {
@@ -142,15 +167,20 @@ export function cameraClips(scene: Scene) {
 }
 
 /** Drop every camera clip, returning to the rest framing. The track itself stays. */
-export function clearCameraMoves(project: Project, sceneId: Id): Project {
+export function clearCameraMoves(project: Project, sceneId: Id, now?: () => string): Project {
   const scene = requireScene(project, sceneId);
   if (cameraClips(scene).length === 0) return project;
-  return mapScene(project, sceneId, (s) => ({
-    ...s,
-    tracks: s.tracks.map((track) =>
-      track.kind === 'camera' ? { ...track, clips: [] } : track,
-    ),
-  }));
+  return mapScene(
+    project,
+    sceneId,
+    (s) => ({
+      ...s,
+      tracks: s.tracks.map((track) =>
+        track.kind === 'camera' ? { ...track, clips: [] } : track,
+      ),
+    }),
+    now,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,8 +196,13 @@ export function clearCameraMoves(project: Project, sceneId: Id): Project {
  * clips are replaced rather than merged, because a preset is a statement about the
  * whole shot, not an increment on whatever happened to be there.
  */
-export function applyCameraPreset(project: Project, sceneId: Id, preset: CameraPreset): Project {
-  return applyFraming(project, sceneId, preset.camera);
+export function applyCameraPreset(
+  project: Project,
+  sceneId: Id,
+  preset: CameraPreset,
+  options: CameraMoveOptions = {},
+): Project {
+  return applyFraming(project, sceneId, preset.camera, options);
 }
 
 /**
@@ -176,16 +211,21 @@ export function applyCameraPreset(project: Project, sceneId: Id, preset: CameraP
  * Shared by the preset path and `frameSelection`, which differ only in how they arrive
  * at a `Camera`. Both are one document, so both undo in one step.
  */
-export function applyFraming(project: Project, sceneId: Id, camera: Camera): Project {
+export function applyFraming(
+  project: Project,
+  sceneId: Id,
+  camera: Camera,
+  options: CameraMoveOptions = {},
+): Project {
   const scene = requireScene(project, sceneId);
   const start = scene.tracks.some((t) => t.kind === 'camera') ? firstCameraStart(scene) : 0;
 
-  const withRest = setSceneCamera(project, sceneId, camera);
-  const cleared = clearCameraMoves(withRest, sceneId);
+  const withRest = setSceneCamera(project, sceneId, camera, options.clock);
+  const cleared = clearCameraMoves(withRest, sceneId, options.clock);
   const { project: withMove } = addCameraMove(cleared, sceneId, camera, {
     start,
     duration: scene.duration - start,
-  });
+  }, options);
   return withMove;
 }
 
@@ -207,6 +247,7 @@ export function frameSelection(
   sceneId: Id,
   actorIds: Id[],
   options: FrameOptions,
+  inject: CameraMoveOptions = {},
 ): Project {
   const scene = requireScene(project, sceneId);
   const wanted = new Set(actorIds);
@@ -232,6 +273,7 @@ export function frameSelection(
     project,
     sceneId,
     frameBounds(subjects, { ...options, frame, rotation: scene.camera.rotation }),
+    inject,
   );
 }
 

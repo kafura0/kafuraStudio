@@ -13,6 +13,13 @@ import './deleteDialogueLine';
 import './setDialogueCue';
 import './setDialogueVoice';
 import './setClipGain';
+import './createEpisode';
+import './deleteScene';
+import './addSceneToEpisode';
+import './setSceneCamera';
+import './applyCameraPreset';
+import './clearCameraMoves';
+import './frameSelection';
 
 export * from './errors';
 export * from './registry';

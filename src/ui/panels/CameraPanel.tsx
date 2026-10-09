@@ -6,10 +6,12 @@
  * and trimming a camera move — belongs to the timeline, so this panel reports the state
  * of that lane rather than pretending to edit it.
  *
- * Everything here goes through one `commit()` per gesture. The numeric fields commit on
+ * Everything here is one `dispatch` per gesture. The numeric fields commit on
  * blur, so typing "1.4" is one undo step rather than three. Preset application and
- * frame-the-selection are each a single pure operation covering everything they change,
- * so they too undo in one press.
+ * frame-the-selection each dispatch a single command covering everything they change,
+ * so they too undo in one press. A gesture that changes nothing (an unchanged blur, a
+ * selection with no fittable subject) comes back as the same document, so it records
+ * no history step at all.
  *
  * Selection is single-item, which is why framing is honest about what it will frame:
  * the selected actor if there is one, otherwise every visible actor.
@@ -19,14 +21,12 @@ import { useState } from 'react';
 import { useEditor, useOpenProject, useOpenSeries } from '../../state/editorStore';
 import { draftNumberInputProps, inputClass, round2, useDraftNumber } from '../draftFields';
 import { Field } from '../fields';
-import type { Camera, CameraPreset, Id, Project, Scene } from '../../core/types';
-import {
-  applyCameraPreset,
-  cameraClips,
-  clearCameraMoves,
-  frameSelection,
-  setSceneCamera,
-} from '../../core/document/cameraOps';
+import type { CameraPreset, Id, Scene } from '../../core/types';
+import type { ApplyCameraPresetCommand } from '../../core/commands/applyCameraPreset';
+import type { ClearCameraMovesCommand } from '../../core/commands/clearCameraMoves';
+import type { FrameSelectionCommand } from '../../core/commands/frameSelection';
+import type { SetSceneCameraCommand } from '../../core/commands/setSceneCamera';
+import { cameraClips, type CameraPatch } from '../../core/document/cameraOps';
 import { resolveCameraPresets, sceneEnvironment } from '../../core/document/lookups';
 import { resolveAssets } from '../../core/document/scopes';
 import { degToRad, radToDeg } from '../../core/geometry';
@@ -34,11 +34,18 @@ import { degToRad, radToDeg } from '../../core/geometry';
 const buttonClass =
   'rounded border border-ink-700 px-2 py-1 text-[11px] text-ink-200 hover:border-zanza-500 hover:text-white disabled:opacity-40 disabled:hover:border-ink-700 disabled:hover:text-ink-200';
 
+/** The four gestures this panel can send. Each is one undo step. */
+type CameraCommand =
+  | ApplyCameraPresetCommand
+  | ClearCameraMovesCommand
+  | FrameSelectionCommand
+  | SetSceneCameraCommand;
+
 export function CameraPanel(): React.JSX.Element {
   const project = useOpenProject();
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
-  const commit = useEditor((s) => s.commit);
+  const dispatch = useEditor((s) => s.dispatch);
 
   const scene = project.scenes.find((s) => s.id === sceneId);
 
@@ -54,7 +61,7 @@ export function CameraPanel(): React.JSX.Element {
       sceneId={sceneId}
       scene={scene}
       selectedActorId={selection.kind === 'actor' ? selection.id : null}
-      onChange={commit}
+      onCommand={dispatch}
     />
   );
 }
@@ -63,12 +70,12 @@ function CameraBody({
   sceneId,
   scene,
   selectedActorId,
-  onChange,
+  onCommand,
 }: {
   sceneId: Id;
   scene: Scene;
   selectedActorId: Id | null;
-  onChange: (next: Project, label?: string) => void;
+  onCommand: (command: CameraCommand) => void;
 }): React.JSX.Element {
   const project = useOpenProject();
   const [presetId, setPresetId] = useState('');
@@ -92,33 +99,22 @@ function CameraBody({
       : visibleActors.map((a) => a.id);
   const framingOne = frameIds.length === 1;
 
-  const applyFraming = (patch: Partial<Camera>, label: string): void => {
-    const next = setSceneCamera(project, sceneId, patch);
-    if (next === project) return;
-    onChange(next, label);
+  const applyFraming = (patch: CameraPatch, label: string): void => {
+    onCommand({ kind: 'SetSceneCamera', sceneId, label, patch });
   };
 
   const onPreset = (value: string): void => {
     const preset: CameraPreset | undefined = presets.find((p) => p.id === value);
     if (!preset) return;
-    onChange(applyCameraPreset(project, sceneId, preset), `Camera: ${preset.name}`);
+    onCommand({ kind: 'ApplyCameraPreset', label: `Camera: ${preset.name}`, sceneId, presetId: preset.id });
   };
 
   const onFrame = (): void => {
-    const next = frameSelection(project, library, sceneId, frameIds, {
-      frame: {
-        width: environment?.width ?? project.settings.width,
-        height: environment?.height ?? project.settings.height,
-      },
-    });
-    if (next === project) return;
-    onChange(next, 'Frame selection');
+    onCommand({ kind: 'FrameSelection', label: 'Frame selection', sceneId, actorIds: frameIds });
   };
 
   const onRemoveMove = (): void => {
-    const next = clearCameraMoves(project, sceneId);
-    if (next === project) return;
-    onChange(next, 'Remove camera move');
+    onCommand({ kind: 'ClearCameraMoves', label: 'Remove camera move', sceneId });
   };
 
   const x = useDraftNumber(camera.x, (v) => applyFraming({ x: v }, 'Camera X'), round2);

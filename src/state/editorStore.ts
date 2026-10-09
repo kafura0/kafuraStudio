@@ -34,9 +34,6 @@ import {
 import {
   addEpisode,
   attachAudioMedia,
-  createSceneInProject,
-  addSceneToEpisode as addSceneToEpisodeOp,
-  deleteScene as deleteSceneOp,
   detachAudioMedia,
   touch,
 } from '../core/document/projectOps';
@@ -858,27 +855,35 @@ advancePlayback: (dt) => {
           status: 'error',
           statusMessage: 'This project has no environment yet, so there is nothing to add a scene to.',
         });
-        return;
+return;
       }
-      const { project, sceneId } = createSceneInProject(state.project, get().context?.assets ?? emptyAssetLibrary(), {
+      const result = state.dispatch({
+        kind: 'CreateScene',
+        label: `add scene "${name}"`,
         name,
         environmentId: environment,
       });
-      state.commit(project, `add scene "${name}"`);
+      if (!result.ok) return;
       // Land on what was just made. Selecting nothing would leave the stage showing the
-      // previous scene while the list highlights the new one.
-      set({ sceneId, selection: { kind: null, id: null } });
+      // previous scene while the list highlights the new one. The created scene is the
+      // last one appended, which is all `CreateScene` ever does.
+      const created = result.project.scenes[result.project.scenes.length - 1];
+      set({ sceneId: created?.id ?? '', selection: { kind: null, id: null } });
     },
 
     createEpisode: (title) => {
       const state = get();
       if (state.project === null) return null;
-      const next = addEpisode(state.project, title);
-      const created = next.episodes[next.episodes.length - 1];
+      const result = state.dispatch({
+        kind: 'CreateEpisode',
+        label: `add episode "${title}"`,
+        title,
+      });
+      if (!result.ok) return null;
+      const created = result.project.episodes[result.project.episodes.length - 1];
       if (!created) return null;
-      state.commit(next, `add episode "${title}"`);
       return created.id;
-    },
+},
 
     addSceneToEpisode: (sceneId, episodeId) => {
       const state = get();
@@ -888,25 +893,27 @@ advancePlayback: (dt) => {
         set({ status: 'error', statusMessage: 'That episode no longer exists.' });
         return;
       }
-      // `addSceneToEpisode` is idempotent, so a second click must not record a history step
-      // that undoes nothing — the same rule every other no-op mutation follows.
-      if (episode.sceneIds.includes(sceneId)) return;
-      state.commit(
-        addSceneToEpisodeOp(state.project, episodeId, sceneId),
-        `add scene to episode "${episode.title}"`,
-      );
+      // A scene that is already in the cut makes the command return the document
+      // untouched, so a second click records no history step that undoes nothing — the
+      // same rule every other no-op mutation follows.
+      state.dispatch({
+        kind: 'AddSceneToEpisode',
+        label: `add scene to episode "${episode.title}"`,
+        episodeId,
+        sceneId,
+      });
     },
 
     deleteScene: (sceneId) => {
       const state = get();
       if (state.project === null) return;
-      const next = deleteSceneOp(state.project, sceneId);
-      if (next === state.project) return;
-      state.commit(next, 'delete scene');
+      const result = state.dispatch({ kind: 'DeleteScene', label: 'delete scene', sceneId });
+      if (!result.ok) return;
       // Deleting the scene being viewed would leave the editor pointing at nothing while
       // history still holds the document, so move to whatever is now first.
       if (state.sceneId === sceneId) {
-        set({ sceneId: next.scenes[0]?.id ?? '', playhead: 0, selection: { kind: null, id: null } });
+        const first = result.project.scenes[0];
+        set({ sceneId: first?.id ?? '', playhead: 0, selection: { kind: null, id: null } });
       }
     },
 
