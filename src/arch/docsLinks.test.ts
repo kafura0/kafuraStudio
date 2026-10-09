@@ -17,7 +17,7 @@
  * in one of those is a claim that the file is there. No exemptions; a missing path fails.
  *
  * **`ARCHITECTURE_SPEC.md`** is a design record, and it deliberately describes phases that
- * have not been built: `src/core/commands/`, `src/ai/`, `src/arch/`. Those paths are allowed
+ * have not been built: `src/core/commands/compile.ts`, `src/ai/`. Those paths are allowed
  * to be missing, but only if they appear in {@link PLANNED_PATHS} with the phase that
  * introduces them. An unlisted missing path in the spec still fails, because a typo in a
  * forward reference is still a wrong path.
@@ -25,10 +25,11 @@
  * ## The list clears itself
  *
  * The rule that keeps this from being bookkeeping: a planned path that has come into
- * existence **fails** until its exemption is deleted. When Phase 16 lands
- * `src/core/commands/`, this test starts complaining, and the complaint is the reminder to
- * stop describing it as a plan. A list that only ever grows is a list nobody reads, and an
- * unmaintained list of "things that are fine not to exist" is a hole with a comment on it.
+ * existence **fails** until its exemption is deleted. When Phase 16 landed
+ * `src/core/commands/` (types and registry first, in P2), this test started complaining,
+ * and the complaint was the reminder to stop describing it as a plan. A list that only
+ * ever grows is a list nobody reads, and an unmaintained list of "things that are fine
+ * not to exist" is a hole with a comment on it.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -46,10 +47,8 @@ const DOCS = join(ROOT, 'docs');
 const PLANNED_PATHS: Record<string, string> = {
   // Phase 15 - engine correctness and render performance.
   'src/core/render/perf.test.ts': '15',
-  // Phase 16 - commands, transactions and provenance.
-  'src/core/commands/': '16',
-  'src/core/commands/types.ts': '16',
-  'src/core/commands/registry.ts': '16',
+  // Phase 16 - commands, transactions and provenance. types.ts and registry.ts exist;
+  // compile.ts is still future work.
   'src/core/commands/compile.ts': '16',
   // Phase 17 - plans, validation and compilation.
   'src/core/plans/': '17',

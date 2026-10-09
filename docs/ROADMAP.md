@@ -158,6 +158,30 @@ fixtures prove the parity, and `ARCHITECTURE_SPEC.md` §0.2 records the phase's 
 budget run on the RULE 14 machine is a manual check, and it is scheduled with the Phase
 14 acceptance walk.
 
+### Phase 16 — Commands, Transactions & Provenance
+
+The current phase. The scope is `ARCHITECTURE_SPEC.md` §7 (command architecture),
+§8 (transaction model) and §22.3 (end-of-batch validation), executed in the P1–P9 steps
+below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned;
+`src/ai/` stays planned.
+
+- **P1 + P2 — types, registry, `applyCommand`, and the first command.** `src/core/commands/`
+  now has `types.ts` (Command / CommandContext / CommandResult / CommandError per §7.3,
+  plus the Phase 14 `series` addition to the context), `errors.ts`, `registry.ts`
+  (`COMMAND_REGISTRY`, `defineCommand`, `applyCommand`) and the `SetActorPose` command —
+  the reference command that validates its own arguments against the merged library and
+  leaves the document untouched on failure. §22.3 is in force: a single command's result
+  is validated before it counts as succeeded. 11 tests. The `docsLinks` planned-path list
+  cleared its Phase 16 `commands/` entries (`types.ts`, `registry.ts`, the directory) the
+  moment they became real; `compile.ts` stays planned.
+
+Still to come, in order: P3 injected `allocate`/`now` with a determinism test; P4
+`applyCommands` batch semantics plus rollback; P5 history labels reaching the store; P6
+the dialogue-panel migration end to end; P7 the remaining panels; P8 the command-coverage
+lint rule; P9 end-of-batch validation armed with the 200-command timing test. Phase 14's
+manual acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
+recorded rather than redefined.
+
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
