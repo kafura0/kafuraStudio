@@ -31,6 +31,8 @@ import "./removeKeyframe";
 import "./moveTrack";
 import "./removeTrack";
 import "./updateTrack";
+import "./attachAudioMedia";
+import "./detachAudioMedia";
 
 export * from './errors';
 export * from './registry';

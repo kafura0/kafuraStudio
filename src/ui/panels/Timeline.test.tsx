@@ -12,7 +12,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { Timeline } from './Timeline';
 import { useEditor } from '../../state/editorStore';
-import { SEED_PROJECT } from '../../data/seed';
+import { SEED_PROJECT, SEED_SERIES } from '../../data/seed';
+import { resolveAssets } from '../../core/document/scopes';
 import type { Clip, Project, Track } from '../../core/types';
 
 /**
@@ -112,6 +113,11 @@ function pressableClip(): { trackIndex: number; track: Track; clip: Clip } {
 function resetStore(): void {
   useEditor.setState({
     project: SEED_PROJECT,
+    // The panel mutates by dispatching commands, and `dispatch` resolves its arguments
+    // against the merged library the store derives from project + series. Setting the
+    // project alone leaves `context` null, and every dispatch would be refused.
+    series: SEED_SERIES,
+    context: resolveAssets(SEED_PROJECT, SEED_SERIES),
     past: [],
     future: [],
     playhead: 0,

@@ -11,9 +11,9 @@
  * `useEditor.getState()`, and writes a `transform` directly. The store owns the clock
  * (see editorStore.advancePlayback); this only reflects it.
  *
- * Every drag routes through a core document operation and then `commit()`. Nothing
+ * Every drag names a command and dispatches it (ARCHITECTURE_SPEC.md §7.2). Nothing
  * mutates the project in place, which is what makes a drag undoable (AGENTS.md
- * RULE 6, RULE 7). During a drag the working document is held locally and committed
+ * RULE 6, RULE 7). During a drag the working document is held locally and dispatched
  * once on release, so a 60fps drag is one undo step rather than six hundred.
  *
  * The geometry is not here. Time-to-pixel arithmetic, hit testing, and snapping live
@@ -22,22 +22,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, useOpenProject } from '../../state/editorStore';
-import {
-  MIN_CLIP_DURATION,
-  addKeyframe,
-  addSimpleClip,
-  moveClip,
-  moveKeyframe,
-  moveTrack,
-  relocateClip,
-  removeClip,
-  removeKeyframe,
-  removeTrack,
-  snapToEdges,
-  trimClip,
-  updateTrack,
-} from '../../core/document/trackOps';
-import { removeDialogueLine } from '../../core/document/dialogueOps';
+import { MIN_CLIP_DURATION, snapToEdges } from '../../core/document/trackOps';
 import { sampleClip } from '../../core/animation/sample';
 import {
   DEFAULT_METRICS,
@@ -140,7 +125,7 @@ export function Timeline(): React.JSX.Element {
   const { project, scene } = useScene();
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const select = useEditor((s) => s.select);
-  const commit = useEditor((s) => s.commit);
+  const dispatch = useEditor((s) => s.dispatch);
   const selection = useEditor((s) => s.selection);
 
   const [scale, setScale] = useState(DEFAULT_METRICS.pixelsPerSecond);
@@ -362,35 +347,31 @@ export function Timeline(): React.JSX.Element {
 
       if (current.mode === 'keyframe') {
         if (Math.abs(current.keyframeTime - current.keyframeOriginTime) < 1e-6 || !current.keyframeId) return;
-        const next = moveKeyframe(
-          project,
-          scene.id,
-          current.trackId,
-          current.clipId,
-          current.keyframeId,
-          current.keyframeTime,
-        );
-        if (next !== project) {
-          lastGestureAt.current = Date.now();
-          commit(next, 'Move keyframe');
-        }
+        const result = dispatch({
+          kind: 'MoveKeyframe',
+          sceneId: scene.id,
+          trackId: current.trackId,
+          clipId: current.clipId,
+          keyframeId: current.keyframeId,
+          time: current.keyframeTime,
+          label: 'Move keyframe',
+        });
+        if (result.ok && result.project !== project) lastGestureAt.current = Date.now();
         return;
       }
 
       if (current.mode === 'move' && current.toTrackId) {
         // Dropped on another lane of the same kind: relocate the clip wholesale. The
         // op refuses a cross-kind lane, so an accidental drop burns no undo step.
-        const next = relocateClip(
-          project,
-          scene.id,
-          current.trackId,
-          current.toTrackId,
-          current.clipId,
-        );
-        if (next !== project) {
-          lastGestureAt.current = Date.now();
-          commit(next, 'Move clip to track');
-        }
+        const result = dispatch({
+          kind: 'MoveClipToTrack',
+          sceneId: scene.id,
+          fromTrackId: current.trackId,
+          toTrackId: current.toTrackId,
+          clipId: current.clipId,
+          label: 'Move clip to track',
+        });
+        if (result.ok && result.project !== project) lastGestureAt.current = Date.now();
         return;
       }
 
@@ -399,22 +380,27 @@ export function Timeline(): React.JSX.Element {
         Math.abs(current.duration - current.originDuration) > 1e-6;
       if (!movedEnough) return;
 
-      const next =
+      const result =
         current.mode === 'move'
-          ? moveClip(project, scene.id, current.trackId, current.clipId, current.start)
-          : trimClip(
-              project,
-              scene.id,
-              current.trackId,
-              current.clipId,
-              current.mode === 'trim-start' ? 'start' : 'end',
-              current.mode === 'trim-start' ? current.start : current.start + current.duration,
-            );
+          ? dispatch({
+              kind: 'MoveClip',
+              sceneId: scene.id,
+              trackId: current.trackId,
+              clipId: current.clipId,
+              start: current.start,
+              label: 'Move clip',
+            })
+          : dispatch({
+              kind: 'TrimClip',
+              sceneId: scene.id,
+              trackId: current.trackId,
+              clipId: current.clipId,
+              edge: current.mode === 'trim-start' ? 'start' : 'end',
+              time: current.mode === 'trim-start' ? current.start : current.start + current.duration,
+              label: 'Trim clip',
+            });
 
-      if (next !== project) {
-        lastGestureAt.current = Date.now();
-        commit(next, current.mode === 'move' ? 'Move clip' : 'Trim clip');
-      }
+      if (result.ok && result.project !== project) lastGestureAt.current = Date.now();
     };
 
     window.addEventListener('pointermove', onMove);
@@ -425,7 +411,7 @@ export function Timeline(): React.JSX.Element {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [commit, drag, fps, lanePoint, lanes, scale, scene]);
+  }, [dispatch, drag, fps, lanePoint, lanes, scale, scene]);
 
   useLayoutEffect(() => {
     const onWheel = (event: WheelEvent): void => {
@@ -463,14 +449,17 @@ export function Timeline(): React.JSX.Element {
           // A dialogue cue *is* its line: removing the clip alone would leave the line
           // behind with nothing to say, and no lane for it. The panel's own delete
           // button does the same thing, and the lane `×` already routes here.
-          const next =
-            clip?.dialogueLineId !== null && clip?.dialogueLineId !== undefined
-              ? removeDialogueLine(project, sceneId, clip.dialogueLineId)
-              : removeClip(project, sceneId, track.id, selection.id);
-          if (next !== project) {
-            select(null, null);
-            commit(next, clip?.dialogueLineId ? 'Delete line' : 'Delete clip');
-          }
+          const lineId = clip?.dialogueLineId ?? null;
+          const result = lineId
+            ? dispatch({ kind: 'DeleteDialogueLine', sceneId, lineId, label: 'Delete line' })
+            : dispatch({
+                kind: 'RemoveClip',
+                sceneId,
+                trackId: track.id,
+                clipId: selection.id,
+                label: 'Delete clip',
+              });
+          if (result.ok && result.project !== project) select(null, null);
           return;
         }
         return;
@@ -478,11 +467,13 @@ export function Timeline(): React.JSX.Element {
 
       // A line selected in the panel deletes the line, its cue, and its lane together.
       if (selection.kind === 'line') {
-        const next = removeDialogueLine(project, sceneId, selection.id);
-        if (next !== project) {
-          select(null, null);
-          commit(next, 'Delete line');
-        }
+        const result = dispatch({
+          kind: 'DeleteDialogueLine',
+          sceneId,
+          lineId: selection.id,
+          label: 'Delete line',
+        });
+        if (result.ok && result.project !== project) select(null, null);
         return;
       }
 
@@ -490,18 +481,22 @@ export function Timeline(): React.JSX.Element {
       for (const track of sceneSel.tracks) {
         for (const clipItem of track.clips) {
           if (!clipItem.keyframes.some((kf) => kf.id === selection.id)) continue;
-          const next = removeKeyframe(project, sceneId, track.id, clipItem.id, selection.id);
-          if (next !== project) {
-            select(null, null);
-            commit(next, 'Delete keyframe');
-          }
+          const result = dispatch({
+            kind: 'RemoveKeyframe',
+            sceneId,
+            trackId: track.id,
+            clipId: clipItem.id,
+            keyframeId: selection.id,
+            label: 'Delete keyframe',
+          });
+          if (result.ok && result.project !== project) select(null, null);
           return;
         }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commit, select]);
+  }, [dispatch, select]);
 
   if (!scene) {
     return <div className="border-t border-ink-800 bg-ink-900 p-4 text-xs text-ink-400">No scene open.</div>;
@@ -525,10 +520,17 @@ export function Timeline(): React.JSX.Element {
     // `project` from the render, not a fresh read: this panel re-renders on every project
     // change, so it is already current, and using it makes it impossible to edit a
     // document other than the one this lane was drawn from.
-    const next = addKeyframe(project, scene.id, lane.track.id, clipId, time, props);
-    if (next !== project) {
-      commit(next, 'Add keyframe');
-      const added = next.scenes
+    const result = dispatch({
+      kind: 'AddKeyframe',
+      sceneId: scene.id,
+      trackId: lane.track.id,
+      clipId,
+      time,
+      props,
+      label: 'Add keyframe',
+    });
+    if (result.ok && result.project !== project) {
+      const added = result.project.scenes
         .find((s) => s.id === scene.id)
         ?.tracks.find((t) => t.id === lane.track.id)
         ?.clips.find((c) => c.id === clipId)
@@ -542,22 +544,28 @@ export function Timeline(): React.JSX.Element {
   // line id, camera by "camera"), and the playhead lands on the frame grid.
   const addClipAtPlayhead = (lane: TrackLane): void => {
     if (!scene) return;
-    const p = project;
     const { playhead } = useEditor.getState();
     const start = snapToFrame(Math.max(Math.min(playhead, duration), 0), fps);
-    const { project: next, clipId } = addSimpleClip(
-      p,
-      scene.id,
-      lane.track.kind,
-      lane.track.targetId,
-      `${lane.track.name} clip ${lane.track.clips.length + 1}`,
+    // The command allocates the new clip's id, so the only way back to it is to diff the
+    // scene's clips before and after — there is exactly one new id.
+    const before = new Set(scene.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+    const result = dispatch({
+      kind: 'AddClip',
+      sceneId: scene.id,
+      trackKind: lane.track.kind,
+      targetId: lane.track.targetId,
+      name: `${lane.track.name} clip ${lane.track.clips.length + 1}`,
       start,
-      1,
-    );
-    if (next !== p) {
+      duration: 1,
+      label: 'Add clip',
+    });
+    if (result.ok && result.project !== project) {
       lastGestureAt.current = Date.now();
-      commit(next, 'Add clip');
-      select('clip', clipId);
+      const added = result.project.scenes
+        .find((s) => s.id === scene.id)
+        ?.tracks.flatMap((t) => t.clips)
+        .find((c) => !before.has(c.id));
+      if (added) select('clip', added.id);
     }
   };
 
@@ -565,18 +573,16 @@ export function Timeline(): React.JSX.Element {
   // deleting the cue; the raw op would leave an orphaned line behind otherwise.
   const removeTrackLane = (lane: TrackLane): void => {
     if (!scene) return;
-    const p = project;
     const isCueLane =
       lane.track.kind === 'dialogue' &&
       lane.track.clips.length > 0 &&
       lane.track.clips.every((c) => c.dialogueLineId === lane.track.targetId);
-    const next = isCueLane
-      ? removeDialogueLine(p, scene.id, lane.track.targetId)
-      : removeTrack(p, scene.id, lane.track.id);
-    if (next !== p) {
+    const result = isCueLane
+      ? dispatch({ kind: 'DeleteDialogueLine', sceneId: scene.id, lineId: lane.track.targetId, label: 'Delete track' })
+      : dispatch({ kind: 'RemoveTrack', sceneId: scene.id, trackId: lane.track.id, label: 'Delete track' });
+    if (result.ok && result.project !== project) {
       lastGestureAt.current = Date.now();
       select(null, null);
-      commit(next, 'Delete track');
     }
   };
 
@@ -654,11 +660,15 @@ export function Timeline(): React.JSX.Element {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const p = project;
-                  const next = moveTrack(p, scene.id, lane.track.id, lane.index - 1);
-                  if (next !== p) commit(next, 'Reorder track');
-                }}
+                onClick={() =>
+                  dispatch({
+                    kind: 'MoveTrack',
+                    sceneId: scene.id,
+                    trackId: lane.track.id,
+                    toIndex: lane.index - 1,
+                    label: 'Reorder track',
+                  })
+                }
                 disabled={lane.index === 0}
                 className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200 disabled:pointer-events-none disabled:opacity-30"
                 aria-label={`Move ${lane.track.name} up`}
@@ -668,11 +678,15 @@ export function Timeline(): React.JSX.Element {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const p = project;
-                  const next = moveTrack(p, scene.id, lane.track.id, lane.index + 1);
-                  if (next !== p) commit(next, 'Reorder track');
-                }}
+                onClick={() =>
+                  dispatch({
+                    kind: 'MoveTrack',
+                    sceneId: scene.id,
+                    trackId: lane.track.id,
+                    toIndex: lane.index + 1,
+                    label: 'Reorder track',
+                  })
+                }
                 disabled={lane.index === displayLanes.length - 1}
                 className="rounded px-1 text-[11px] leading-none text-ink-400 hover:bg-ink-800 hover:text-ink-200 disabled:pointer-events-none disabled:opacity-30"
                 aria-label={`Move ${lane.track.name} down`}
@@ -682,11 +696,15 @@ export function Timeline(): React.JSX.Element {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const p = project;
-                  const next = updateTrack(p, scene.id, lane.track.id, { muted: !lane.track.muted });
-                  if (next !== p) commit(next, lane.track.muted ? 'Unmute track' : 'Mute track');
-                }}
+                onClick={() =>
+                  dispatch({
+                    kind: 'UpdateTrack',
+                    sceneId: scene.id,
+                    trackId: lane.track.id,
+                    patch: { muted: !lane.track.muted },
+                    label: lane.track.muted ? 'Unmute track' : 'Mute track',
+                  })
+                }
                 className={`rounded px-1 text-[10px] font-semibold leading-tight transition-colors ${
                   lane.track.muted
                     ? 'bg-zanza-500/20 text-zanza-400'

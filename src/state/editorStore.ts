@@ -31,13 +31,7 @@ import {
   renameSeries,
   type SeriesAssetCollection,
 } from '../core/document/seriesOps';
-import {
-  addEpisode,
-  attachAudioMedia,
-  detachAudioMedia,
-  touch,
-} from '../core/document/projectOps';
-import { addSimpleClip } from '../core/document/trackOps';
+import { addEpisode, touch } from '../core/document/projectOps';
 import { starterAssetLibrary } from '../data/starter';
 import {
   adoptImportSeries,
@@ -970,17 +964,17 @@ return;
       );
       if (placed) return;
 
-      const { project: next } = addSimpleClip(
-        state.project,
-        scene.id,
-        'audio',
+      state.dispatch({
+        kind: 'AddClip',
+        sceneId: scene.id,
+        trackKind: 'audio',
+        targetId: audioId,
+        name: def.name,
+        start: 0,
+        duration: length,
         audioId,
-        def.name,
-        0,
-        length,
-        { audioId },
-      );
-      state.commit(next, `place audio "${def.name}"`);
+        label: `place audio "${def.name}"`,
+      });
     },
 
     attachAudioFile: async (audioId, file) => {
@@ -1023,18 +1017,13 @@ return;
           duration,
           data: bytes,
         });
-        get().commit(
-          attachAudioMedia(
-            get().project as Project,
-            audioId,
-            mediaId,
-            duration,
-            // The resolved library, so a series-owned slot is overridden into this project
-            // rather than silently not found. See `writeAudioSlot`.
-            get().context?.assets,
-          ),
-          `attach audio "${file.name}"`,
-        );
+        get().dispatch({
+          kind: 'AttachAudioMedia',
+          audioId,
+          mediaId,
+          duration,
+          label: `attach audio "${file.name}"`,
+        });
         // The engine caches decoded buffers per project, so an engine built while this slot
         // was empty holds a cached "nothing" for it. Dropping the engine makes the next
         // playback resolve the file that is now attached.
@@ -1050,10 +1039,11 @@ return;
       if (state.project === null) return;
       const def = state.context?.assets.audio.find((a) => a.id === audioId);
       if (!def) return;
-      get().commit(
-        detachAudioMedia(get().project as Project, audioId, get().context?.assets),
-        `clear audio "${def.name}"`,
-      );
+      get().dispatch({
+        kind: 'DetachAudioMedia',
+        audioId,
+        label: `clear audio "${def.name}"`,
+      });
       // Same reason as attach: the cached buffer for this asset is stale either way, and
       // clearing must not leave the previous file audible.
       resetPlaybackAudio();
@@ -1549,14 +1539,13 @@ await get().refreshProjects();
         }
         // `addEpisode` applies `touch`, so this does move the project to the top of a
         // modification-sorted list — which is correct here, unlike archiving.
-        const next = addEpisode(project, trimmed);
         if (get().project?.id === id) {
           // Editing the project that happens to be open goes through history like any
           // other document change, so the episode can be taken back out.
-          get().commit(next, `add episode "${trimmed}"`);
+          get().dispatch({ kind: 'CreateEpisode', title: trimmed, label: `add episode "${trimmed}"` });
           return;
         }
-        await repository.save(next);
+        await repository.save(addEpisode(project, trimmed));
         set({ status: 'ready', statusMessage: `Added "${trimmed}".` });
         await get().refreshProjects();
       } catch (error) {
