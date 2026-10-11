@@ -144,7 +144,7 @@ export interface EditorState {
   status: SessionStatus;
   /** Why the last open or import failed, in words. Cleared by the next attempt. */
   statusMessage: string | null;
-/** The workspace listing, for the project browser. Refreshed on demand. */
+  /** The workspace listing, for the project browser. Refreshed on demand. */
   projects: ProjectSummary[];
   /** The workspace series listing, for the series browser. Refreshed on demand. */
   seriesList: SeriesSummary[];
@@ -220,7 +220,7 @@ export interface EditorState {
   exportTarget: () => { episodeId: Id | null; episodeTime: number };
   select: (kind: SelectionKind, id: Id | null) => void;
 
-/* --- history --- */
+  /* --- history --- */
   commit: (next: Project, label?: string, provenance?: Provenance) => void;
   /**
    * Apply one command from the vocabulary (ARCHITECTURE_SPEC.md §7.3, Phase 16 P6).
@@ -276,7 +276,7 @@ export interface EditorState {
    * empty stage, which is exactly the kind of failure that only shows up on another machine.
    */
   exportProjectFile: (id: Id, options?: ExportOptions) => Promise<ExportResult | null>;
-deleteProject: (id: Id) => Promise<void>;
+  deleteProject: (id: Id) => Promise<void>;
   /**
    * Hide a project from the browser, or bring a hidden one back.
    *
@@ -669,7 +669,7 @@ export const useEditor = create<EditorState>((set, get) => {
     // Loading, not ready: until `hydrate` has asked the database, the honest answer to
     // "is anything open" is "we do not know yet", and the browser shows that rather than
     // flashing an empty list before the records arrive.
-status: 'loading',
+    status: 'loading',
     statusMessage: null,
     projects: [],
     seriesList: [],
@@ -687,7 +687,7 @@ status: 'loading',
     setScene: (sceneId) => {
       const state = get();
       // See `setPlayhead`: with no project open these viewer actions are no-ops. They can
-// still be reached from a keyboard shortcut or a click that lands in the frame
+      // still be reached from a keyboard shortcut or a click that lands in the frame
       // between the project closing and the editor unmounting, and taking the tab down
       // for that would be the worst possible trade.
       if (state.project === null || state.context === null) return;
@@ -787,7 +787,7 @@ const { project, context } = get();
       return episodeExportTarget(state.project, state.playbackMode, state.sceneId, state.playhead);
     },
 
-advancePlayback: (dt) => {
+    advancePlayback: (dt) => {
       const state = get();
       if (!state.playing || dt <= 0 || state.project === null || state.context === null) return;
       const project = state.project;
@@ -849,7 +849,7 @@ advancePlayback: (dt) => {
           status: 'error',
           statusMessage: 'This project has no environment yet, so there is nothing to add a scene to.',
         });
-return;
+        return;
       }
       const result = state.dispatch({
         kind: 'CreateScene',
@@ -1049,7 +1049,7 @@ return;
       resetPlaybackAudio();
     },
 
-previewAudio: async (audioId) => {
+    previewAudio: async (audioId) => {
       const { project, context } = get();
       if (project === null || context === null) return false;
       return previewAudioAsset(project, context, audioId);
@@ -1062,11 +1062,11 @@ previewAudio: async (audioId) => {
      * an event handler, and pushing an identical snapshot would make undo feel
      * broken (one Ctrl+Z appearing to do nothing).
      */
-commit: (next, label, provenance) => {
+    commit: (next, label, provenance) => {
       const state = get();
       if (next === state.project || state.project === null) return;
 
-// Against the *merged* library. A project that overrides nothing has an empty
+      // Against the *merged* library. A project that overrides nothing has an empty
       // `assets`, so validating `next` alone would report every character in the show as
       // unknown and refuse every edit to a migrated project.
       const issues = validateProject(next, state.series);
@@ -1087,7 +1087,7 @@ commit: (next, label, provenance) => {
         return;
       }
 
-// The label and provenance go on the state being *left behind*, so undo can name the
+      // The label and provenance go on the state being *left behind*, so undo can name the
       // action it is reversing without the caller telling it again. The cap is adaptive
       // (§22.4): the larger the document, the fewer snapshots survive.
       const past = [
@@ -1107,7 +1107,7 @@ commit: (next, label, provenance) => {
         future: [],
         dirty: true,
       });
-// After the state is applied, never before. The autosave leads its burst by writing
+      // After the state is applied, never before. The autosave leads its burst by writing
       // synchronously inside this call, so scheduling ahead of `set` would hand the write
       // the document being replaced and drop the edit.
       autosave.schedule();
@@ -1152,7 +1152,7 @@ commit: (next, label, provenance) => {
         // undone while the context still listed it would keep playing for a slot the
         // document no longer has.
         context: resolveAssets(entry.project, state.series),
-past: state.past.slice(0, -1),
+        past: state.past.slice(0, -1),
         // Redo replays the action named by the entry we just consumed. The cap matches
         // the adaptive limit for the document being undone from.
         future: [
@@ -1171,7 +1171,7 @@ past: state.past.slice(0, -1),
       set({
         project: entry.project,
         context: resolveAssets(entry.project, state.series),
-// `slice(-limit)`, matching `commit`. `past` is oldest-first, so the cap gives up
+        // `slice(-limit)`, matching `commit`. `past` is oldest-first, so the cap gives up
         // the oldest step and keeps the one the user is about to undo. The limit is the
         // adaptive one for this entry's project, the same document `commit` capped by, so
         // an undo/redo pair only returns the stack to the size it had before the undo.
@@ -1205,7 +1205,7 @@ past: state.past.slice(0, -1),
         // a workspace with no legacy data is the normal case, and that must not look like
         // an error. The old records are untouched either way.
       }
-await get().refreshProjects();
+      await get().refreshProjects();
       await get().refreshSeries();
       if (!isIndexedDbAvailable()) return;
       set({ status: 'loading', statusMessage: null });

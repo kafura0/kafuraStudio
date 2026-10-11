@@ -89,7 +89,7 @@ const repository = vi.hoisted(() => {
 
 vi.mock('../core/persistence/indexedDb.browser', () => ({
   isIndexedDbAvailable: () => true,
-IndexedDbProjectRepository: vi.fn(() => repository),
+  IndexedDbProjectRepository: vi.fn(() => repository),
   IndexedDbSeriesRepository: vi.fn(() => ({
     save: vi.fn(async (_series: SeriesDef) => {}),
     load: vi.fn(async (_id: string): Promise<SeriesDef | null> => null),
