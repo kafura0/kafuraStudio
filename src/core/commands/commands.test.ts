@@ -9,9 +9,10 @@ import {
   createActor,
   createProject,
   createScene,
+  createTrack,
 } from '../document/factories';
 import { addDialogueLineWithCue } from '../document/dialogueOps';
-import { findClipLocation } from '../document/trackOps';
+import { addSimpleClip, findClipLocation } from '../document/trackOps';
 import { validateProject } from '../document/invariants';
 import type { Id, Project } from '../types';
 import type { Command, CommandContext, CommandResult } from './types';
@@ -1280,5 +1281,369 @@ describe('episode, scene & camera commands (Phase 16 P7a)', () => {
     expect(a.errors).toHaveLength(0);
     expect(b.errors).toHaveLength(0);
     expect(a).toEqual(b);
+  });
+});
+
+describe('timeline commands (Phase 16 P7b)', () => {
+  /**
+   * A scene with one actor track holding one clip (`track_actor` / `clip_1` over [1,3]),
+   * plus a second empty actor track of the same kind so a clip can be relocated. Two actor
+   * tracks for one actor is not a state the editor produces through `findOrCreateTrack`, so
+   * the second is spliced in by hand — the command layer must still treat it as valid.
+   */
+  function withTimeline() {
+    const { project, sceneId, actorId } = makeProject();
+    const seeded = addSimpleClip(project, sceneId, 'actor', actorId, 'Actor', 1, 2, {}, {
+      trackId: 'track_actor',
+      clipId: 'clip_1',
+      clock: () => 'seed-time',
+    });
+    const withSecond: Project = {
+      ...seeded.project,
+      scenes: seeded.project.scenes.map((s) =>
+        s.id === sceneId
+          ? {
+              ...s,
+              tracks: [
+                ...s.tracks,
+                createTrack('actor', actorId, 'Actor 2', '#808080', { id: 'track_actor_2' }),
+              ],
+            }
+          : s,
+      ),
+    };
+    return { project: withSecond, sceneId, actorId, trackId: 'track_actor', clipId: 'clip_1' };
+  }
+
+  function clipAt(project: Project, sceneId: string, trackId: string, clipId: string) {
+    return project.scenes
+      .find((s) => s.id === sceneId)
+      ?.tracks.find((t) => t.id === trackId)
+      ?.clips.find((c) => c.id === clipId);
+  }
+
+  describe('AddClip', () => {
+    it('adds a clip whose id comes from the allocator, creating its track', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        { kind: 'AddClip', sceneId, trackKind: 'camera', targetId: 'camera', name: 'Cam', start: 0, duration: 2 },
+        ctxFor(project, { allocate: countingAllocator(), now: () => '2026-05-01T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const clip = result.project.scenes[0]?.tracks.find((t) => t.kind === 'camera')?.clips[0];
+      expect(clip?.id).toBe('clip_seed0');
+      expect(clip?.duration).toBe(2);
+      expect(result.project.updatedAt).toBe('2026-05-01T00:00:00.000Z');
+    });
+
+    it('rejects a negative start and a sub-frame duration', () => {
+      const { project, sceneId } = makeProject();
+      const base = { kind: 'AddClip', sceneId, trackKind: 'camera', targetId: 'camera', name: 'Cam' } as const;
+      expect(expectError(applyCommand({ ...base, start: -1, duration: 1 }, ctxFor(project))).code).toBe(
+        'invalid-argument',
+      );
+      expect(expectError(applyCommand({ ...base, start: 0, duration: 0 }, ctxFor(project))).code).toBe(
+        'invalid-argument',
+      );
+    });
+
+    it('refuses a clip naming a dialogue line the scene does not have', () => {
+      const { project, sceneId } = makeProject();
+      const result = applyCommand(
+        {
+          kind: 'AddClip',
+          sceneId,
+          trackKind: 'dialogue',
+          targetId: 'line.ghost',
+          name: 'D',
+          start: 0,
+          duration: 1,
+          dialogueLineId: 'line.ghost',
+        },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('MoveClip', () => {
+    it('slides the clip and carries its keyframes with it', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      const seeded = applyCommand(
+        { kind: 'AddKeyframe', sceneId, trackId, clipId, time: 1.5, props: { x: 10 } },
+        ctxFor(project, { allocate: countingAllocator() }),
+      );
+      if (!seeded.ok) throw new Error('expected the seed keyframe to apply');
+      const result = applyCommand(
+        { kind: 'MoveClip', sceneId, trackId, clipId, start: 4, snap: false },
+        ctxFor(seeded.project, { now: () => '2026-01-02T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const clip = clipAt(result.project, sceneId, trackId, clipId);
+      expect(clip?.start).toBe(4);
+      expect(clip?.keyframes[0]?.time).toBe(4.5);
+    });
+
+    it('refuses a missing clip and a negative start', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      expect(
+        expectError(
+          applyCommand({ kind: 'MoveClip', sceneId, trackId, clipId: 'clip.ghost', start: 1 }, ctxFor(project)),
+        ).code,
+      ).toBe('not-found');
+      expect(
+        expectError(applyCommand({ kind: 'MoveClip', sceneId, trackId, clipId, start: -1 }, ctxFor(project))).code,
+      ).toBe('invalid-argument');
+    });
+  });
+
+  describe('TrimClip', () => {
+    it('trims the end edge and leaves the start alone', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'TrimClip', sceneId, trackId, clipId, edge: 'end', time: 2.5 },
+        ctxFor(project, { now: () => '2026-02-01T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const clip = clipAt(result.project, sceneId, trackId, clipId);
+      expect(clip?.start).toBe(1);
+      expect(clip?.duration).toBeCloseTo(1.5);
+    });
+
+    it('rejects a trim time that is not a number', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'TrimClip', sceneId, trackId, clipId, edge: 'start', time: Number.NaN },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('invalid-argument');
+    });
+  });
+
+  describe('MoveClipToTrack', () => {
+    it('relocates the clip and drops the track it emptied', () => {
+      const { project, sceneId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'MoveClipToTrack', sceneId, fromTrackId: 'track_actor', toTrackId: 'track_actor_2', clipId },
+        ctxFor(project, { now: () => '2026-02-02T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const scene = result.project.scenes[0];
+      expect(scene?.tracks.some((t) => t.id === 'track_actor')).toBe(false);
+      expect(clipAt(result.project, sceneId, 'track_actor_2', clipId)).toBeDefined();
+    });
+
+    it('refuses an unknown destination track', () => {
+      const { project, sceneId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'MoveClipToTrack', sceneId, fromTrackId: 'track_actor', toTrackId: 'track.ghost', clipId },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('RemoveClip', () => {
+    it('removes the clip and the track it emptied', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'RemoveClip', sceneId, trackId, clipId },
+        ctxFor(project, { now: () => '2026-02-03T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.scenes[0]?.tracks.some((t) => t.id === trackId)).toBe(false);
+    });
+
+    it('refuses a clip that is not on the named track', () => {
+      const { project, sceneId, clipId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'RemoveClip', sceneId, trackId: 'track_actor_2', clipId },
+        ctxFor(project),
+      );
+      expect(expectError(result).code).toBe('not-found');
+    });
+  });
+
+  describe('keyframe commands', () => {
+    it('adds, moves, and removes a keyframe inside its clip', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      const added = applyCommand(
+        { kind: 'AddKeyframe', sceneId, trackId, clipId, time: 1.5, props: { x: 3 } },
+        ctxFor(project, { allocate: countingAllocator() }),
+      );
+      expect(added.ok).toBe(true);
+      if (!added.ok) return;
+      const keyframeId = clipAt(added.project, sceneId, trackId, clipId)?.keyframes[0]?.id;
+      expect(keyframeId).toBe('kf_seed0');
+
+      const moved = applyCommand(
+        { kind: 'MoveKeyframe', sceneId, trackId, clipId, keyframeId: keyframeId ?? '', time: 2.5 },
+        ctxFor(added.project),
+      );
+      expect(moved.ok).toBe(true);
+      if (!moved.ok) return;
+      expect(clipAt(moved.project, sceneId, trackId, clipId)?.keyframes[0]?.time).toBe(2.5);
+
+      const removed = applyCommand(
+        { kind: 'RemoveKeyframe', sceneId, trackId, clipId, keyframeId: keyframeId ?? '' },
+        ctxFor(moved.project),
+      );
+      expect(removed.ok).toBe(true);
+      if (!removed.ok) return;
+      expect(clipAt(removed.project, sceneId, trackId, clipId)?.keyframes).toHaveLength(0);
+    });
+
+    it('refuses a keyframe id that is not on the clip', () => {
+      const { project, sceneId, trackId, clipId } = withTimeline();
+      expect(
+        expectError(
+          applyCommand(
+            { kind: 'MoveKeyframe', sceneId, trackId, clipId, keyframeId: 'kf.ghost', time: 1 },
+            ctxFor(project),
+          ),
+        ).code,
+      ).toBe('not-found');
+      expect(
+        expectError(
+          applyCommand(
+            { kind: 'RemoveKeyframe', sceneId, trackId, clipId, keyframeId: 'kf.ghost' },
+            ctxFor(project),
+          ),
+        ).code,
+      ).toBe('not-found');
+    });
+  });
+
+  describe('track commands', () => {
+    it('reorders a track and patches it', () => {
+      const { project, sceneId } = withTimeline();
+      const patched = applyCommand(
+        { kind: 'UpdateTrack', sceneId, trackId: 'track_actor_2', patch: { muted: true, name: 'Renamed' } },
+        ctxFor(project, { now: () => '2026-02-04T00:00:00.000Z' }),
+      );
+      expect(patched.ok).toBe(true);
+      if (!patched.ok) return;
+      const track = patched.project.scenes[0]?.tracks.find((t) => t.id === 'track_actor_2');
+      expect(track?.muted).toBe(true);
+      expect(track?.name).toBe('Renamed');
+
+      const moved = applyCommand(
+        { kind: 'MoveTrack', sceneId, trackId: 'track_actor_2', toIndex: 0 },
+        ctxFor(patched.project),
+      );
+      expect(moved.ok).toBe(true);
+      if (!moved.ok) return;
+      expect(moved.project.scenes[0]?.tracks[0]?.id).toBe('track_actor_2');
+    });
+
+    it('refuses a bad toIndex and an unknown track', () => {
+      const { project, sceneId } = withTimeline();
+      expect(
+        expectError(applyCommand({ kind: 'MoveTrack', sceneId, trackId: 'track_actor', toIndex: -1 }, ctxFor(project))).code,
+      ).toBe('invalid-argument');
+      expect(
+        expectError(applyCommand({ kind: 'RemoveTrack', sceneId, trackId: 'track.ghost' }, ctxFor(project))).code,
+      ).toBe('not-found');
+    });
+
+    it('removes a track and everything on it', () => {
+      const { project, sceneId, trackId } = withTimeline();
+      const result = applyCommand(
+        { kind: 'RemoveTrack', sceneId, trackId },
+        ctxFor(project, { now: () => '2026-02-05T00:00:00.000Z' }),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.project.scenes[0]?.tracks.some((t) => t.id === trackId)).toBe(false);
+    });
+  });
+
+  it('the P7b vocabulary folds to a document the validator clears', () => {
+    const { project, sceneId } = withTimeline();
+    const commands = [
+      { kind: 'MoveClip', sceneId, trackId: 'track_actor', clipId: 'clip_1', start: 2, snap: false },
+      { kind: 'AddKeyframe', sceneId, trackId: 'track_actor', clipId: 'clip_1', time: 2.5, props: { x: 5 } },
+      { kind: 'TrimClip', sceneId, trackId: 'track_actor', clipId: 'clip_1', edge: 'end', time: 3.5 },
+      { kind: 'MoveClipToTrack', sceneId, fromTrackId: 'track_actor', toTrackId: 'track_actor_2', clipId: 'clip_1' },
+      { kind: 'UpdateTrack', sceneId, trackId: 'track_actor_2', patch: { muted: true } },
+      { kind: 'MoveTrack', sceneId, trackId: 'track_actor_2', toIndex: 0 },
+      { kind: 'RemoveTrack', sceneId, trackId: 'track_actor_2' },
+    ] as const;
+    const result = applyCommands(
+      commands,
+      ctxFor(project, { allocate: countingAllocator(), now: () => '2026-01-01T00:00:00.000Z' }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(validateProject(result.project).some((i) => i.severity === 'error')).toBe(false);
+    expect(result.project.scenes[0]?.tracks).toHaveLength(0);
+  });
+
+  it('is deterministic when the timeline commands fold as a batch', () => {
+    const { project, sceneId } = withTimeline();
+    const commands = [
+      { kind: 'MoveClip', sceneId, trackId: 'track_actor', clipId: 'clip_1', start: 2, snap: false },
+      { kind: 'AddKeyframe', sceneId, trackId: 'track_actor', clipId: 'clip_1', time: 2.5, props: { x: 5 } },
+      { kind: 'MoveClipToTrack', sceneId, fromTrackId: 'track_actor', toTrackId: 'track_actor_2', clipId: 'clip_1' },
+    ] as const;
+    const clock = () => '2026-03-01T00:00:00.000Z';
+    const a = fold(commands, ctxFor(project, { allocate: countingAllocator(), now: clock }));
+    const b = fold(commands, ctxFor(project, { allocate: countingAllocator(), now: clock }));
+    expect(a.errors).toHaveLength(0);
+    expect(b.errors).toHaveLength(0);
+    expect(a).toEqual(b);
+  });
+});
+
+describe('audio media commands (Phase 16 P8)', () => {
+  it('attaches a stored file reference to an audio slot', () => {
+    const { project } = makeProject();
+    const result = applyCommand(
+      { kind: 'AttachAudioMedia', audioId: AUDIO.id, mediaId: 'media-1', duration: 5 },
+      ctxFor(project, { now: () => '2026-04-01T00:00:00.000Z' }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const slot = result.project.assets.audio.find((a) => a.id === AUDIO.id);
+    expect(slot?.src).toBe('media-1');
+    expect(slot?.srcKind).toBe('local');
+    expect(slot?.duration).toBe(5);
+  });
+
+  it('refuses an unknown audio slot or a non-finite duration', () => {
+    const { project } = makeProject();
+    expect(
+      expectError(
+        applyCommand({ kind: 'AttachAudioMedia', audioId: 'audio.ghost', mediaId: 'm', duration: 1 }, ctxFor(project)),
+      ).code,
+    ).toBe('not-found');
+    expect(
+      expectError(
+        applyCommand({ kind: 'AttachAudioMedia', audioId: AUDIO.id, mediaId: 'm', duration: Number.NaN }, ctxFor(project)),
+      ).code,
+    ).toBe('invalid-argument');
+  });
+
+  it('clears an attached file, leaving the slot in the document', () => {
+    const { project } = makeProject();
+    const attached = applyCommand(
+      { kind: 'AttachAudioMedia', audioId: AUDIO.id, mediaId: 'media-1', duration: 5 },
+      ctxFor(project),
+    );
+    if (!attached.ok) throw new Error('expected the attach to apply');
+    const result = applyCommand(
+      { kind: 'DetachAudioMedia', audioId: AUDIO.id },
+      ctxFor(attached.project, { now: () => '2026-04-02T00:00:00.000Z' }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const slot = result.project.assets.audio.find((a) => a.id === AUDIO.id);
+    expect(slot?.src).toBeNull();
+    expect(slot?.srcKind).toBeNull();
   });
 });
