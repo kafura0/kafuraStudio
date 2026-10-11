@@ -55,6 +55,42 @@ const noUpwardImports = {
   },
 };
 
+/**
+ * G6: a UI module must dispatch a command, never call a mutating `document/*Ops`
+ * function directly (ARCHITECTURE_SPEC.md §33 G6). Read-only lookups are permitted;
+ * anything else means a panel can change the document without naming what it did.
+ */
+const READ_ONLY_OPS = new Set(['cameraClips', 'MIN_CLIP_DURATION', 'snapToEdges']);
+const OPS_MODULE = /core\/document\/[A-Za-z]+Ops$/;
+
+const noMutatingOpsInUi = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'UI dispatches commands; it never calls a mutating document op (G6).' },
+    messages: {
+      mutating:
+        'Do not call the mutating op "{{name}}" from the UI. Dispatch a command instead (ARCHITECTURE_SPEC.md §33 G6).',
+    },
+  },
+  create(context) {
+    return {
+      ImportDeclaration(node) {
+        const spec = node.source?.value;
+        if (typeof spec !== 'string' || !OPS_MODULE.test(spec)) return;
+        if (node.importKind === 'type') return;
+        for (const s of node.specifiers) {
+          if (s.type !== 'ImportSpecifier') continue;
+          if (s.importKind === 'type') continue;
+          const name = s.imported.type === 'Identifier' ? s.imported.name : s.imported.value;
+          if (!READ_ONLY_OPS.has(name)) {
+            context.report({ node: s, messageId: 'mutating', data: { name } });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', '*.config.js', '*.config.ts'] },
   {
@@ -67,7 +103,7 @@ export default tseslint.config(
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
-      local: { rules: { 'no-upward-imports': noUpwardImports } },
+      local: { rules: { 'no-upward-imports': noUpwardImports, 'no-mutating-ops-in-ui': noMutatingOpsInUi } },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -84,6 +120,11 @@ export default tseslint.config(
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
+  },
+  {
+    files: ['src/ui/**/*.{ts,tsx}'],
+    ignores: ['src/ui/**/*.test.ts', 'src/ui/**/*.test.tsx'],
+    rules: { 'local/no-mutating-ops-in-ui': 'error' },
   },
   {
     files: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

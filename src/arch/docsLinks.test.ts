@@ -71,7 +71,6 @@ const PLANNED_PATHS: Record<string, string> = {
   'src/core/persistence/series': '14',
   // Architecture gates named for phases 15-19.
   'src/arch/planIsolation.test.ts': '17',
-  'src/arch/commandCoverage.test.ts': '16',
   'src/arch/mutationPath.test.ts': '16',
 };
 

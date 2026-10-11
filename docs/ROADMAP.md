@@ -247,16 +247,45 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   already has a camera track reuses it. The camera panel now dispatches those four
   commands and dropped every mutating `cameraOps` import. 27 new command tests (77 total).
 
-Still to come, in order: P8 the command-coverage lint rule;
-P9 end-of-batch validation armed with the 200-command timing test. Phase 14's manual
-acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled jointly,
-recorded rather than redefined.
+- **P7b — the timeline command layer, and the rest of the editor rides the seam.** Eleven
+  `trackOps`-wrapping commands land (`AddClip`, `MoveClip`, `TrimClip`, `MoveClipToTrack`,
+  `RemoveClip`, `AddKeyframe`, `MoveKeyframe`, `RemoveKeyframe`, `MoveTrack`, `RemoveTrack`,
+  `UpdateTrack`), each validating its arguments (`not-found` for a missing scene/track/clip/
+  keyframe, `invalid-argument` for a negative start or a sub-frame duration) and folding
+  through `addSimpleClip`/`moveClip`/`trimClip`/`relocateClip`/… with the injected clock, so
+  a plan preview is exact. `Timeline.tsx` now dispatches all twelve of its mutation sites
+  (drag-move/keyframe/move-to-track/trim, keyboard delete, add-clip, add-keyframe, lane
+  delete, reorder, mute), recovering the new clip id by diffing before/after. Two new audio
+  commands (`AttachAudioMedia`, `DetachAudioMedia`) and the reuse of `CreateEpisode` let the
+  last store mutations leave `commit()`: `placeAudioSlotInScene` → `AddClip`,
+  `attachAudioFile` → `AttachAudioMedia`, `clearAudioFile` → `DetachAudioMedia`, and the
+  open-project branch of `addEpisodeToProject` → `CreateEpisode` (the not-open branch still
+  writes the repository directly, since there is no open document to undo into). The one
+  remaining `commit()` call site in the tree is the store's `dispatch`. Also repaired the
+  residue of an earlier encoding accident: `Timeline.tsx` restored from a clean revision and
+  eleven command modules re-saved as UTF-8. 21 new command tests (98 total).
+
+- **P8 — the command-coverage gate (G6).** `src/arch/commandCoverage.test.ts` enforces §33 G6
+  in three clauses: (a) no `src/ui/**` module imports a *mutating* `document/*Ops` function —
+  only read-only lookups (`cameraClips`, `MIN_CLIP_DURATION`, `snapToEdges`) are permitted;
+  (b) every `commit()` outside `src/core/` is the store's `dispatch` action, and that action
+  really applies a command; (c) every registered command kind is dispatched by a UI/state
+  action or emitted by a plan (the plan tree is scanned the phase it exists). The matching
+  ESLint rule `local/no-mutating-ops-in-ui` fails the build on a mutating `*Ops` import in
+  `src/ui`. The gate is self-verifying: the one kind with no editing surface yet,
+  `SetActorPose` (the §7.6 reference command), is named explicitly as pending and the test
+  fails if it is renamed or removed from the registry. The `commandCoverage` planned-path
+  exemption in `docsLinks.test.ts` cleared itself, as designed.
+
+Still to come, in order: P9 end-of-batch validation armed with the 200-command timing test.
+Phase 14's manual acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled
+jointly, recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-952 tests green across 64 files, all four gates clean. This is the state on the last
-verification run (P7a of Phase 16); the `multiseries` suite's IndexedDB write exceeds
+978 tests green across 65 files, all four gates clean. This is the state on the last
+verification run (P8 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
 its 5000 ms window under full-suite load on this machine and is verified separately,
 where it passes. Phase 13's snapshot at its close was 746 across 51.
 
