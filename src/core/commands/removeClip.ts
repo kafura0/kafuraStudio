@@ -1,5 +1,5 @@
 /**
- * RemoveClip — remove a clip (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * RemoveClip â€” remove a clip (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { removeClip as removeClipOp } from '../document/trackOps';

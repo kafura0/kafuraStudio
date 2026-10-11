@@ -1,5 +1,5 @@
 /**
- * MoveClipToTrack — relocate a clip to another track of the same kind (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * MoveClipToTrack â€” relocate a clip to another track of the same kind (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { relocateClip } from '../document/trackOps';

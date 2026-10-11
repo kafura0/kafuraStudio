@@ -1,5 +1,5 @@
 /**
- * AddKeyframe — add or update a keyframe at time (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * AddKeyframe â€” add or update a keyframe at time (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import { ID_PREFIX } from '../id';
 import type { Id, KeyframeTarget, EaseType } from '../types';

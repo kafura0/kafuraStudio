@@ -1,5 +1,5 @@
 /**
- * UpdateTrack — mutate track fields (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * UpdateTrack â€” mutate track fields (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import type { Id, Track } from '../types';
 import { updateTrack as updateTrackOp } from '../document/trackOps';

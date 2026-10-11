@@ -1,5 +1,5 @@
 /**
- * RemoveKeyframe — delete a keyframe (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * RemoveKeyframe â€” delete a keyframe (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { removeKeyframe as removeKeyframeOp } from '../document/trackOps';

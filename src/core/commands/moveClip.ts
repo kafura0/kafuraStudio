@@ -1,5 +1,5 @@
 /**
- * MoveClip � move a clip in time, keeping its duration (ARCHITECTURE_SPEC.md �7.2, Phase 16 P7b).
+ * MoveClip — move a clip in time, keeping its duration (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { moveClip as moveClipOp } from '../document/trackOps';

@@ -1,5 +1,5 @@
 /**
- * MoveKeyframe — move a keyframe (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
+ * MoveKeyframe â€” move a keyframe (ARCHITECTURE_SPEC.md Â§7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { moveKeyframe as moveKeyframeOp } from '../document/trackOps';

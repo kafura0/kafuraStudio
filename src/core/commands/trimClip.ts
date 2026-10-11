@@ -1,5 +1,5 @@
 /**
- * TrimClip � trim a clip from either edge (ARCHITECTURE_SPEC.md �7.2, Phase 16 P7b).
+ * TrimClip — trim a clip from either edge (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
  */
 import type { Id } from '../types';
 import { trimClip as trimClipOp } from '../document/trackOps';

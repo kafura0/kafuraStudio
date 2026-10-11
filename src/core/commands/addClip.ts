@@ -1,5 +1,5 @@
 /**
- * AddClip � add a clip, creating its track if needed (ARCHITECTURE_SPEC.md �7.2, Phase 16 P7b).
+ * AddClip — add a clip, creating its track if needed (ARCHITECTURE_SPEC.md §7.2, Phase 16 P7b).
  */
 import { ID_PREFIX } from '../id';
 import type { Id, TrackKind } from '../types';
