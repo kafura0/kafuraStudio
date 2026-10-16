@@ -291,10 +291,17 @@ function codeOf(file: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 }
 
+/**
+ * The stripped source of every core file, read once. This test runs nine regexes over the
+ * tree; re-walking and re-reading it per regex turned the scan itself into the cost.
+ */
+let coreSource: { file: string; code: string }[] | null = null;
+
 function offendersInCore(banned: RegExp): string[] {
+  coreSource ??= coreFiles().map((file) => ({ file, code: codeOf(file) }));
   const offenders: string[] = [];
-  for (const file of coreFiles()) {
-    const lines = codeOf(file).split('\n');
+  for (const { file, code } of coreSource) {
+    const lines = code.split('\n');
     lines.forEach((line, index) => {
       banned.lastIndex = 0;
       if (banned.test(line)) {
