@@ -1,6 +1,9 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 16 — Commands, Transactions & Provenance.** In progress.
+> **Current phase: Phase 16 — Commands, Transactions & Provenance.** Complete (P1–P9):
+> every editor mutation dispatches a named command, and a batch is one undo step that
+> validates once and rolls back to zero on failure. The plan layer is next — Phase 17,
+> still `planned`.
 > **Previous: Phase 15 — Engine Correctness & Render Performance.** Complete as
 > implementation and automated gates (§18.2 R1/R2/R3/R8/R9, §18.3 R4/R5/R6/R10, the
 > golden fixtures with draw-op ceilings, and the adaptive undo cap). The manual
@@ -60,6 +63,7 @@ numbering is reconciled against
 | 13 | MVP Acceptance & Documentation Truth | **complete** | Twelve manual checks walked at 1440p and 1920p, a docs-link test added, and every stale claim in `docs/` corrected against the source. Ten of twelve pass; checks 4 and 8 reported unmet rather than redefined. See the phase section below. |
 | 14 | Series & Asset Scope | **in progress** | Series registry and lifecycle, `SeriesBrowser`, the `seriesId` picker on creation, `resolveAssets` derived library (`SceneContext`), migrated seed, and the G1/G2/G12 architecture gates all landed and green. The manual acceptance walk against §24.5 is still open. See the phase section below. |
 | 15 | Engine Correctness & Render Performance | **complete** | §18.2 R1/R2/R3/R8/R9 and §18.3 R4/R5/R6/R10 landed; golden render fixtures byte-identical to the pre-index renderer with draw-op ceilings; Stage dirty check; adaptive undo cap; every corrected renderer claim in `docs/`. Automated gates green at 868 tests across 63 files; the manual 600-frame RULE 14 run remains open. See the phase section below. |
+| 16 | Commands, Transactions & Provenance | **complete** | A named, serializable command layer over the existing operations (§7), a fold that applies a sequence atomically and validates the document exactly once (§8.3/§22.3), the `dispatch` seam that routes every UI/store mutation through a command (§7.3), and the G6 command-coverage gate (§33). Every editor gesture is one undo step; a 200-command batch validates once and rolls back to zero on any failure. 982 tests across 66 files. See the phase section below. |
 
 ### Phase 13 — MVP Acceptance & Documentation Truth
 
@@ -277,17 +281,38 @@ below. RULE 1 applies: only Phase 16 lands here; `src/core/plans/` stays planned
   fails if it is renamed or removed from the registry. The `commandCoverage` planned-path
   exemption in `docsLinks.test.ts` cleared itself, as designed.
 
-Still to come, in order: P9 end-of-batch validation armed with the 200-command timing test.
-Phase 14's manual acceptance walk and Phase 15's §24.6 600-frame perf run remain scheduled
-jointly, recorded rather than redefined.
+- **P9 — end-of-batch validation, pinned by a 200-command timing test.** §8.3 originally
+  said `applyCommands` validates after every command; §22.3 supersedes it because that is
+  O(200 × document) on a 200-command plan. That decision was already *implemented* (P4), but
+  nothing held a future change to it, so `src/core/commands/batchValidation.test.ts` now does:
+  `validateProject` is counted through a wrapping mock, and a 200-command fold calls it
+  **exactly once** while the same 200 commands applied one at a time call it **200 times** —
+  the O(n × document) shape, shown for contrast. The fold and the loop reach an identical
+  document, and the fold finishes far inside a generous 2 s ceiling, so the ceiling only trips
+  on an algorithmic regression, never on hardware. 4 new tests (982 total). **Phase 16 is
+  complete.**
+
+Closing the phase meant running all four gates in one pass, which two harness faults had
+been keeping red — both repaired rather than waived. The G1 token scan in
+`src/arch/multiseries.test.ts` re-walked and re-read every file in `src/core` once per
+regex, so nine regexes cost 7 s and tripped vitest's 5 s window even alone; the sources
+are now read once (528 ms). The 288-frame export parity loop in
+`src/test/exportDrawLog.test.ts` blocked its worker for 83 s without yielding, so birpc's
+60 s `onTaskUpdate` heartbeat timed out and the run reported an unhandled error despite
+every assertion holding; the loop now yields every eight frames, and no frame, comparison
+or ceiling changed. The lint error in the P9 file itself (an `import()` type annotation)
+became a static type import.
+
+Next: **Phase 17 — Plans, validation & compilation**, which is `planned` and forbidden by
+RULE 1 until it starts. Phase 14's manual acceptance walk and Phase 15's §24.6 600-frame
+perf run remain scheduled jointly, recorded rather than redefined.
 
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-978 tests green across 65 files, all four gates clean. This is the state on the last
-verification run (P8 of Phase 16); the `multiseries` suite's IndexedDB write exceeds
-its 5000 ms window under full-suite load on this machine and is verified separately,
-where it passes. Phase 13's snapshot at its close was 746 across 51.
+982 tests green across 66 files, all four gates clean, in a single run — no suite is
+left to be verified separately. This is the state on the last verification run (the
+Phase 16 close, P9). Phase 13's snapshot at its close was 746 across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
