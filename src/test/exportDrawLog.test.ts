@@ -127,7 +127,7 @@ function firstSubtitledFrame(): ReturnType<typeof resolveExportFrame> {
 describe('export draw log equals the stage draw log', () => {
   it(
     'draws every frame of the seed episode identically to a direct renderScene call',
-    () => {
+    async () => {
       const project = SEED_PROJECT;
       const episode = project.episodes[0];
       if (!episode) throw new Error('seed has no episode');
@@ -141,11 +141,16 @@ describe('export draw log equals the stage draw log', () => {
       // The merged library is the same fact for every frame and every side — the store
       // resolves it once at open — so it is resolved once here rather than per frame.
       const context = libraryFor(project);
-      for (const frame of frames) {
+      for (const [i, frame] of frames.entries()) {
         const resolved = resolveExportFrame(timeline, frame.index, frame.time);
         expect(drawAsExporter(project, resolved, EXPORT_SUBTITLES, context)).toEqual(
           drawAsStage(project, resolved, EXPORT_SUBTITLES, context),
         );
+        // A synchronous 83-second loop starves the worker's own event loop, so its
+        // bookkeeping RPC times out and the run is reported as an unhandled error even
+        // though every assertion above held. Yielding periodically lets the harness
+        // breathe; no frame is skipped and nothing about the comparison changes.
+        if (i % 8 === 7) await new Promise((resolve) => setTimeout(resolve, 0));
       }
     },
     // The whole episode is rendered twice, and recording several hundred thousand draw
