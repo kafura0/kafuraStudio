@@ -20,6 +20,13 @@ export interface AddClipCommand extends Command {
   dialogueLineId?: string | null;
   gain?: number;
   trackId?: Id;
+  /**
+   * Plan-compilation handles for the track and clip this command creates (§11.5
+   * correction). Never set by the UI; `applyPlan` binds them to the ids the command
+   * just produced so later compiled keyframe commands can address them.
+   */
+  trackRef?: string;
+  clipRef?: string;
 }
 
 defineCommand<AddClipCommand>('AddClip', (command, ctx: CommandContext) => {
@@ -42,6 +49,12 @@ defineCommand<AddClipCommand>('AddClip', (command, ctx: CommandContext) => {
   if (command.audioId !== undefined) extras.audioId = command.audioId;
   if (command.dialogueLineId !== undefined) extras.dialogueLineId = command.dialogueLineId;
   if (command.gain !== undefined) extras.gain = command.gain;
+  // A fresh track's id must come from the allocator too (§8.3): `findOrCreateTrack`
+  // would otherwise mint one with crypto when it creates the track. Only allocate when
+  // the track really is missing, so the id stream does not depend on track count.
+  const trackExists = scene.tracks.some(
+    (t) => t.kind === command.trackKind && t.targetId === command.targetId,
+  );
   const { project } = addSimpleClip(
     ctx.project,
     command.sceneId,
@@ -53,7 +66,11 @@ defineCommand<AddClipCommand>('AddClip', (command, ctx: CommandContext) => {
     extras,
     {
       clipId: ctx.allocate(ID_PREFIX.clip),
-      ...(command.trackId !== undefined ? { trackId: command.trackId } : {}),
+      ...(command.trackId !== undefined
+        ? { trackId: command.trackId }
+        : trackExists
+          ? {}
+          : { trackId: ctx.allocate(ID_PREFIX.track) }),
       clock: ctx.now,
     },
   );

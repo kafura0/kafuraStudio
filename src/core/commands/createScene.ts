@@ -21,6 +21,13 @@ export interface CreateSceneCommand extends Command {
   environmentId: Id;
   description?: string;
   duration?: number;
+  backgroundColor?: string;
+  /**
+   * Plan-compilation handle for the scene this command creates (§11.5 correction).
+   * Never set by the UI; `applyPlan` binds it to the new scene id so later compiled
+   * commands can refer to a scene that did not exist when they were compiled.
+   */
+  sceneRef?: string;
 }
 
 defineCommand<CreateSceneCommand>('CreateScene', (command, ctx: CommandContext) => {
@@ -33,6 +40,7 @@ defineCommand<CreateSceneCommand>('CreateScene', (command, ctx: CommandContext) 
     clock: ctx.now,
     ...(command.description !== undefined ? { description: command.description } : {}),
     ...(command.duration !== undefined ? { duration: command.duration } : {}),
+    ...(command.backgroundColor !== undefined ? { backgroundColor: command.backgroundColor } : {}),
     name: command.name,
     environmentId: command.environmentId,
   });

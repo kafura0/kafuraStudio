@@ -6,6 +6,7 @@
  * never through `./registry` directly — the registry alone holds no kinds.
  */
 import './createScene';
+import './placeCharacter';
 import './setActorPose';
 import './addDialogueLine';
 import './setDialogueLine';

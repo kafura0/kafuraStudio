@@ -43,8 +43,12 @@ export function defineCommand<K extends Command>(
  * kind, guards the registry, wraps the `internal` failure, and returns the handler's
  * result untouched. Validation is NOT here — §22.3 makes the single command validate and
  * the batch validate once, and the two callers own that difference.
+ *
+ * Exported for `applyPlan` (Phase 17), the third fold surface: it must interleave
+ * handle-binding between commands, so it cannot call `applyCommands`, and it validates
+ * exactly once at the end like the batch does.
  */
-function runHandler(command: Command, ctx: CommandContext): CommandResult {
+export function dispatchCommand(command: Command, ctx: CommandContext): CommandResult {
   const handler = registry.get(command.kind);
   if (!handler) {
     return {
@@ -78,7 +82,7 @@ function runHandler(command: Command, ctx: CommandContext): CommandResult {
  * reappears as an `internal` error, the one code that says "this is the command's fault".
  */
 export function applyCommand<C extends Command>(command: C, ctx: CommandContext): CommandResult {
-  const result = runHandler(command, ctx);
+  const result = dispatchCommand(command, ctx);
   if (!result.ok) {
     return result;
   }
@@ -111,7 +115,7 @@ export function applyCommand<C extends Command>(command: C, ctx: CommandContext)
  *    a fresh document, the intermediate documents are unreachable garbage; there is no
  *    per-operation state to roll back.
  * 2. **One validation per batch (§22.3 supervises §8.3).** Each step runs through
- *    `runHandler` — the registry guard and the `internal` wrap, but no validation, because
+ *    `dispatchCommand` — the registry guard and the `internal` wrap, but no validation, because
  *    *every operation is already required to be total and to return a structurally valid
  *    document*. The batch validates exactly once, against the final document. That is what
  *    keeps a 200-command plan at O(200 × handler + document) instead of O(200 × document).
@@ -121,7 +125,7 @@ export function applyCommands(commands: readonly Command[], ctx: CommandContext)
   for (let i = 0; i < commands.length; i += 1) {
     const command = commands[i];
     if (command === undefined) continue;
-    const result = runHandler(command, { ...ctx, project });
+    const result = dispatchCommand(command, { ...ctx, project });
     if (!result.ok) {
       return { ok: false, error: batchPath(result.error, i, command.kind) };
     }
