@@ -12,6 +12,14 @@ export const STAGE_FPS = 24;
 export const DEFAULT_SCENE_DURATION = 12;
 
 /**
+ * Background a scene starts with, before anything is staged in it.
+ *
+ * Named here rather than inlined in the scene factory so a plan can *record the default
+ * as an assumption* without copying a literal that could drift (§11.1, Phase 17).
+ */
+export const DEFAULT_BACKGROUND_COLOR = '#0b0d12';
+
+/**
  * Document format version this build writes.
  *
  * Lives here rather than in `serialize.ts` because both the serializer and the project

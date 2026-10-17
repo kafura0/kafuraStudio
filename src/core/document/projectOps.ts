@@ -142,6 +142,7 @@ export function createSceneInProject(
     environmentId: string;
     description?: string;
     duration?: number;
+    backgroundColor?: string;
     id?: Id;
     clock?: () => string;
   },
@@ -151,6 +152,7 @@ export function createSceneInProject(
   const scene = createScene(options.name, options.environmentId, {
     ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.duration !== undefined ? { duration: options.duration } : {}),
+    ...(options.backgroundColor !== undefined ? { backgroundColor: options.backgroundColor } : {}),
     ...(options.id !== undefined ? { id: options.id } : {}),
     camera,
   });

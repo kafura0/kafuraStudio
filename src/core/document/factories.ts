@@ -6,7 +6,7 @@
  */
 
 import { createId, ID_PREFIX } from '../id';
-import { CURRENT_FORMAT_VERSION, DEFAULT_SCENE_DURATION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from '../constants';
+import { CURRENT_FORMAT_VERSION, DEFAULT_BACKGROUND_COLOR, DEFAULT_SCENE_DURATION, STAGE_FPS, STAGE_HEIGHT, STAGE_WIDTH } from '../constants';
 import { transform } from '../types';
 import type {
   AssetLibrary,
@@ -179,7 +179,7 @@ export function createEpisode(
 export function createScene(
   name: string,
   environmentId: string,
-  options: { description?: string; duration?: number; camera?: Camera; id?: Id } = {},
+  options: { description?: string; duration?: number; camera?: Camera; id?: Id; backgroundColor?: string } = {},
 ): Scene {
   return {
     id: options.id ?? createId(ID_PREFIX.scene),
@@ -192,7 +192,7 @@ export function createScene(
     tracks: [],
     camera: options.camera ?? { x: 0, y: 0, zoom: 1, rotation: 0 },
     duration: options.duration ?? DEFAULT_SCENE_DURATION,
-    backgroundColor: '#0b0d12',
+    backgroundColor: options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR,
     metadata: {},
   };
 }
@@ -223,9 +223,10 @@ export function createActor(
   poseId: string,
   expressionId: string,
   transformOverrides: Partial<SceneActor['transform']> = {},
+  options: { id?: Id } = {},
 ): SceneActor {
   return {
-    id: createId(ID_PREFIX.actor),
+    id: options.id ?? createId(ID_PREFIX.actor),
     characterId,
     poseId,
     expressionId,

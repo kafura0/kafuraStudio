@@ -32,12 +32,13 @@ export function addActorToScene(
   sceneId: Id,
   actor: SceneActor,
   zIndex?: number,
+  now?: () => string,
 ): Project {
   return mapScene(project, sceneId, (scene) => {
     const z = zIndex ?? scene.actors.length;
     // Stable z ordering: append after everything currently placed.
     return { ...scene, actors: [...scene.actors, { ...actor, z }] };
-  });
+  }, now);
 }
 
 /** Create and place a character, defaulting pose/expression from the definition. */
@@ -46,6 +47,7 @@ export function placeCharacter(
   sceneId: Id,
   character: CharacterDef,
   placement: Partial<Transform2D> & { poseId?: string; expressionId?: string } = {},
+  options: { id?: Id; clock?: () => string } = {},
 ): { project: Project; actorId: Id } {
   // Pick the transform fields explicitly. `placement` also carries poseId and
   // expressionId, and passing it straight through would splatter them into
@@ -58,8 +60,9 @@ export function placeCharacter(
     poseId ?? character.defaultPoseId,
     expressionId ?? character.defaultExpressionId,
     placementTransform,
+    options.id !== undefined ? { id: options.id } : {},
   );
-  const next = addActorToScene(project, sceneId, actor);
+  const next = addActorToScene(project, sceneId, actor, undefined, options.clock);
   return { project: next, actorId: actor.id };
 }
 
@@ -187,6 +190,7 @@ export function bindActorToAnchor(
   sceneId: Id,
   actorId: Id,
   anchorId: Id,
+  now?: () => string,
 ): Project {
   const scene = requireScene(project, sceneId);
   const environment = findEnvironment(library, scene.environmentId);
@@ -211,7 +215,7 @@ export function bindActorToAnchor(
           }
         : actor,
     ),
-  }));
+  }), now);
 }
 
 /** Unbind, keeping the current placement so the actor stays where it appears. */
