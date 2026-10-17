@@ -1,9 +1,14 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 16 — Commands, Transactions & Provenance.** Complete (P1–P9):
+> **Current phase: Phase 17 — Plans, Validation & Compilation.** In progress. The pure
+> pipeline is landed: `parsePlan`/`parseScenePlan`, the `ScenePlan` vocabulary and its
+> fixtures, `validatePlan`, `compilePlan`, `applyPlan`, and the determinism lint rule,
+> with `parse`/`layout`/`validate`/`compile`/`apply` tests green (§26 steps 1–8, gates
+> G6/G7/G8/G10). The review and edit surfaces §26 schedules for Phase 18 — `planDiff`,
+> `planStore`, `PlanReviewPanel`, `PlanEditor`, `PlanRecord` persistence — are not built.
+> **Previous: Phase 16 — Commands, Transactions & Provenance.** Complete (P1–P9):
 > every editor mutation dispatches a named command, and a batch is one undo step that
-> validates once and rolls back to zero on failure. The plan layer is next — Phase 17,
-> still `planned`.
+> validates once and rolls back to zero on failure.
 > **Previous: Phase 15 — Engine Correctness & Render Performance.** Complete as
 > implementation and automated gates (§18.2 R1/R2/R3/R8/R9, §18.3 R4/R5/R6/R10, the
 > golden fixtures with draw-op ceilings, and the adaptive undo cap). The manual
@@ -64,6 +69,7 @@ numbering is reconciled against
 | 14 | Series & Asset Scope | **in progress** | Series registry and lifecycle, `SeriesBrowser`, the `seriesId` picker on creation, `resolveAssets` derived library (`SceneContext`), migrated seed, and the G1/G2/G12 architecture gates all landed and green. The manual acceptance walk against §24.5 is still open. See the phase section below. |
 | 15 | Engine Correctness & Render Performance | **complete** | §18.2 R1/R2/R3/R8/R9 and §18.3 R4/R5/R6/R10 landed; golden render fixtures byte-identical to the pre-index renderer with draw-op ceilings; Stage dirty check; adaptive undo cap; every corrected renderer claim in `docs/`. Automated gates green at 868 tests across 63 files; the manual 600-frame RULE 14 run remains open. See the phase section below. |
 | 16 | Commands, Transactions & Provenance | **complete** | A named, serializable command layer over the existing operations (§7), a fold that applies a sequence atomically and validates the document exactly once (§8.3/§22.3), the `dispatch` seam that routes every UI/store mutation through a command (§7.3), and the G6 command-coverage gate (§33). Every editor gesture is one undo step; a 200-command batch validates once and rolls back to zero on any failure. 982 tests across 66 files. See the phase section below. |
+| 17 | Plans, Validation & Compilation | **in progress** | The pure pipeline is landed and green: a total `parsePlan`, the `ScenePlan` vocabulary with real-library fixtures, `validatePlan` (reference existence, pose compatibility, timing, structure), `compilePlan` (the §11.6 command order, with plan-local handles), `applyPlan` (the handle-binding fold, atomic, validates once), and the ESLint determinism rule. `parse`/`layout`/`validate`/`compile`/`apply` tests pass; gates G6/G7/G8/G10 hold. The review/edit surfaces §26 assigns to Phase 18 are not built. See the phase section below. |
 
 ### Phase 13 — MVP Acceptance & Documentation Truth
 
@@ -307,15 +313,100 @@ Next: **Phase 17 — Plans, validation & compilation**, which is `planned` and f
 RULE 1 until it starts. Phase 14's manual acceptance walk and Phase 15's §24.6 600-frame
 perf run remain scheduled jointly, recorded rather than redefined.
 
+### Phase 17 — Plans, Validation & Compilation (in progress)
+
+The current phase. Scope is `ARCHITECTURE_SPEC.md` §26 Phase 17 (steps 1–8), under §9
+(plan envelope), §10 (validation) and §11 (compiler). Steps 1–8 are landed; the
+review-and-edit surfaces §26 assigns to **Phase 18** are not.
+
+- **Step 1 — the total parser.** `src/core/plans/types.ts` and `parse.ts`:
+  `parsePlan` never throws — prose, truncated JSON, an unknown `kind` and a future
+  `planVersion` each produce a typed `PlanParseError` (§9.6). `parseScenePlan` checks
+  body shape only and passes values through by reference. `parse.test.ts`, 20 tests.
+- **Step 2 — the `ScenePlan` vocabulary and fixtures.** `src/data/plans/index.ts`
+  holds fixtures that are *true* against the real library: `WORKED_EXAMPLE_PLAN` (the
+  §11.6 example on real ids), `MINIMAL_PLAN`, `GENERATED_DIALOGUE_PLAN`,
+  `PRESET_CAMERA_PLAN`, `modifySeedScenePlan(project)` (a live-scene modify that
+  resolves one line to a plan cast entry and one to a scene actor), `seedPlanContext()`,
+  and the invalid shapes G7 names (`MISSING_CHARACTER_PLAN`, `ZERO_DURATION_PLAN`, and
+  the non-plan responses).
+- **Step 3 — `validatePlan`.** Reference existence, then compatibility (`pose-incompatible`
+  via the rig-slot check — library poses never fire it), then timing (dialogue layout
+  through `src/core/plans/layout.ts`, the `MIN_CLIP_DURATION` floor for every emitted
+  clip), then structure. Returns `ResolvedPlanReferences`, computed once, so the
+  compiler cannot disagree with the validator (§11.3 rule 4). `validate.test.ts` + 42
+  tests; `layout.test.ts`, 18.
+- **Step 4 — `compilePlan`.** Emits the §11.6 order as discriminated object literals:
+  `CreateScene` → `PlaceCharacter` per cast → `AddDialogueLine` per line → the
+  expression clip (`AddClip` + anchor keyframe at 0 + per-change keyframes) → camera
+  (`SetSceneCamera` rest, a conditional `ClearCameraMoves`, `AddClip`, keyframes).
+  Fresh ids are never minted here; the compiler writes plan-local **handles**
+  (`@scene`, `@cast:N`, `@camera-track`, `@expr-track:N`) into id fields and sets a
+  `*Ref` output on each producing command. `compile.test.ts`, 12 tests.
+- **Step 5 — `preview === applied`.** `applyPlan` (`src/core/plans/apply.ts`) is the
+  handle-binding fold: it substitutes bound handles before each dispatch and binds each
+  ref-out to the id the document actually gained, is atomic, and validates once. Because
+  ids and timestamps come only from the injected allocator and clock
+  (`src/core/plans/allocator.ts`), two applications from the same project with the same
+  sources are deep-equal — the gate the review workflow rests on. `apply.test.ts`, 14
+  tests; `allocator.test.ts`, 4.
+- **Step 6 — commands and the fixture set.** Two command-layer additions carried the
+  compiler: `PlaceCharacter` (new — `placeCharacter` + `bindActorToAnchor` + `updateActor`
+  in one command, with an `actorRef` handle) and the extension of `CreateScene`
+  (`backgroundColor`, `sceneRef`) and `AddClip` (`trackRef`, `clipRef`, and a
+  deterministic track-id allocation when the track does not yet exist). `applyCommands`
+  and the UI never see handles; only a plan does.
+- **Step 7 — the ESLint determinism rule.** `no-restricted-globals` (`Date`, `crypto`)
+  and `no-restricted-properties` (`Math.random`, `globalThis.crypto`) apply to
+  `src/core/plans/**` and `src/core/commands/**`: a fold takes its clock from `ctx.now`
+  and its ids from `ctx.allocate`, never the ambient environment (§8.3, D8).
+- **Step 8 — assumptions.** Every value the compiler invented is recorded: generated
+  dialogue cue windows, a scene extended to fit them, cue truncation on a modify plan,
+  the default background colour, a camera rest framing assumed from a non-zero first
+  keyframe, and the expression anchor keyframe at 0. `Assumption`s ride the
+  `CompileResult`.
+
+**Gates.** G6 holds (`commandCoverage.test.ts` scans `src/core/plans` and sees the
+emitted kinds, so no registry kind is unreachable); G7 holds (`validate.test.ts` covers
+the nonexistent-character, zero-duration and malformed-response cases, and `applyPlan`
+returns no document on failure); G8 holds (determinism + a valid applied document over
+every fixture); G10 holds (`compilePlan` is byte-identical across repeated runs).
+
+**Recorded honestly, not closed:**
+
+- **Timing is plan-internal.** The validator checks overlaps *within* a plan and clamps
+  or rejects cues against the scene's duration, but it does not compare an explicit cue
+  against cues already present in a scene it modifies. A modify-plan can layer a cue on
+  an existing one. Recorded in `ARCHITECTURE_SPEC.md` §10.3 as a limitation.
+- **Plan apply through the store is Phase 18.** There is no `planStore` and no batch
+  `dispatch` seam yet, so a plan is not yet applied as *one* undo step from the UI;
+  `applyPlan` is a pure core function exercised by tests. G9's "a 200-command plan
+  apply" and "a plan review session" therefore land with Phase 18's review workflow, as
+  §26 schedules them.
+- **The review/edit surfaces are Phase 18.** `planDiff`, `PlanReviewPanel`,
+  `PlanEditor`, `planStore` and `PlanRecord` persistence are filed as Phase 18. The
+  `docsLinks.test.ts` planned-path entries that carry a `17` phase for those paths
+  predate this split; they remain planned paths and will be reconciled to their phase
+  when the work starts.
+
+`ARCHITECTURE_SPEC.md` corrections written this phase: §10.3 (plan-internal timing),
+§10.5 (`pose-incompatible` now implemented), §11.5 (the plan fold is `applyPlan`, not
+`applyCommands`, because compiled commands carry handles), and §11.6 (the five ways the
+emitted command list differs from the design sketch).
+
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-982 tests green across 66 files, all four gates clean, in a single run — no suite is
+1092 tests green across 72 files, all four gates clean, in a single run — no suite is
 left to be verified separately. This is the state on the last verification run (the
-Phase 16 close, P9). Phase 13's snapshot at its close was 746 across 51.
+Phase 17 pipeline), up from the Phase 16 close's 982 across 66 and Phase 13's 746
+across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
+- Plans: a total plan parser, a validator that resolves every reference once, a
+  deterministic compiler emitting the editor's own commands, and a handle-binding
+  `applyPlan` fold — the `ScenePlan` -> `Project` pipeline, pure and tested.
 - Playback: pure `timeline/episode` flattens a cut into timed segments, resolves an
   episode time to a scene and a local time, and totals a duration; pure
   `audio/episodePlan` offsets the scene-local audio segments onto the episode clock,
@@ -624,3 +715,4 @@ the document is the shared asset.
 | 2026-09-30 | Phase 9 **complete**. Rest framing and a seeded-preset picker in the camera panel, plus `frameBounds`, which inverts the renderer's own camera transform; an invariant test holds the two to each other. 329 tests green. |
 | 2026-09-30 | Phase 10 **complete**. Pure `timeline/episode` (offsets, resolution, duration) and `audio/episodePlan` (the mixdown offsets Phase 12 will consume); the store's single clock gained a sequence mode that crosses a scene boundary and wraps only at the end of the cut; the stage, transport, and scene list read episode time; a scene boundary is a hard audio cut; spacebar transport. 416 tests green. Numbering reconciled with `ARCHITECTURE_SPEC.md` §24.1 — the old Phase 10 (Animation) is retired as a number and the old Phase 11 (Preview) becomes Phase 10. The post-MVP list below still carries the legacy numbers; §24.1 is the authority. Current phase is now Phase 11 — Project IO & Session Lifecycle. |
 | 2026-09-30 | Phase 11 **complete**. `Project \| null` and a project browser, so the workspace is a multi-project one and "no project open" is a first-class state rather than a seed that overwrites itself. Document format v2 (`AudioDef.srcKind`, `Project.metadata`) with a real migration ladder off the empty `MIGRATIONS` array (F8); pure `core/io` import/export/duplicate with fresh project identity and preserved asset ids; the `media` store at `DB_VERSION` 2; quarantine with raw-byte preservation in place of the silent seed overwrite (F5); `visibilitychange`/`pagehide` autosave flush (F4); the audio engine keyed to the project that is open rather than the first one that played, and a resolver that borrows the engine's `AudioContext` instead of minting one per file (F6). Every §5.4 lifecycle operation has UI: create, open, close, switch, duplicate, archive/restore, delete, import, export, create episode, create scene. A new project ships a neutral four-entry starter library (`src/data/starter.ts`) because the invariant requires a character and an environment as soon as there is a scene and there is no asset-authoring UI yet — without it "New project" was a dead button. 565 tests green. Current phase is now Phase 12 — Render Export. |
+| 2026-10-17 | Phase 17 in progress — the pure plan pipeline. `parsePlan`/`parseScenePlan` (total), the `ScenePlan` vocabulary with real-library fixtures (`src/data/plans/`), `validatePlan` with a once-computed `ResolvedPlanReferences` and the `pose-incompatible` rig-slot check, `compilePlan` emitting the §11.6 command order with plan-local handles, `applyPlan` (the handle-binding, atomic fold), and the `allocator`/`fixedClock` determinism helpers. New `PlaceCharacter` command; `CreateScene` gained `backgroundColor`/`sceneRef`, `AddClip` gained `trackRef`/`clipRef` and a deterministic track-id allocation. The ESLint determinism rule now covers `src/core/plans` and `src/core/commands`. Spec corrected at §10.3 (plan-internal timing), §10.5 (`pose-incompatible` implemented), §11.5 (the fold is `applyPlan`) and §11.6 (what the compiler actually emits). 1092 tests green across 72 files. Recorded open: plan timing is not cross-checked against a scene's existing cues, and plan apply as one undo step through the store is Phase 18 work. |

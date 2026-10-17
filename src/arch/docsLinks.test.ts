@@ -50,11 +50,11 @@ const PLANNED_PATHS: Record<string, string> = {
   // Phase 16 - commands, transactions and provenance. types.ts and registry.ts exist;
   // compile.ts is still future work.
   'src/core/commands/compile.ts': '16',
-  // Phase 17 - plans, validation and compilation.
-  'src/core/plans/': '17',
+  // Phase 17 - plans, validation and compilation. `src/core/plans/` and `src/data/plans/`
+  // have landed (Phase 17 parser, validator, compiler, apply and their fixtures); the
+  // remaining paths are the review workflow and the plan store still to come.
   'src/core/planDiff.ts': '17',
   'src/core/continuity/': '17',
-  'src/data/plans/': '17',
   'src/ui/panels/PlanEditor.tsx': '17',
   'src/ui/panels/PlanReviewPanel.tsx': '17',
   'src/state/planStore.ts': '17',

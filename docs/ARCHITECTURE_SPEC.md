@@ -1194,6 +1194,8 @@ export function validatePlan(
 
 **Timing** — the plan's times must fit the scene: `0 ≤ at ≤ scene.duration`; a `newScene.duration` must be positive and within a sane bound; an explicitly-requested dialogue cue must not overlap its predecessor beyond a configurable tolerance; a generated layout must fit inside `newScene.duration` or the compiler must extend it and say so.
 
+> **Corrected 2026-10-17 (Phase 17): timing checks are plan-internal only.** The validator checks overlapping cues *within the plan* and clamps or rejects cues against the scene's own duration, but it does not yet compare an explicit cue against the cues *already present* in a scene the plan modifies. A modify-plan can therefore place a cue on top of an existing one; the timeline will hold both and the renderer will draw one over the other. This is a known limitation, recorded in `docs/ROADMAP.md`, and not a claim that the check exists.
+
 **Structural** — a plan that both sets `sceneId` and `newScene` is an `error`; a `ScenePlan` with neither is an `error`; a `cast` entry with neither `anchorId` nor `transform` gets the scene's default placement (`info`, not an error); an unknown top-level field is a `warning` (forward compatibility), but an unknown field inside `transform` is an `error` (typo).
 
 ### 10.4 Severity semantics
@@ -1206,7 +1208,9 @@ The distinction between `warning` and `error` is a product decision with teeth: 
 
 ### 10.5 Known limits, stated honestly
 
-The continuity codes in `DiagnosticCode` — `pose-incompatible`, `voice-incompatible`, `style-mismatch`, `wardrobe-mismatch` — are **declared but not implemented** in Phase 17. §15 explains why. They exist in the type so the first continuity check does not require a breaking change to the diagnostic vocabulary, and they must be documented as unimplemented until they are not (RULE 9).
+The continuity codes in `DiagnosticCode` — `pose-incompatible`, `voice-incompatible`, `style-mismatch`, `wardrobe-mismatch` — are mostly **declared but not implemented** in Phase 17. §15 explains why. They exist in the type so the first continuity check does not require a breaking change to the diagnostic vocabulary, and they must be documented as unimplemented until they are not (RULE 9).
+
+> **Corrected 2026-10-17 (Phase 17): `pose-incompatible` is implemented.** `validatePlan` compares each named `PoseDef`'s keyed slots against the character's rig: a pose that keys *no* slot the character has is a `warning`, and a pose that keys only slots the character lacks is an `info` — the §10.3 "Reference compatibility" rules, under the `pose-incompatible` code. `voice-incompatible`, `style-mismatch` and `wardrobe-mismatch` remain declared-but-unimplemented.
 
 ---
 
@@ -1294,6 +1298,8 @@ const applied = applyCommands(compiled.commands, { ...ctx, allocate: seed2 });
 
 `previewed.project` and `applied.project` are `===` deep-equal. **The preview is the result, not an estimate of it.** A "Confirm" button that shows something different from what lands is the fastest way to destroy trust in an AI feature, and it is structurally impossible here.
 
+> **Corrected 2026-10-17 (Phase 17): the plan fold is `applyPlan`, not `applyCommands`.** A plan whose body carries `newScene` compiles to commands that refer to the scene, the actors and the fresh tracks *before those ids exist* — `CreateScene` is what mints the scene id, and the `PlaceCharacter` and `AddClip` commands that follow name it. `compilePlan` therefore writes plan-local **handles** (`@scene`, `@cast:0`, `@camera-track`) into id fields and sets a `*Ref` output field (`sceneRef`, `actorRef`, `trackRef`, `clipRef`) on the command that produces each id. `applyPlan` (`src/core/plans/apply.ts`) folds command-by-command, substituting bound handles before dispatch and binding each ref-out to the id the document actually gained. It validates once, like `applyCommands`, and is atomic. The `applyCommands` sketch above still describes the *determinism argument* exactly; it is simply not the function that runs the fold. `applyCommands` remains the ordinary batch surface for hand-authored command lists, which never carry handles.
+
 ### 11.6 A worked example
 
 ```jsonc
@@ -1337,6 +1343,16 @@ compiles to, in this order:
 ```
 
 Plus three `Assumption`s the author did not specify: the two estimated dialogue cue windows, and the default background colour. All three appear in the preview. Nothing else is invented.
+
+> **Corrected 2026-10-17 (Phase 17): what the compiler actually emits.** The list above is the design; the implementation differs in five recorded ways, each forced by the command vocabulary that exists.
+>
+> 1. **`AddClip`, not `AddSimpleClip`.** There is no `AddSimpleClip` command. `AddClip` already wraps the `addSimpleClip` document op and now carries `trackRef`/`clipRef` handles, so a clip is one command kind rather than two.
+> 2. **No `AddSceneToEpisode`.** A `ScenePlan` has no `episodeId`; episode membership belongs to an episode plan, not a scene plan. The compiler emits nothing for it here.
+> 3. **The kito expression is a keyframed clip.** A bare `AddKeyframe` needs a track and a clip to sit on, so the compiler first emits `AddClip` (actor track, targeting kito's handle) and then its keyframes — including an **anchor keyframe at time 0** holding kito's entry expression, because a discrete channel holds its previous keyframe and the clip would otherwise start on the wrong face. That anchor is recorded as an `Assumption` (a fourth, when an expression change is present).
+> 4. **Handles in id fields.** `sceneId` on commands after `CreateScene` is `@scene`, and the placed actors are `@cast:0`/`@cast:1`; `applyPlan` substitutes them (§11.5 correction).
+> 5. **The camera clip spans the scene.** `clipStart` is 0 and `clipDuration` is the scene duration, so the move covers the whole shot rather than starting at the first keyframe's time.
+>
+> The live fixtures that exercise this order are `WORKED_EXAMPLE_PLAN` and its siblings in `src/data/plans/index.ts`, and the order is asserted by `src/core/plans/compile.test.ts`.
 
 ---
 
