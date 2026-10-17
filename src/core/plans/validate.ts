@@ -26,6 +26,7 @@ import type {
 } from './types';
 import { parseScenePlan } from './parse';
 import { layoutDialogue } from './layout';
+import { MIN_CLIP_DURATION } from '../document/trackOps';
 import {
   findAudioDef,
   findCharacter,
@@ -435,6 +436,39 @@ export function validatePlan(ctx: PlanContext, envelope: PlanEnvelope): PlanVali
 
   /* --- animation (RULE 9: accepted, not yet compiled) --------------- */
   // A PlannedAnimation is existence-checked only once an `AnimationAsset` kind exists.
+
+  /* --- clips that cannot fit one frame ------------------------------ */
+  // The compiler emits full-scene-length clips for expression changes and camera moves,
+  // and cue-length clips for dialogue. `addClip` rejects anything shorter than one frame,
+  // so a plan that would produce one must fail here as a diagnostic — not as a rejected
+  // command at apply time (§11.3 rule 4).
+
+  if (sceneDuration > 0 && sceneDuration < MIN_CLIP_DURATION) {
+    if (resolvedCast.some((entry) => entry.expressionChanges.length > 0)) {
+      error(
+        'newScene.duration',
+        'invalid-duration',
+        `An expression clip would run ${sceneDuration}s, shorter than one frame (${MIN_CLIP_DURATION}s).`,
+      );
+    }
+    if (camera !== null && camera.mode === 'move' && camera.clipDuration < MIN_CLIP_DURATION) {
+      error(
+        'newScene.duration',
+        'invalid-duration',
+        `A camera move would run ${sceneDuration}s, shorter than one frame (${MIN_CLIP_DURATION}s).`,
+      );
+    }
+  }
+
+  resolvedLines.forEach((line, index) => {
+    if (line.cue.duration < MIN_CLIP_DURATION) {
+      error(
+        `dialogue[${index}]`,
+        'invalid-timing',
+        `A cue of ${line.cue.duration}s cannot fit one frame (${MIN_CLIP_DURATION}s).`,
+      );
+    }
+  });
 
   /* --- assemble ------------------------------------------------------ */
 
