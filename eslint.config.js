@@ -127,6 +127,27 @@ export default tseslint.config(
     rules: { 'local/no-mutating-ops-in-ui': 'error' },
   },
   {
+    /**
+     * §8.3: a command fold and a plan fold must be deterministic. Fresh ids and timestamps
+     * arrive through `ctx.allocate` and `ctx.now`, never from the ambient environment — otherwise
+     * a plan preview and the plan it applies would differ, and no exact gate could compare them.
+     */
+    files: ['src/core/plans/**/*.ts', 'src/core/commands/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'Date', message: 'A fold takes its clock from ctx.now, never Date (§8.3).' },
+        { name: 'crypto', message: 'A fold takes fresh ids from ctx.allocate, never crypto (§8.3).' },
+      ],
+      'no-restricted-properties': [
+        'error',
+        { object: 'Math', property: 'random', message: 'A fold must be deterministic (§8.3).' },
+        { object: 'globalThis', property: 'crypto', message: 'A fold takes ids from ctx.allocate (§8.3).' },
+      ],
+    },
+  },
+  {
     files: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
