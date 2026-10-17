@@ -271,3 +271,19 @@ export const PLAN_SCENE_HANDLE = '@scene';
 export function planCastHandle(index: number): string {
   return `@cast:${index}`;
 }
+
+/** Plan-local handle for the expression track of the Nth cast entry's clip. */
+export function planExpressionTrackHandle(index: number): string {
+  return `@expr-track:${index}`;
+}
+
+/** Plan-local handle for the expression clip of the Nth cast entry. */
+export function planExpressionClipHandle(index: number): string {
+  return `@expr-clip:${index}`;
+}
+
+/** Plan-local handle for the camera track a plan's move lands in. */
+export const PLAN_CAMERA_TRACK_HANDLE = '@camera-track';
+
+/** Plan-local handle for the camera clip a plan's move produces. */
+export const PLAN_CAMERA_CLIP_HANDLE = '@camera-clip';
