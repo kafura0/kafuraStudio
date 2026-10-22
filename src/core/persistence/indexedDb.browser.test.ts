@@ -16,19 +16,23 @@ import {
   DB_VERSION,
   openDatabase,
   STORE_MEDIA,
+  STORE_PLANS,
   STORE_PROJECTS,
   STORE_QUARANTINE,
   STORE_SERIES,
   transactionDone,
 } from './db.browser';
 import {
+  IndexedDbPlanRepository,
   IndexedDbProjectRepository,
   isIndexedDbAvailable,
   type QuarantinedRecord,
 } from './indexedDb.browser';
+import { planRecordId, toPlanRecord } from './plans';
 import { IndexedDbMediaStore } from './media.browser';
 import { serializeProject } from '../serialize';
 import { SEED_PROJECT } from '../../data/seed';
+import { WORKED_EXAMPLE_PLAN } from '../../data/plans';
 
 let counter = 0;
 /** A fresh database name per test, so nothing leaks between cases. */
@@ -347,7 +351,7 @@ describe('schema version 2', () => {
     const db = await openDatabase(name);
     expect(db.version).toBe(DB_VERSION);
     expect([...db.objectStoreNames].sort()).toEqual(
-      [STORE_MEDIA, 'meta', STORE_PROJECTS, STORE_SERIES, STORE_QUARANTINE].sort(),
+      [STORE_MEDIA, 'meta', STORE_PLANS, STORE_PROJECTS, STORE_SERIES, STORE_QUARANTINE].sort(),
     );
     db.close();
 
@@ -487,5 +491,71 @@ describe('media records', () => {
     expect(listed[0]!.duration).toBeNull();
     expect(listed[0]!.size).toBe(0);
     expect('data' in (listed[0] as object)).toBe(false);
+  });
+});
+
+describe('plan records', () => {
+  const plans = (name: string): IndexedDbPlanRepository => new IndexedDbPlanRepository({ dbName: name });
+
+  it('round-trips a plan unchanged, keyed by its content', async () => {
+    const name = dbName();
+    const repo = plans(name);
+    const record = toPlanRecord(WORKED_EXAMPLE_PLAN);
+    await repo.save(record);
+
+    const loaded = await repo.load(planRecordId(WORKED_EXAMPLE_PLAN));
+    expect(loaded).toEqual(record);
+  });
+
+  it('lists summaries newest first without parsing an envelope', async () => {
+    const name = dbName();
+    const repo = plans(name);
+    await repo.save(
+      toPlanRecord({ ...WORKED_EXAMPLE_PLAN, title: 'Older', createdAt: '2026-10-01T00:00:00.000Z' }),
+    );
+    await repo.save(
+      toPlanRecord({ ...WORKED_EXAMPLE_PLAN, title: 'Newer', createdAt: '2026-10-20T00:00:00.000Z' }),
+    );
+
+    const listed = await repo.list();
+    expect(listed.map((s) => s.title)).toEqual(['Newer', 'Older']);
+    expect(listed[0]!.actor).toBe('ai');
+  });
+
+  it('re-saves the same proposal to one row rather than duplicating it', async () => {
+    const name = dbName();
+    const repo = plans(name);
+    await repo.save(toPlanRecord(WORKED_EXAMPLE_PLAN));
+    await repo.save(toPlanRecord(WORKED_EXAMPLE_PLAN));
+    expect(await repo.list()).toHaveLength(1);
+  });
+
+  it('returns null for an unparseable row instead of quarantining it', async () => {
+    const name = dbName();
+    const repo = plans(name);
+    const db = await openDatabase(name);
+    const tx = db.transaction(STORE_PLANS, 'readwrite');
+    tx.objectStore(STORE_PLANS).put({
+      id: 'plan_bad',
+      planVersion: 1,
+      createdAt: '2026-10-16T00:00:00.000Z',
+      title: 'Bad',
+      actor: 'ai',
+      document: 'not json',
+    });
+    await transactionDone(tx);
+    db.close();
+
+    // A proposal is regenerable, so an unreadable row is refused, not preserved.
+    expect(await repo.load('plan_bad')).toBeNull();
+  });
+
+  it('removes a record', async () => {
+    const name = dbName();
+    const repo = plans(name);
+    const record = toPlanRecord(WORKED_EXAMPLE_PLAN);
+    await repo.save(record);
+    await repo.remove(record.id);
+    expect(await repo.load(record.id)).toBeNull();
   });
 });

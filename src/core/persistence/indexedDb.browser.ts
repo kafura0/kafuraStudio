@@ -14,6 +14,7 @@
 
 import { migrateProjectFile, parseSeries, serializeProject, serializeSeries } from '../serialize';
 import { validateSeries } from '../document/invariants';
+import type { PlanEnvelope } from '../plans/types';
 import type { Project, SeriesDef } from '../types';
 import {
   DEFAULT_DB_NAME,
@@ -21,11 +22,13 @@ import {
   openDatabase,
   promisify,
   STORE_META,
+  STORE_PLANS,
   STORE_PROJECTS,
   STORE_QUARANTINE,
   STORE_SERIES,
   transactionDone,
 } from './db.browser';
+import { planActor, type PlanRecord, type PlanRepository, type PlanSummary } from './plans';
 import type { ProjectRepository, ProjectSummary, SeriesRepository, SeriesSummary } from './repository';
 
 export { DEFAULT_DB_NAME, isIndexedDbAvailable };
@@ -71,6 +74,18 @@ interface SeriesRecord {
   name: string;
   updatedAt: string;
   /** The serialized `{ formatVersion, series }` document. */
+  document: string;
+}
+
+/** A stored plan, with the history-list fields denormalized out of the envelope. */
+interface PlanRow {
+  id: string;
+  planVersion: number;
+  /** The plan's own `createdAt`. Indexed for "newest proposal first". */
+  createdAt: string;
+  title: string;
+  actor: string;
+  /** The serialized envelope. */
   document: string;
 }
 
@@ -502,6 +517,93 @@ export class IndexedDbSeriesRepository implements SeriesRepository {
     const tx = db.transaction([STORE_SERIES, STORE_META], 'readwrite');
     tx.objectStore(STORE_SERIES).delete(id);
     if (pointer?.value === id) tx.objectStore(STORE_META).delete('lastOpenedSeriesId');
+    await transactionDone(tx);
+  }
+}
+
+/**
+ * IndexedDB-backed plan history (§9.5, Phase 18).
+ *
+ * A row holds the envelope plus the fields the history list needs, so listing the proposals
+ * never parses one — the same reason projects and series denormalize their counts.
+ *
+ * Unlike a project record, a plan row that will not parse is **returned as `null`, not
+ * quarantined**. The distinction is data loss: a project is the operator's work and must
+ * never be silently discarded, while a plan is a proposal that can be regenerated, and a
+ * quarantine full of unreadable proposals is a store nothing reads. Refusing the row leaves
+ * the history list simply shorter, which is the honest outcome.
+ *
+ * The envelope is stored as JSON text rather than as a structured object because it is
+ * schema-versioned by `planVersion` (§9.5), and a document has a version to migrate from
+ * where a bare object does not.
+ */
+export class IndexedDbPlanRepository implements PlanRepository {
+  private dbPromise: Promise<IDBDatabase> | null = null;
+
+  private readonly dbName: string;
+
+  constructor(options: IndexedDbOptions = {}) {
+    this.dbName = options.dbName ?? DEFAULT_DB_NAME;
+  }
+
+  private db(): Promise<IDBDatabase> {
+    this.dbPromise ??= openDatabase(this.dbName);
+    return this.dbPromise;
+  }
+
+  async save(record: PlanRecord): Promise<void> {
+    const db = await this.db();
+    const row: PlanRow = {
+      id: record.id,
+      planVersion: record.planVersion,
+      createdAt: record.envelope.createdAt,
+      title: record.envelope.title,
+      actor: planActor(record.envelope),
+      document: JSON.stringify(record.envelope),
+    };
+    const tx = db.transaction(STORE_PLANS, 'readwrite');
+    tx.objectStore(STORE_PLANS).put(row);
+    await transactionDone(tx);
+  }
+
+  async load(id: string): Promise<PlanRecord | null> {
+    const db = await this.db();
+    const row = await promisify<PlanRow | undefined>(
+      db.transaction(STORE_PLANS, 'readonly').objectStore(STORE_PLANS).get(id) as IDBRequest<
+        PlanRow | undefined
+      >,
+    );
+    if (!row) return null;
+    try {
+      return {
+        id: row.id,
+        planVersion: row.planVersion,
+        envelope: JSON.parse(row.document) as PlanEnvelope,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async list(): Promise<PlanSummary[]> {
+    const db = await this.db();
+    const rows = await promisify<PlanRow[]>(
+      db.transaction(STORE_PLANS, 'readonly').objectStore(STORE_PLANS).getAll() as IDBRequest<PlanRow[]>,
+    );
+    return rows
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        createdAt: r.createdAt,
+        actor: r.actor as PlanSummary['actor'],
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async remove(id: string): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction(STORE_PLANS, 'readwrite');
+    tx.objectStore(STORE_PLANS).delete(id);
     await transactionDone(tx);
   }
 }

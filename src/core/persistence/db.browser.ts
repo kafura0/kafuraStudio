@@ -10,7 +10,7 @@
  */
 
 /** Schema version. Bump only alongside a step in the ladder below. */
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const STORE_PROJECTS = 'projects';
 export const STORE_META = 'meta';
@@ -31,6 +31,15 @@ export const STORE_QUARANTINE = 'quarantine';
  * than duplicating recordings (§4.2).
  */
 export const STORE_SERIES = 'series';
+/**
+ * Plans under review, for the review history (§9.5, Phase 18).
+ *
+ * A separate store rather than a field on `projects` because a plan is an instruction, not
+ * part of the document (§9.5). Rows carry the envelope plus the few fields the history list
+ * needs, keyed by a content-derived id, and are discarded once applied — this store is a
+ * history, not a source of truth. A plan is never read back into the document.
+ */
+export const STORE_PLANS = 'plans';
 
 /**
  * Storage defaults.
@@ -100,6 +109,14 @@ export function openDatabase(name: string): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_SERIES)) {
         const store = db.createObjectStore(STORE_SERIES, { keyPath: 'id' });
         store.createIndex('updatedAt', 'updatedAt');
+      }
+
+      // v4: plans — the review history (Phase 18). Purely additive, so unlike the series
+      // step there is nothing to migrate: a workspace that never reviewed a plan simply
+      // gains an empty store.
+      if (!db.objectStoreNames.contains(STORE_PLANS)) {
+        const store = db.createObjectStore(STORE_PLANS, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt');
       }
     };
 
