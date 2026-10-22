@@ -6,13 +6,13 @@
 > is, and it is not a simplification of a real deployment — there is nothing else to
 > deploy.
 >
-> **A deployed build is a working editor.** It loads the ZANZA series, opens
-> projects in the series browser, plays and scrubs episodes, and provides the
-> full staged-picture workflow — timeline, dialogue, camera, audio, undo/redo and
-> export (frame render and audio mixdown). The one honest operational caveat is
-> that the application is **local-first**: everything a user can do beyond the
-> built-in seed lives in the browser's IndexedDB, so the per-origin storage and
-> import/export limits in § 9 apply.
+> **A deployed build is a working editor.** A fresh origin opens to an empty
+> project browser; the user creates a project or imports one, then plays and
+> scrubs episodes and works with the full staged-picture workflow — timeline,
+> dialogue, camera, audio, undo/redo and export (frame render and audio mixdown).
+> The one honest operational caveat is that the application is **local-first**:
+> everything a user creates lives in the browser's IndexedDB, so the per-origin
+> storage and import/export limits in § 9 apply.
 
 ---
 
@@ -206,8 +206,11 @@ not a website — it is a local tool with no server-side copy of anything.**
 - Projects live in the **visitor's own browser**, in IndexedDB, keyed to the exact
   origin they loaded from. `https://a.example/` and `https://b.example/` are two
   different, unrelated databases.
-- A new visitor receives the **in-memory EP001 seed**, which is regenerated on every
-  load and is not written to the database. First run and thousandth run are identical.
+- **A fresh origin opens to an empty project browser** showing **"No projects yet"**.
+  There is no in-memory EP001 seed written to the database; `SEED_PROJECT` and
+  `SEED_SERIES` exist only as test fixtures in `src/data/seed.ts` and are never
+  installed by the running application. The user begins with **New project** (a neutral
+  starter library, `src/data/starter.ts`) or by importing a project file.
 - **Nothing the user creates ever reaches your server.** There is nowhere for it to
   go.
 - Consequently: **the user cannot recover their work by contacting you, and you
