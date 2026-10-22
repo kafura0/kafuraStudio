@@ -28,3 +28,7 @@ export type {
 export { isAIUnavailable } from './types';
 export type { AIProvider as IAIProvider } from './provider/AIProvider';
 export { nullProvider } from './provider/nullProvider';
+export type { StoredCredentials } from './credentials';
+export { clearCredentials, hasCredentials, setCredentials } from './credentials';
+export { clearCapabilities, getCapability, listCapabilities, registerCapability } from './capabilities/registry';
+export { createTestFixtureCapability } from './capabilities/testFixture';
