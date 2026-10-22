@@ -23,6 +23,7 @@ import { CameraPanel } from './panels/CameraPanel';
 import { DialoguePanel } from './panels/DialoguePanel';
 import { ExportPanel } from './panels/ExportPanel';
 import { PlanReviewPanel } from './panels/PlanReviewPanel';
+import { SettingsPanel } from './SettingsPanel';
 
 /**
  * True when a keystroke belongs to whatever the user is typing into.
@@ -296,6 +297,7 @@ const context = useEditor((s) => s.context);
             currentTime={exportTarget.episodeTime}
             subtitles={showSubtitles}
           />
+          <SettingsPanel />
           <PlanReviewPanel />
         </aside>
 
