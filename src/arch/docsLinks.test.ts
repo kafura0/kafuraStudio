@@ -51,15 +51,13 @@ const PLANNED_PATHS: Record<string, string> = {
   // compile.ts is still future work.
   'src/core/commands/compile.ts': '16',
   // Phase 17 - plans, validation and compilation. `src/core/plans/` and `src/data/plans/`
-  // have landed (Phase 17 parser, validator, compiler, apply and their fixtures); the
-  // remaining paths are the review workflow and the plan store still to come.
-  'src/core/planDiff.ts': '17',
+  // have landed; `src/core/continuity/` is the one Phase 17 path still planned.
+  // (The review files §26 files under Phase 18 — `planDiff`, the two panels, `planStore`
+  // and `plans.ts` — carried a `17` label that predated that split, and have since landed.)
   'src/core/continuity/': '17',
-  'src/ui/panels/PlanEditor.tsx': '17',
-  'src/ui/panels/PlanReviewPanel.tsx': '17',
-  'src/state/planStore.ts': '17',
-  'src/core/persistence/plans.ts': '17',
-  // Phase 18 - plan review workflow.
+  // Phase 18 - plan review workflow. Every path this phase introduces has landed; the
+  // settings panel below is filed under 18 here but belongs to the AI boundary (§24.10,
+  // Phase 19) and is still planned.
   'src/ui/SettingsPanel.tsx': '18',
   // Phase 19 - the AI boundary.
   'src/ai/': '19',

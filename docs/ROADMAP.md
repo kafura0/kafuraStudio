@@ -1,11 +1,14 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 17 — Plans, Validation & Compilation.** In progress. The pure
-> pipeline is landed: `parsePlan`/`parseScenePlan`, the `ScenePlan` vocabulary and its
-> fixtures, `validatePlan`, `compilePlan`, `applyPlan`, and the determinism lint rule,
-> with `parse`/`layout`/`validate`/`compile`/`apply` tests green (§26 steps 1–8, gates
-> G6/G7/G8/G10). The review and edit surfaces §26 schedules for Phase 18 — `planDiff`,
-> `planStore`, `PlanReviewPanel`, `PlanEditor`, `PlanRecord` persistence — are not built.
+> **Current phase: Phase 18 — Plan Review Workflow.** The review-and-edit surfaces are
+> landed: `planDiff`, `planStore`, `PlanReviewPanel` (three-still preview, diff, validation
+> gate, `Assumption` display), `PlanEditor`, the per-value `Edit`d computation, `PlanRecord`
+> persistence with a review history, and plan apply through the store as one undo step
+> (§26 Phase 18 steps 1–8). All four gates are clean at 1148 tests across 80 files.
+> **Previous: Phase 17 — Plans, Validation & Compilation.** Complete — the pure
+> `ScenePlan` → `Project` pipeline: a total `parsePlan`/`parseScenePlan`, the plan
+> vocabulary and fixtures, `validatePlan`, `compilePlan`, `applyPlan`, and the
+> determinism lint rule (§26 steps 1–8, gates G6/G7/G8/G10).
 > **Previous: Phase 16 — Commands, Transactions & Provenance.** Complete (P1–P9):
 > every editor mutation dispatches a named command, and a batch is one undo step that
 > validates once and rolls back to zero on failure.
@@ -69,7 +72,8 @@ numbering is reconciled against
 | 14 | Series & Asset Scope | **in progress** | Series registry and lifecycle, `SeriesBrowser`, the `seriesId` picker on creation, `resolveAssets` derived library (`SceneContext`), migrated seed, and the G1/G2/G12 architecture gates all landed and green. The manual acceptance walk against §24.5 is still open. See the phase section below. |
 | 15 | Engine Correctness & Render Performance | **complete** | §18.2 R1/R2/R3/R8/R9 and §18.3 R4/R5/R6/R10 landed; golden render fixtures byte-identical to the pre-index renderer with draw-op ceilings; Stage dirty check; adaptive undo cap; every corrected renderer claim in `docs/`. Automated gates green at 868 tests across 63 files; the manual 600-frame RULE 14 run remains open. See the phase section below. |
 | 16 | Commands, Transactions & Provenance | **complete** | A named, serializable command layer over the existing operations (§7), a fold that applies a sequence atomically and validates the document exactly once (§8.3/§22.3), the `dispatch` seam that routes every UI/store mutation through a command (§7.3), and the G6 command-coverage gate (§33). Every editor gesture is one undo step; a 200-command batch validates once and rolls back to zero on any failure. 982 tests across 66 files. See the phase section below. |
-| 17 | Plans, Validation & Compilation | **in progress** | The pure pipeline is landed and green: a total `parsePlan`, the `ScenePlan` vocabulary with real-library fixtures, `validatePlan` (reference existence, pose compatibility, timing, structure), `compilePlan` (the §11.6 command order, with plan-local handles), `applyPlan` (the handle-binding fold, atomic, validates once), and the ESLint determinism rule. `parse`/`layout`/`validate`/`compile`/`apply` tests pass; gates G6/G7/G8/G10 hold. The review/edit surfaces §26 assigns to Phase 18 are not built. See the phase section below. |
+| 17 | Plans, Validation & Compilation | **complete** | The pure pipeline: a total `parsePlan`, the `ScenePlan` vocabulary with real-library fixtures, `validatePlan` (reference existence, pose compatibility, timing, structure), `compilePlan` (the §11.6 command order, with plan-local handles), `applyPlan` (the handle-binding fold, atomic, validates once), and the ESLint determinism rule. `parse`/`layout`/`validate`/`compile`/`apply` tests pass; gates G6/G7/G8/G10 hold. See the phase section below. |
+| 18 | Plan Review Workflow | **complete** | A plan is validated, previewed beside the current scene as three stills, diffed ("what changes / what it breaks"), edited in a form over `ScenePlan`, re-previewed with no undo step, and applied through the store as one commit that undoes in one step. Errors block Apply, warnings do not; `Assumption`s and per-value `Edit`d provenance are shown; proposals persist to a `plans` store for a reopenable review history and are discarded once applied (§26 Phase 18 steps 1–8). 1148 tests across 80 files, all four gates clean. See the phase section below. |
 
 ### Phase 13 — MVP Acceptance & Documentation Truth
 
@@ -313,11 +317,11 @@ Next: **Phase 17 — Plans, validation & compilation**, which is `planned` and f
 RULE 1 until it starts. Phase 14's manual acceptance walk and Phase 15's §24.6 600-frame
 perf run remain scheduled jointly, recorded rather than redefined.
 
-### Phase 17 — Plans, Validation & Compilation (in progress)
+### Phase 17 — Plans, Validation & Compilation (complete)
 
-The current phase. Scope is `ARCHITECTURE_SPEC.md` §26 Phase 17 (steps 1–8), under §9
-(plan envelope), §10 (validation) and §11 (compiler). Steps 1–8 are landed; the
-review-and-edit surfaces §26 assigns to **Phase 18** are not.
+Scope is `ARCHITECTURE_SPEC.md` §26 Phase 17 (steps 1–8), under §9 (plan envelope), §10
+(validation) and §11 (compiler). Steps 1–8 are landed. The review-and-edit surfaces §26
+assigns to **Phase 18** were delivered separately; they carry their own section below.
 
 - **Step 1 — the total parser.** `src/core/plans/types.ts` and `parse.ts`:
   `parsePlan` never throws — prose, truncated JSON, an unknown `kind` and a future
@@ -378,29 +382,104 @@ every fixture); G10 holds (`compilePlan` is byte-identical across repeated runs)
   or rejects cues against the scene's duration, but it does not compare an explicit cue
   against cues already present in a scene it modifies. A modify-plan can layer a cue on
   an existing one. Recorded in `ARCHITECTURE_SPEC.md` §10.3 as a limitation.
-- **Plan apply through the store is Phase 18.** There is no `planStore` and no batch
-  `dispatch` seam yet, so a plan is not yet applied as *one* undo step from the UI;
-  `applyPlan` is a pure core function exercised by tests. G9's "a 200-command plan
-  apply" and "a plan review session" therefore land with Phase 18's review workflow, as
-  §26 schedules them.
-- **The review/edit surfaces are Phase 18.** `planDiff`, `PlanReviewPanel`,
-  `PlanEditor`, `planStore` and `PlanRecord` persistence are filed as Phase 18. The
-  `docsLinks.test.ts` planned-path entries that carry a `17` phase for those paths
-  predate this split; they remain planned paths and will be reconciled to their phase
-  when the work starts.
+- **Plan apply through the store is Phase 18 (now landed).** At the Phase 17 close there
+  was no `planStore` and no batch `dispatch` seam, so a plan was not yet applied as *one*
+  undo step from the UI; `applyPlan` was a pure core function. Phase 18 added the store
+  seam — `dispatch({ plan })` folds `applyPlan` and commits once — so G9's "a plan review
+  session" now holds. See the Phase 18 section.
+- **The review/edit surfaces are Phase 18 (now landed).** `planDiff`, `PlanReviewPanel`,
+  `PlanEditor`, `planStore` and `PlanRecord` persistence were filed as Phase 18 at this
+  close and have since been delivered; their `docsLinks.test.ts` planned-path entries were
+  removed as each file landed. See the Phase 18 section.
 
 `ARCHITECTURE_SPEC.md` corrections written this phase: §10.3 (plan-internal timing),
 §10.5 (`pose-incompatible` now implemented), §11.5 (the plan fold is `applyPlan`, not
 `applyCommands`, because compiled commands carry handles), and §11.6 (the five ways the
 emitted command list differs from the design sketch).
 
+### Phase 18 — Plan Review Workflow (complete)
+
+Scope is `ARCHITECTURE_SPEC.md` §26 Phase 18 (steps 1–8), under §14.1 (the review
+pipeline), §13.3 (the three-still preview), §13.4 (editing the plan, not the document),
+§14.3 (the per-value `Edit`d computation), §14.4 (never apply on `ok` alone) and §9.5
+(plan storage). Objective: a plan can be generated, diagnosed, previewed beside the
+current scene, edited, re-previewed, applied as one commit, and undone as one step — with
+no mutation before the final Apply button. Phase 18 ships with no AI: a plan is authored
+by hand, loaded from a fixture, or pasted as JSON (§24.9, "Not included").
+
+- **Step 1 — the diff.** `src/core/planDiff.ts`, pure: which scenes, actors, lines and
+  assets a plan adds, changes or removes, and which issues appear against the *previewed*
+  document. `planDiff.test.ts`, 8 tests.
+- **Step 2 — the panel, read-only first.** `src/ui/panels/PlanReviewPanel.tsx` renders the
+  diff and the validation report before any editing exists, so the diff is trustworthy
+  before the user can change the thing it describes (§26, "Why this order").
+- **Step 3 — the three-still preview.** Three stills at 10% / 50% / 90% of the previewed
+  scene, drawn by the same pure `renderScene` the stage and exporter use — the moments
+  that catch a plan's staging, timing and framing failures (§13.3). The stills draw the
+  *previewed* document, not the current one, and the test asserts exactly that.
+- **Step 4 — `PlanEditor`.** `src/ui/panels/PlanEditor.tsx`, a form over `ScenePlan`,
+  **not** over the document. Every change hands a new plan back up; the panel
+  re-validates and re-previews from the live project and consumes **no** undo step
+  (§13.4). `PlanEditor.test.tsx`, 7 tests.
+- **Step 5 — Apply + one undo, with a transient store.** `src/state/planStore.ts`
+  (`usePlan`) holds only the plan under review, never the project (RULE 6). Apply routes
+  through `dispatch({ plan })`: the store's `dispatch` was given a call-signature overload
+  for a `PlanApplyRequest`, so `applyPlan` folds the plan and the existing single `commit`
+  seam records exactly one history entry — the G6(b) "one `commit(` call site in
+  `dispatch`" contract holds unchanged. `planStore.test.ts` (5) and
+  `editorStore.planApply.test.ts` (5).
+- **Step 6 — `Assumption` display.** The panel lists every value the compiler invented —
+  generated cue windows, an extended scene, cue truncation, an assumed background colour,
+  an assumed rest framing — each with its path, decision and reason.
+- **Step 7 — `PlanRecord` persistence and a review history.** `src/core/persistence/plans.ts`
+  defines `PlanRecord`/`PlanSummary`/`PlanRepository` and a memory implementation; the
+  database gains a `plans` store (`DB_VERSION` 4) and an `IndexedDbPlanRepository`. Rows
+  are keyed by a content-derived id, so re-proposing the same plan writes one row. The
+  panel records a proposal when it is opened for review, offers a "Recent plans" list to
+  reopen one, and **discards the row once applied** (§9.5) — only the `Provenance`
+  survives, on the history entry the commit produced. `plans.test.ts` (7) and the
+  `plan records` block in `indexedDb.browser.test.ts` (5).
+- **Step 8 — the per-value `Edit`d computation.** `src/core/plans/edits.ts`,
+  `editedFieldPaths(original, edited)`: the dotted body paths a human changed since the
+  plan arrived. The `Edit`d badge is rendered from that set, never inferred from context
+  (§14.2/§14.3). An untouched AI plan applies as `ai`; one a human edited in the panel
+  applies as `human`. `edits.test.ts`, 5 tests.
+
+**Architecture decisions recorded this phase.**
+
+- **Apply reuses the `dispatch` seam via an overload, not a second action.** `commandCoverage`
+  (G6(b)) requires the only `commit(` call site in `editorStore.ts` to sit inside the
+  `dispatch` body. Overloading `dispatch` (a `Command` → `CommandResult`, or a
+  `PlanApplyRequest` → `PlanApplyResult`) keeps plan apply on that one seam and keeps the
+  gate's rule literally true, rather than relaxing the gate.
+- **Preview and apply differ only in id suffixes.** The preview uses a counting allocator
+  and a clock fixed to the plan's `createdAt`, so the previewed document is stable across
+  keystrokes and identity-based memoisation holds; Apply uses the app's real `createId`.
+  A fixed-seed preview *would* collide across sequential applies, so this is recorded as a
+  deliberate correction, not an oversight.
+- **Plan persistence is optional and never blocks a review.** The store defaults to an
+  in-memory history; the app shell swaps in IndexedDB where it exists. A history that
+  cannot be written must never stop a review from happening.
+
+**Recorded honestly, not closed:**
+
+- **Timing is still plan-internal** (carried from Phase 17). The validator checks overlaps
+  *within* a plan; it does not compare an explicit cue against cues already in a scene it
+  modifies. Recorded in `ARCHITECTURE_SPEC.md` §10.3.
+- **The preview names only the previewed scene.** The three-still preview draws the scene
+  the plan adds or touches (`previewSceneId`); a plan that changes several scenes shows
+  stills for one and a full diff for the rest. Adequate for the single-scene plans Phase 17
+  compiles; recorded rather than implied.
+- **The manual acceptance walk is not in this commit.** The objective is met by the
+  automated gates; a hand walk of the panel at 1440p/1920p is not recorded here.
+
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-1092 tests green across 72 files, all four gates clean, in a single run — no suite is
+1148 tests green across 80 files, all four gates clean, in a single run — no suite is
 left to be verified separately. This is the state on the last verification run (the
-Phase 17 pipeline), up from the Phase 16 close's 982 across 66 and Phase 13's 746
-across 51.
+Phase 18 review workflow), up from the Phase 17 pipeline's 1092 across 72, the Phase 16
+close's 982 across 66, and Phase 13's 746 across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
