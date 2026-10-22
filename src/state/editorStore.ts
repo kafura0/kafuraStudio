@@ -17,6 +17,8 @@ import { probeAudioDuration } from '../core/audio/probe.browser';
 import { createId } from '../core/id';
 import { applyCommand, commandError } from '../core/commands';
 import type { Command, CommandResult } from '../core/commands';
+import { applyPlan, type PlanApplyError, type PlanApplyResult } from '../core/plans/apply';
+import type { PlanEnvelope } from '../core/plans/types';
 import { clamp } from '../core/geometry';
 import type { Id, Project, Provenance, SceneContext, SeriesDef } from '../core/types';
 import {
@@ -233,7 +235,10 @@ export interface EditorState {
    * is untouched. Returns the command result so a caller can read a just-created
    * document (e.g. the id of a freshly added line) without a second lookup.
    */
-  dispatch: <C extends Command>(command: C) => CommandResult;
+  dispatch: {
+    <C extends Command>(command: C): CommandResult;
+    (request: PlanApplyRequest): PlanApplyResult;
+  };
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -417,6 +422,29 @@ export interface EditorState {
    * as success.
    */
   previewAudio: (audioId: Id) => Promise<boolean>;
+}
+
+/**
+ * A request to apply a whole plan as one commit (ARCHITECTURE_SPEC.md §14.1 step 6, D6).
+ *
+ * The plan reaches the document through the *same* `dispatch` seam a single command uses,
+ * so there is exactly one `commit` call site in the store and the plan transaction is one
+ * history entry — undo restores the entire pre-plan state in one keystroke (§14.1 step 7).
+ * A request is distinguished from a `Command` by carrying `plan` instead of `kind`, which
+ * is what the `dispatch` overload keys on.
+ *
+ * `provenance` overrides the plan's own: a plan a human edited in the review panel carries
+ * human provenance even when it arrived from a model (§13.4, §14.3).
+ */
+export interface PlanApplyRequest {
+  plan: PlanEnvelope;
+  label?: string;
+  provenance?: Provenance;
+}
+
+/** True for a plan-apply request, false for a command. Keys on the one field they differ in. */
+export function isPlanApplyRequest(value: Command | PlanApplyRequest): value is PlanApplyRequest {
+  return 'plan' in value;
 }
 
 /**
@@ -620,6 +648,32 @@ function describe(error: unknown): string {
  */
 function humanProvenance(): Provenance {
   return { actor: 'human', at: new Date().toISOString() };
+}
+
+/**
+ * The history label for applying a plan (§14.3 Level 1).
+ *
+ * Named from the plan's title so the undo entry reads "Undo: Apply scene plan: \"Overheard\""
+ * rather than the generic "Edit" — the whole point of a plan transaction being one commit is
+ * that the reviewer can see, and reverse, exactly what it was.
+ */
+function planApplyLabel(envelope: PlanEnvelope): string {
+  const title = envelope.title.trim();
+  return title === '' ? 'Apply scene plan' : `Apply scene plan: "${title}"`;
+}
+
+/** A message a person can act on, from a failed plan fold. */
+function planApplyErrorMessage(error: PlanApplyError): string {
+  switch (error.kind) {
+    case 'invalid-plan':
+      return `That plan has ${error.diagnostics.length} problem${
+        error.diagnostics.length === 1 ? '' : 's'
+      } that prevent it from being applied.`;
+    case 'command-failed':
+      return `That plan could not be applied: command ${error.index + 1} (${error.command}) failed — ${error.error.message}`;
+    case 'invalid-result':
+      return `That plan would leave the project in an invalid state, so it was not applied: ${error.error.message}`;
+  }
 }
 
 /**
@@ -1113,7 +1167,14 @@ const { project, context } = get();
       autosave.schedule();
     },
 
-    dispatch: (command) => {
+    /**
+     * The single mutation path: one command, or one whole plan, into the document.
+     *
+     * Both branches commit through the one `commit()` call below, which is what makes the
+     * plan transaction exactly one history entry (§14.1 step 6, D6) and keeps the store's
+     * `commit` the only document-replacing call in the codebase (G6b).
+     */
+    dispatch: ((request: Command | PlanApplyRequest) => {
       const state = get();
       if (state.project === null || state.context === null) {
         return {
@@ -1121,7 +1182,34 @@ const { project, context } = get();
           error: commandError('internal', 'No project is open, so nothing can be applied.'),
         };
       }
-      const result = applyCommand(command, {
+
+      if (isPlanApplyRequest(request)) {
+        // The whole plan folds with the real allocator and clock, exactly as the command
+        // path does. `applyPlan` is atomic and validates the finished document, so a plan
+        // that cannot produce a valid project commits nothing.
+        const result = applyPlan(
+          { project: state.project, assets: state.context.assets, series: state.series },
+          request.plan,
+          { allocate: createId, now: () => new Date().toISOString() },
+        );
+        if (result.ok) {
+          // Human provenance wins when the caller supplies one (an edited plan), then the
+          // plan's own (a model's), then `commit`'s human default (§13.4, §14.3).
+          get().commit(
+            result.project,
+            request.label ?? planApplyLabel(request.plan),
+            request.provenance ?? request.plan.provenance,
+          );
+        } else {
+          set({
+            status: 'error',
+            statusMessage: `That plan was not applied. ${planApplyErrorMessage(result.error)}`,
+          });
+        }
+        return result;
+      }
+
+      const result = applyCommand(request, {
         project: state.project,
         assets: state.context.assets,
         series: state.series,
@@ -1132,7 +1220,7 @@ const { project, context } = get();
         // The command's label lands in history under the exact wording the UI chose
         // ("Add line", "Edit speaker") — provenance is a human gesture, like any other
         // commit from the editor (§8.6, §14.3).
-        get().commit(result.project, command.label);
+        get().commit(result.project, request.label);
       } else {
         set({
           status: 'error',
@@ -1140,7 +1228,7 @@ const { project, context } = get();
         });
       }
       return result;
-    },
+    }) as EditorState['dispatch'],
 
     undo: () => {
       const state = get();
