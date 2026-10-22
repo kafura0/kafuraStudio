@@ -34,6 +34,7 @@ import { resolveAssets } from '../../core/document/scopes';
 import { renderScene } from '../../core/render/render';
 import type { Scene, SceneContext } from '../../core/types';
 import { PlanEditor } from './PlanEditor';
+import { PlanGeneratePanel } from './PlanGeneratePanel';
 
 const STILL_WIDTH = 84;
 /** The three moments that catch a plan's failure modes: staging, timing and framing (§13.3). */
@@ -269,6 +270,22 @@ export function PlanReviewPanel(): React.JSX.Element {
             {loadError}
           </div>
         )}
+        {/* The AI generate affordance (Phase 19 step 5). It loads `src/ai` dynamically,
+            so this panel still renders and still works with the AI layer deleted. With no
+            provider configured it reports an honest reason and generates nothing. */}
+        <PlanGeneratePanel
+          onGenerated={(raw) => {
+            const result = parsePlan(raw);
+            if (result.ok) {
+              load(result.value);
+              void persist();
+              setPasted('');
+              setLoadError(null);
+            } else {
+              setLoadError(describeParseError(result.error));
+            }
+          }}
+        />
         <RecentPlans />
       </section>
     );

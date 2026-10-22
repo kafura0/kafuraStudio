@@ -55,12 +55,11 @@ const PLANNED_PATHS: Record<string, string> = {
   // (The review files §26 files under Phase 18 — `planDiff`, the two panels, `planStore`
   // and `plans.ts` — carried a `17` label that predated that split, and have since landed.)
   'src/core/continuity/': '17',
-  // Phase 18 - plan review workflow. Every path this phase introduces has landed; the
-  // settings panel below is filed under 18 here but belongs to the AI boundary (§24.10,
-  // Phase 19) and is still planned.
-  'src/ui/SettingsPanel.tsx': '18',
-  // Phase 19 - the AI boundary.
-  'src/ai/capabilities/scenePlanner.ts': '19',
+  // Phase 18 - plan review workflow. Every path this phase introduces has landed.
+  // Phase 19 - the AI boundary. Every path this phase introduces in src/ai has landed;
+  // the settings panel (the provider-configuration UI) is the one Phase 19 path still to
+  // be built.
+  'src/ui/SettingsPanel.tsx': '19',
   // Phase 20 and later - content depth.
   'src/core/render/index.ts': '20',
   'src/core/persistence/series': '14',
