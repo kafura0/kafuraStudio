@@ -60,9 +60,6 @@ const PLANNED_PATHS: Record<string, string> = {
   // Phase 19) and is still planned.
   'src/ui/SettingsPanel.tsx': '18',
   // Phase 19 - the AI boundary.
-  'src/ai/': '19',
-  'src/ai/types.ts': '19',
-  'src/ai/provider/': '19',
   'src/ai/capabilities/scenePlanner.ts': '19',
   // Phase 20 and later - content depth.
   'src/core/render/index.ts': '20',
