@@ -1,14 +1,20 @@
 # ZANZA STUDIO — USER GUIDE
 
-> **Scope warning.** This guide documents the application **as it exists today**,
-> which is a working engine with a live timeline, a dialogue editor, and audio
-> playback behind a shell. There is no export, no way to add or remove content from
-> the asset library, and no way to attach an audio file to a slot. Sections marked
-> **Not available** name what is planned and where it is planned. Nothing in this
-> guide describes a feature that is mocked, and no disabled control pretends to
-> work.
+> **Scope warning.** This guide documents the application **as it exists today**: a
+> working editor with a live timeline, dialogue, camera, audio playback, episode
+> playback, project import/export, PNG/WAV export, and a plan review workflow. The
+> asset library is still **read-only**; there is no actor inspector, no asset
+> authoring, and no video file export. Sections marked **Not available** name what is
+> not built. Nothing in this guide describes a feature that is mocked, and no
+> disabled control pretends to work.
+>
+> **Corrected 2026-10-22.** Earlier revisions of this guide predated Phases 11–18 and
+> wrongly said there was no export, no import, no scene creation, no camera panel and
+> no audio attachment. Those features now exist; the sections below describe them.
 
-If you are evaluating whether this is finished: it is not. See
+If you are evaluating whether this is finished: the MVP gate is 10 of 12 checks, and
+the two open checks plus the manual walks are listed in
+[`ROADMAP.md`](ROADMAP.md#acceptance-debt). See also
 [`../README.md`](../README.md) § STATUS and [`PLAN.md`](PLAN.md).
 
 ---
@@ -68,7 +74,8 @@ npm run dev
 Open <http://localhost:5173>. See [`DEPLOY.md`](DEPLOY.md) for hosting a built
 copy.
 
-The app opens the EP001 demo project so there is something on screen immediately.
+The app opens the project browser. A clean profile has no projects: choose **New project**
+to create one. The EP001 demo is fixture data used by the tests, not installed by the app.
 
 ---
 
@@ -195,9 +202,11 @@ The five scenes of EP001, *Rent Is Due*:
 | 4 | SC04 — The Lounge | The empire conversation |
 | 5 | SC05 — Mama Nia Calls | Mama Nia rings |
 
-**Not available:** creating, renaming, reordering, duplicating, or deleting scenes
-through the UI. The document operations for all of these exist and are tested; no
-control calls them yet.
+**Available:** **+ New scene** creates a scene, and each scene's episode menu adds it
+to a cut or starts a new cut containing it.
+
+**Not available:** renaming, reordering, duplicating, or deleting scenes through the
+UI. The document operations exist and are tested; the panel does not expose them yet.
 
 ---
 
@@ -240,8 +249,11 @@ silent.** A generated placeholder tone would be indistinguishable from a real re
 in a demo, and would be a lie about the state of the project. Recording the ZANZA cast
 is a production task, not an engineering one.
 
-**Not available:** attaching a file to a slot, ambience beds you can author, per-line
-fades, and any real mixdown in export.
+**Available:** `AudioSlotPanel` attaches a local audio file to a slot, and the export
+panel produces a real WAV mixdown of the cut.
+
+**Not available:** ambience beds you can author, per-line fades, phoneme lip sync, and
+voice recording.
 
 ---
 
@@ -256,10 +268,11 @@ fades, and any real mixdown in export.
 Undo and redo work by snapshotting the whole document, capped at 100 steps (fewer
 when the document grows large, so history stays within a memory budget).
 
-Undo and redo are live. Moving or trimming a clip in the timeline is the first control
-to change the document, and each completed drag is one step. The buttons enable
-themselves as soon as there is something to undo, and the keyboard shortcuts work
-whether or not the buttons are enabled.
+Undo and redo are live across every editing surface — timeline, dialogue, camera,
+audio attachment, scene creation, and plan apply. Each completed gesture is one step
+(a plan applies as a single undoable commit). The buttons enable themselves as soon
+as there is something to undo, and the keyboard shortcuts work whether or not the
+buttons are enabled.
 
 If undo appears disabled it is because the history is genuinely empty — nothing has
 changed the document yet in this session. Every mutation goes through `commit()`;
@@ -276,8 +289,10 @@ In your browser's IndexedDB, per origin. This means:
 - Opening the app from a different URL or port is a different database.
 - There is no server and no account (`AGENTS.md` RULE 10).
 
-**Not available:** exporting a project file, importing one, or any cloud sync. Until
-that ships, there is no way to move a project off the machine that made it.
+**Available:** the project browser exports a `.zanza.json` file and imports one back,
+so a project can be moved between machines or kept as a backup.
+
+**Not available:** cloud sync, accounts, or collaboration.
 
 ---
 
@@ -297,19 +312,22 @@ use, that is a bug worth reporting.
 
 ## 9. NOT AVAILABLE
 
-Everything below is planned and unscheduled, or scheduled. None of it works.
+Everything below is genuinely absent. None of it is a stub waiting to be filled in.
 
-| Feature | Where planned |
+| Feature | Status |
 |---|---|
-| Editing actors and assets: move, scale, pose, expression, anchor binding, add or remove a character | Phase 14 / 15 (post-MVP) |
-| Attaching a file to an audio slot, importing audio | Phase 8 (current phase) / 16 |
-| Camera presets and a camera panel | Phase 9 |
-| Episode-sequential playback | Phase 11 |
-| PNG still, project JSON import/export, video export | Phase 12 |
+| Editing actors and assets: move, scale, pose, expression, anchor binding, add or remove a character | Not built — no per-actor inspector |
+| Asset authoring UI: create or edit characters, sets, props, poses, expressions | Not built — the library is read-only |
+| AI assistance | Phase 19, in progress: provider boundary and Scene Planner |
+| Video file export | Not built by decision — export is PNG + WAV (`adr/001-video-encoding.md`) |
+| Voice recording, phoneme lip sync, ambience beds, per-line fades | Deferred content work |
+| Cloud sync, accounts, collaboration | Deferred platform work |
 
-If you need any of these, the honest answer is that they are not built. Nothing in
-this application is a stub waiting to be filled in; the missing pieces have not been
-started.
+**Available and current:** camera presets/panel, episode-sequential playback, PNG
+stills and sequences, WAV mixdown, project JSON import/export, scene creation, audio
+file attachment, and plan paste/validate/preview/edit/apply/undo.
+
+If you need one of the missing features, the honest answer is that it is not built.
 
 ---
 
@@ -325,9 +343,8 @@ The loaded document has no scenes. Almost always the result of a failed or corru
 load; delete the database as above.
 
 **The issue panel is full of errors.**
-Something has written an invalid document — usually a hand-edited `.json` import, once
-import exists. Until then, this indicates a bug. Please report it with the scene id
-and the issue text.
+Something has written an invalid document — usually a hand-edited `.json` import. If
+not, this indicates a bug. Please report it with the scene id and the issue text.
 
 **Undo and Redo are greyed out.**
 Expected only if you have not changed anything yet — editing a clip or a line is what

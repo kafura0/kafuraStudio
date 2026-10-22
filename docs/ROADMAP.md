@@ -1,10 +1,18 @@
 # ZANZA STUDIO — ROADMAP
 
-> **Current phase: Phase 18 — Plan Review Workflow.** The review-and-edit surfaces are
-> landed: `planDiff`, `planStore`, `PlanReviewPanel` (three-still preview, diff, validation
-> gate, `Assumption` display), `PlanEditor`, the per-value `Edit`d computation, `PlanRecord`
-> persistence with a review history, and plan apply through the store as one undo step
-> (§26 Phase 18 steps 1–8). All four gates are clean at 1148 tests across 80 files.
+> **Current phase: Phase 19 — AI Boundary & First Capability.** Phase 18 is complete: the
+> review-and-edit surfaces are landed (`planDiff`, `planStore`, `PlanReviewPanel` with the
+> three-still preview, diff, validation gate and `Assumption` display, `PlanEditor`, the
+> per-value `Edit`d computation, `PlanRecord` persistence with a review history, and plan
+> apply through the store as one undo step). All four gates are clean at 1148 tests across
+> 80 files.
+>
+> **Acceptance debt is open and tracked in [ACCEPTANCE DEBT](#acceptance-debt).** A green
+> gate is not a closed phase; the manual walks and the two unmet MVP checks are listed
+> there rather than implied complete.
+>
+> **Previous: Phase 18 — Plan Review Workflow.** Complete as implementation and automated
+> gates; its manual panel walk is listed under acceptance debt.
 > **Previous: Phase 17 — Plans, Validation & Compilation.** Complete — the pure
 > `ScenePlan` → `Project` pipeline: a total `parsePlan`/`parseScenePlan`, the plan
 > vocabulary and fixtures, `validatePlan`, `compilePlan`, `applyPlan`, and the
@@ -74,6 +82,29 @@ numbering is reconciled against
 | 16 | Commands, Transactions & Provenance | **complete** | A named, serializable command layer over the existing operations (§7), a fold that applies a sequence atomically and validates the document exactly once (§8.3/§22.3), the `dispatch` seam that routes every UI/store mutation through a command (§7.3), and the G6 command-coverage gate (§33). Every editor gesture is one undo step; a 200-command batch validates once and rolls back to zero on any failure. 982 tests across 66 files. See the phase section below. |
 | 17 | Plans, Validation & Compilation | **complete** | The pure pipeline: a total `parsePlan`, the `ScenePlan` vocabulary with real-library fixtures, `validatePlan` (reference existence, pose compatibility, timing, structure), `compilePlan` (the §11.6 command order, with plan-local handles), `applyPlan` (the handle-binding fold, atomic, validates once), and the ESLint determinism rule. `parse`/`layout`/`validate`/`compile`/`apply` tests pass; gates G6/G7/G8/G10 hold. See the phase section below. |
 | 18 | Plan Review Workflow | **complete** | A plan is validated, previewed beside the current scene as three stills, diffed ("what changes / what it breaks"), edited in a form over `ScenePlan`, re-previewed with no undo step, and applied through the store as one commit that undoes in one step. Errors block Apply, warnings do not; `Assumption`s and per-value `Edit`d provenance are shown; proposals persist to a `plans` store for a reopenable review history and are discarded once applied (§26 Phase 18 steps 1–8). 1148 tests across 80 files, all four gates clean. See the phase section below. |
+| 19 | AI Boundary & First Capability | **in progress** | The provider-agnostic boundary (`AIProvider`, registry, `nullProvider` default), the Scene Planner capability, a capability severity ceiling, settings for provider configuration, and provenance on generated records. Acceptance (the `src/ai/` tree is planned and does not exist yet): deleting it once landed leaves the rest of the suite green; with no provider configured the editor is fully functional; a fake provider's plan validates → previews → applies → undoes as one step; no network in CI. See the phase section below. |
+
+### ACCEPTANCE DEBT
+
+These checks are open. They are not redefined to pass, and a green automated gate does
+not close them. This table is the single canonical list; phase sections may explain a
+row, but they must not contradict it.
+
+| Open check | Phase | Status | What closing it requires |
+|---|---|---|---|
+| Series acceptance walk against §24.5 | 14 | **open** | A manual walk in Chrome at 1440p and 1920p: SeriesBrowser → a project created or imported on a clean origin → play/scrub → edit → undo → export. EP001 is test fixture data and is not installed by the app. |
+| Cold-start demo content | 14 | **open** | A clean origin has no projects, so the documented EP001 walk cannot start. Either install EP001 into an empty workspace (without opening it) or add a load-demo action, then update the quickstart. |
+| 600-frame RULE 14 performance run | 15 | **open** | A measured run on the reference machine (16 GB / Intel UHD), recorded with frame timing. |
+| Plan-review manual walk | 18 | **open** | Open the panel, paste/load a plan, verify stills/diff/validation, edit, Apply, undo once. |
+| MVP check 4 — drag an actor, then undo/redo | 13 | **unmet** | The per-actor inspector (capability rows 7–9) does not exist, so there is no drag handle. |
+| MVP check 8 — playable video file | 13 | **unmet by decision** | Requires a muxer; [`adr/001-video-encoding.md`](adr/001-video-encoding.md) decided against one. Export is PNG + WAV. |
+
+**The historical browser scripts are absent.** Older Phase 13/14 notes cite
+`browser.mjs`, `export-accept.mjs` and `migrate-accept.mjs` and count their passes
+(44/44, 47/47, 35/35). Those files are not in this repository, so those counts are a
+historical record of runs made elsewhere, not evidence reproducible from this folder.
+Do not cite them as current verification. A checked-in acceptance harness is the way to
+make them repeatable.
 
 ### Phase 13 — MVP Acceptance & Documentation Truth
 
@@ -725,45 +756,50 @@ title cards and end credits; per-line fades and a full mixing desk; subtitle gen
 
 ---
 
-## POST-MVP — planned
+## POST-MVP — deferred content work
 
-Deliberately not built. Listed so they are not lost, and so nobody re-adds them
-by accident during MVP work.
+Deliberately not built. Listed so they are not lost, and so nobody re-adds them by
+accident during MVP work.
 
-### Phase 14 — ART PIPELINE
+**These headings are names, not phase numbers.** The numbers they used to carry
+collided with the live 14–19 sequence, and §24.1 of the spec says the live sequence
+wins. These are unscheduled until [`ARCHITECTURE_SPEC.md`](ARCHITECTURE_SPEC.md) §24.11
+gives each an entry condition.
+
+### Art pipeline
 Replace vector parts with painted art. Pipe-fitted, not prebuilt: `{ kind: 'image' }`
 was removed from `ShapeDef` in Phase 15 (R5) because nothing supplied it, and it
 returns here together with an image resolver. Add: asset import, sprite atlasing,
 per-part art variants, pose libraries authored in-app.
 
-### Phase 15 — ANIMATION DEPTH
+### Animation depth
 Pose-to-pose keyframed animation with an eased graph editor, animation clips in the
 asset library (reusable across scenes — a direct extension of RULE 2), hold poses,
 and onion-skinning.
 
-### Phase 16 — DIALOGUE & AUDIO PRODUCTION
+### Dialogue and audio production
 Record or generate voice, align audio to lines, phoneme-level mouth shapes, per-line
 gain and fades, ambience beds, music cue sheets, and a real audio mixdown in export.
 
-### Phase 17 — EPISODE ASSEMBLY
+### Episode assembly
 Continuous episode render, per-scene camera framing, transitions, title cards,
 subtitle/burn-in, end credits.
 
-### Phase 18 — DIRECTOR'S TOOLS
+### Director's tools
 Shot lists, continuity checking (a character in two places at once), staging
 checklists, coverage overview, scene-to-scene camera-continuity hints.
 
-### Phase 19 — AI ASSISTANCE (provider-agnostic)
-Script breakdown, shot suggestions, staging and expression suggestions, asset
-recommendation, subtitle generation. Behind a provider interface; **the editor must
-never require a specific AI provider to function.** AI suggests, the creator
-approves.
+### AI assistance (later capabilities)
+Phase 19 is the boundary and the Scene Planner. Script breakdown, shot suggestions,
+staging and expression suggestions, asset recommendation and subtitle generation are
+later capabilities behind the same provider interface. **The editor must never
+require a specific AI provider to function.** AI suggests, the creator approves.
 
-### Phase 20 — PLATFORM
+### Platform
 `HttpProjectRepository` behind the existing interface, accounts, collaboration,
 review and approval workflows.
 
-### Phase 21 — ZANZA ECOSYSTEM
+### ZANZA ecosystem
 The same character and world data feeding ZANZA SOCIAL and ZANZA GAME. This is the
 reason `core/` is portable and content lives in data: the renderer is swappable and
 the document is the shared asset.

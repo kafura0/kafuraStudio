@@ -1,5 +1,10 @@
 ﻿# BMAD Whole-Team Assessment
 
+> **Historical note (2026-10-22).** This was written when the repo was at ~800 tests and
+> Phase 14 was the live phase. It is kept as a record, not as current status. Live status
+> and the open acceptance checks are in [`docs/ROADMAP.md`](docs/ROADMAP.md) and
+> [`docs/PLAN.md`](docs/PLAN.md).
+
 ## Core verdict (all 6 agents)
 - Winston (Architect): AI boundary correct; order must be 15 renderer/commands/plans/review (18) → AI (19); G3 holds. Extend, don't rewrite.
 - Mary (BA): Demo for acceptance, not product launch; be explicit about PNG+WAV export and audience.

@@ -44,11 +44,14 @@ If hosting under subdirectory: `npm run build -- --base=/repo-name/`
 
 ## Post-Deployment Verification
 1. Site loads (200) with correct asset hashes
-2. SeriesBrowser shows ZANZA series
-3. Can open EP001, see Stage + panels
+2. Project browser renders (a fresh origin shows **No projects yet**, not EP001)
+3. **New project** creates a document and opens the Stage + panels
 4. Play/scrub works, undo/redo works
 5. Export panel functional
 
+Note: EP001 exists only as test fixture data. A clean deployment has no demo project, so
+the manual acceptance walk must create a project or import one first.
+
 ## Notes
-- Phase 14 acceptance walk (manual browser test) remains pending and should be completed before closing Phase 14.
-- AI is planned for Phase 19 only (not incorporated yet).
+- Phase 14 acceptance walk (manual browser test) remains pending and is listed in `docs/ROADMAP.md#acceptance-debt`.
+- AI is Phase 19 and is in progress; with no provider configured the editor must remain fully functional.

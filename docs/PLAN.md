@@ -1,8 +1,8 @@
 # ZANZA STUDIO — DEVELOPMENT PLAN
 
-> **Current phase: Phase 14 — SERIES & ASSET SCOPE.** Authority for status is
-> [`ROADMAP.md`](ROADMAP.md), whose phase table this header follows. The plan below is
-> the sequencing and the reasoning, not the status.
+> **Current phase: Phase 19 — AI BOUNDARY & FIRST CAPABILITY.** Authority for status
+> is [`ROADMAP.md`](ROADMAP.md), whose phase table this header follows. The plan below
+> is the sequencing and the reasoning, not the status.
 
 The plan of record for what gets built next, in what order, and what is
 deliberately left alone. Phase *definitions* and *gates* live in
@@ -17,29 +17,45 @@ to skip ahead.
 
 ## WHERE WE ARE
 
-The engine is finished. The application is not.
+The editor is real. The platform around it is what is being built.
 
 | Working | Not built |
 |---|---|
-| Document model, all operations, invariants | Episode-sequential playback |
-| Deterministic renderer | **Export** |
-| Keyframe sampling, camera, talk pulse | Preset cameras |
-| Seed content: 4 characters, 3 sets, 5 scenes | `.zanza.json` import/export |
-| IndexedDB persistence, re-validating on read | Asset editing |
-| Undo/redo through one `commit()` | Attaching a file to an audio slot |
-| Stage with a 60fps rAF loop | — |
-| Timeline: lanes, ruler, playhead, zoom, move/trim, keyframe editing, mute, track add/remove/reorder, drag-to-another-track | |
-| Audio: pure plan + Web Audio playback on the store's clock, per-clip gain | |
-| Dialogue panel: text, speaker, actor, emotion, subtitle, cue timing, voice | |
+| Document model, all operations, invariants | Painted-art pipeline (`image` parts) |
+| Deterministic renderer, golden fixtures, RenderIndex | Animation clips / graph editor |
+| Commands, atomic batches, provenance, one `commit()` | Voice production, phoneme lip sync |
+| Plans: parse, validate, compile, apply, diff, review, persist | Video muxing (ADR 001 says no) |
+| Series scope and asset resolution | Asset authoring UI |
+| Timeline, dialogue, camera, audio, episode playback | Continuity engine, director's tools |
+| PNG stills/sequences + WAV mixdown export | **AI assistance (Phase 19, in progress)** |
+| IndexedDB persistence, import/export, starter project | Cloud repository, accounts |
 
-243 tests, four gates green. The useful consequence of the layering rule is that the
-core can be tested to exhaustion without a browser, so the remaining work is almost
-entirely UI and a serialisation-to-media pipeline.
+1148 tests across 80 files, four gates green. The layering rule is why the core can
+be tested to exhaustion without a browser; the remaining work is mostly content
+tooling, acceptance verification, and the AI boundary.
+
+### Acceptance debt is the main process risk
+
+A green gate proves the asserted behaviour, not that a human can walk the feature.
+These checks are open and must not be described as closed:
+
+| Open check | Why it is open |
+|---|---|
+| Phase 14 series acceptance walk | Manual, not yet run against A§24.5 |
+| Phase 15 600-frame RULE 14 perf run | Manual run on the reference machine |
+| Phase 18 plan-review walk at 1440p/1920p | Manual, not yet recorded |
+| MVP check 4 — drag an actor | No per-actor inspector exists |
+| MVP check 8 — playable video | Deliberate no-muxer decision (ADR 001) |
+
+The browser scripts cited by older Phase 13/14 notes (`browser.mjs`,
+`export-accept.mjs`, `migrate-accept.mjs`) are **not in this repository**, so those
+historical counts are not reproducible from this folder. Do not cite them as current
+evidence. [`ROADMAP.md`](ROADMAP.md#acceptance-debt) keeps the canonical table.
 
 ### The defect class that shaped this plan
 
-Three bugs recently passed all 71 tests *and* a clean typecheck — the same class of
-bug later found again in the timeline (see Phase 7, where the drag preview fed on
+Three bugs passed a 71-test suite *and* a clean typecheck at the time — the same class
+of bug later found again in the timeline (see Phase 7, where the drag preview fed on
 itself and still passed every gate):
 
 - back hair rendered at the frame origin instead of on the head
@@ -56,7 +72,17 @@ gates. See [Review discipline](#review-discipline).
 
 ---
 
-## PHASE 7 — TIMELINE (current)
+## HISTORICAL APPENDIX — the Phase 7–13 plan
+
+> Everything below this banner was written while Phases 7–13 were being built. It is
+> kept for the reasoning, not as status: several headings still say "current" or
+> "not started" because that is what was true when they were written. Live status is
+> [`ROADMAP.md`](ROADMAP.md); the phases below are complete or superseded, except where
+> the acceptance-debt table above says otherwise.
+
+---
+
+## PHASE 7 — TIMELINE (historical)
 
 **Done:** lanes, ruler, playhead, zoom, clip selection, clip move, clip trim,
 keyframe editing, per-lane mute, and live undo. The clock question below was decided
@@ -105,7 +131,7 @@ sitting mid-clip jumped.
 
 ---
 
-## PHASE 8 — DIALOGUE AND AUDIO (current, partial)
+## PHASE 8 — DIALOGUE AND AUDIO (historical; closed by Phase 11)
 
 **Build:** Web Audio playback scheduled against scene time, mix controls per clip,
 subtitle rendering verified, and a dialogue editing panel — text, speaker, emotion,
@@ -136,7 +162,7 @@ flow is the next piece of this phase: the engine already resolves and decodes wh
 
 ---
 
-## PHASE 9 — CAMERA
+## PHASE 9 — CAMERA (historical)
 
 **Build:** shot presets and a camera panel. Rest camera and keyframed moves already
 resolve and render; nothing exposes them.
@@ -145,7 +171,7 @@ resolve and render; nothing exposes them.
 
 ---
 
-## PHASE 10 — ANIMATION (complete)
+## PHASE 10 — ANIMATION (historical)
 
 **Done.** Keyframes, linear and step interpolation, per-channel holds, and the talk
 pulse live in `src/core/animation/` and `src/core/render/`, are pure, and are
@@ -158,7 +184,7 @@ main thing left in this phase.
 
 ---
 
-## PHASE 11 — PREVIEW
+## PHASE 11 — PREVIEW (historical)
 
 **Build:** episode-sequential playback across all five scenes, with correct scene
 transitioning and a playhead that spans scenes rather than restarting.
@@ -167,7 +193,7 @@ transitioning and a playhead that spans scenes rather than restarting.
 
 ---
 
-## PHASE 12 — EXPORT (not started)
+## PHASE 12 — EXPORT (historical; shipped as PNG + WAV)
 
 The milestone's actual deliverable, and the one with no code behind it at all.
 
@@ -190,14 +216,14 @@ playing it.
 
 ---
 
-## PHASE 13 — POLISH
+## PHASE 13 — POLISH (historical)
 
 Success is the MVP acceptance gate in [`MVP.md`](MVP.md) §4, not new features. All
 ten manual checks at 1440p and 1920p.
 
 ---
 
-## SEQUENCING AND WHY
+## SEQUENCING AND WHY (historical)
 
 **The path to deployment is Phases 7 to 12, in order.** Phase 7 makes the document
 manipulable, 8 and 9 add the content lanes, 11 adds playback, and 12 adds export.

@@ -135,9 +135,11 @@ Check 10 is the load-bearing one. If adding a character requires a code change, 
 architecture has failed, regardless of whether the other checks pass.
 
 **Current status: not met, on checks 4 and 8.** The four build gates pass — lint clean,
-typecheck clean, 746 tests green across 51 files, build succeeds. Ten of the twelve checks
+typecheck clean, 1148 tests green across 80 files, build succeeds. Ten of the twelve checks
 pass, and the two that do not fail for unrelated reasons: one is a deliberate decision
-about export format, the other is a piece of UI nobody has built yet.
+about export format, the other is a piece of UI nobody has built yet. The manual walks
+that produced the earlier pass counts are listed as open debt in
+[`ROADMAP.md`](ROADMAP.md#acceptance-debt).
 
 *Automated.* Check 9 (round-trip the project JSON) in `src/core/io/projectIo.test.ts`.
 Check 12 (no history or selection bleed between projects) in
@@ -156,6 +158,12 @@ viewport and at 3840×2160:
 | `browser.mjs` | Checks 1, 2, 5, 6, 7, 15–18 | 44/44 | 44/44 |
 | `export-accept.mjs` | Check 8's closest available form, plus cancellation | 47/47 | 47/47 |
 | `migrate-accept.mjs` | The v1 workspace adoption path | 35/35 | 35/35 |
+
+> **Reproducibility caveat (2026-10-22).** None of the three scripts above is present
+> in this repository. The counts are a record of runs made elsewhere; they cannot be
+> re-run from this folder and are not current evidence. Do not cite them as
+> verification. The canonical open-check list is the acceptance-debt table in
+> [`ROADMAP.md`](ROADMAP.md#acceptance-debt).
 
 A cut exports to 288 PNGs at the episode's authored 1920×1080 — correctly ordered,
 non-empty, named from a zero-padded index, first and last decoding to non-blank images —

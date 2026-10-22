@@ -1,6 +1,6 @@
-....finishall# ZANZA STUDIO
+# ZANZA STUDIO
 
-A 2D animation production tool for a recurring adult animated comedy set in Zan
+A 2D animation production tool for a recurring adult animated comedy set in Zanza
 City, 2097.
 
 It is **not** a drawing app, **not** a generic canvas, **not** a video editor, and
@@ -27,17 +27,21 @@ that is not implemented and tested. The full phase table is in
 | | |
 |---|---|
 | Build gates | `lint`, `typecheck`, `test`, `build` all green |
-| Tests | 71 passing, no browser required |
-| Works | Document model, renderer, seed content, persistence, undo/redo, stage |
-| Missing | Timeline UI, all editing controls, audio playback, episode playback, **export** |
+| Tests | 1148 passing across 80 files, no browser required |
+| Works | Document model, deterministic renderer, seed content, persistence, undo/redo, stage, timeline, dialogue, camera, audio playback, episode playback, import/export, PNG sequence + WAV mixdown, plan validation and review |
+| Missing | Painted-art pipeline, animation assets, real voice recording, video muxing, asset authoring UI, **AI assistance (Phase 19, in progress)** |
 
-Concretely: the engine works and the content exists, but **there is no timeline and
-there is no export.** The application is a shell around a working core, not a
-finished editor. Do not judge this repository by its screenshots; judge it by the
-gates.
+The engine and the editor are real: EP001 can be opened, staged, played, edited,
+undone, saved, exported as PNG frames plus a WAV mixdown, and reviewed through the
+plan workflow. Export produces **PNG stills/sequences and a WAV mixdown, not a
+video file** �?" that is a deliberate decision recorded in
+[`docs/adr/001-video-encoding.md`](docs/adr/001-video-encoding.md).
 
-**The MVP acceptance gate is not met.** See
-[`docs/MVP.md`](docs/MVP.md) §4 for which of the ten checks are blocked on what.
+**The MVP acceptance gate is 10 of 12 checks.** Check 4 (drag an actor) is blocked
+on the per-actor inspector, and check 8 (playable video) is blocked on the no-muxer
+decision. Both are reported rather than redefined. See
+[`docs/MVP.md`](docs/MVP.md) §4 and the acceptance-debt table in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 
@@ -50,8 +54,10 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-On first run the app creates an empty IndexedDB database and seeds it with the EP001
-demo project, so there is content on screen immediately.
+On first run the app creates an empty IndexedDB workspace and opens the project browser.
+Nothing is open yet: choose **New project** to create a document with the starter library.
+The EP001 demo is test fixture data (`src/data/seed.ts`), not installed by the app, so a
+clean profile has no projects to open.
 
 ### The four gates
 
