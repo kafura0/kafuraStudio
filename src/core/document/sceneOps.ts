@@ -13,6 +13,7 @@ import type {
   Id,
   PoseDef,
   Project,
+  Provenance,
   Scene,
   SceneActor,
   StagingAnchor,
@@ -47,7 +48,7 @@ export function placeCharacter(
   sceneId: Id,
   character: CharacterDef,
   placement: Partial<Transform2D> & { poseId?: string; expressionId?: string } = {},
-  options: { id?: Id; clock?: () => string } = {},
+  options: { id?: Id; clock?: () => string; provenance?: Provenance } = {},
 ): { project: Project; actorId: Id } {
   // Pick the transform fields explicitly. `placement` also carries poseId and
   // expressionId, and passing it straight through would splatter them into
@@ -60,7 +61,10 @@ export function placeCharacter(
     poseId ?? character.defaultPoseId,
     expressionId ?? character.defaultExpressionId,
     placementTransform,
-    options.id !== undefined ? { id: options.id } : {},
+    {
+      ...(options.id !== undefined ? { id: options.id } : {}),
+      ...(options.provenance !== undefined ? { provenance: options.provenance } : {}),
+    },
   );
   const next = addActorToScene(project, sceneId, actor, undefined, options.clock);
   return { project: next, actorId: actor.id };

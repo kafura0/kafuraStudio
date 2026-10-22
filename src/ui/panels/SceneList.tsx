@@ -1,4 +1,6 @@
 import type { Episode, Scene } from '../../core/types';
+import { ProvenanceBadge } from '../ProvenanceBadge';
+import { anyAIProvenance } from '../../lib/provenance';
 
 export interface SceneListProps {
   scenes: Scene[];
@@ -44,6 +46,10 @@ export function SceneList({
       <ul>
         {scenes.map((scene, index) => {
           const active = scene.id === activeSceneId;
+          // The scene carries an AI mark when any of its cast or lines was AI-authored
+          // (A§9.4, Phase 19). Computed per render from the records themselves, never
+          // stored on the scene.
+          const aiProvenance = anyAIProvenance([...scene.actors, ...scene.dialogue]);
           return (
             <li key={scene.id}>
               <button
@@ -59,6 +65,7 @@ export function SceneList({
                   {String(index + 1).padStart(2, '0')}
                 </span>
                 {scene.name}
+                {aiProvenance && <ProvenanceBadge provenance={aiProvenance} />}
                 <span className="mt-0.5 block font-mono text-[11px] text-ink-500">
                   {scene.duration.toFixed(1)}s · {scene.actors.length} actors ·{' '}
                   {scene.dialogue.length} lines

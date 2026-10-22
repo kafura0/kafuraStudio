@@ -17,9 +17,10 @@
  * clock, so applying the same plan twice with the same sources yields byte-identical
  * projects — which is what makes the preview-equals-applied gate (G8) an exact check.
  */
-import type { Id, Project, Scene } from '../types';
+import type { Id, Project, Provenance, Scene } from '../types';
 import { commandError, dispatchCommand } from '../commands';
 import type { AddClipCommand } from '../commands/addClip';
+import type { AddDialogueLineCommand } from '../commands/addDialogueLine';
 import type { CreateSceneCommand } from '../commands/createScene';
 import type { PlaceCharacterCommand } from '../commands/placeCharacter';
 import type { Command, CommandError } from '../commands/types';
@@ -64,7 +65,8 @@ export function applyPlan(
 
   for (let index = 0; index < compiled.commands.length; index += 1) {
     const compiledCommand = compiled.commands[index]!;
-    const command = substituteHandles(compiledCommand, bindings);
+    const withProvenance = stampProvenance(compiledCommand, envelope.provenance);
+    const command = substituteHandles(withProvenance, bindings);
     const result = dispatchCommand(command, {
       project,
       ...(ctx.assets !== undefined ? { assets: ctx.assets } : {}),
@@ -103,6 +105,29 @@ export function applyPlan(
     warnings: compiled.warnings,
     assumptions: compiled.assumptions,
   };
+}
+
+/**
+ * Stamp the plan's provenance onto the two commands that mint a human-attributable record
+ * (A§9.4, Phase 19).
+ *
+ * Only `PlaceCharacter` and `AddDialogueLine` carry a `provenance` field, because those are
+ * the only records a capability creates that a person can later edit line-by-line. A human
+ * commit supplies no provenance, so the field is left absent and the record is honestly
+ * "human" by omission. The compiler never sets it; `applyPlan` does, so a plan's authorship
+ * lands on every record it produced in one place.
+ */
+function stampProvenance(command: Command, provenance: Provenance | undefined): Command {
+  if (provenance === undefined) return command;
+  if (command.kind === 'PlaceCharacter') {
+    const place = command as PlaceCharacterCommand;
+    return { ...place, provenance } as Command;
+  }
+  if (command.kind === 'AddDialogueLine') {
+    const line = command as AddDialogueLineCommand;
+    return { ...line, provenance } as Command;
+  }
+  return command;
 }
 
 /**

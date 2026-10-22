@@ -14,7 +14,7 @@
  * bound by `applyPlan` to the actor id this command creates.
  */
 import { ID_PREFIX } from '../id';
-import type { Id, Transform2D } from '../types';
+import type { Id, Provenance, Transform2D } from '../types';
 import { findCharacter, findEnvironment } from '../document/lookups';
 import { bindActorToAnchor, placeCharacter, updateActor } from '../document/sceneOps';
 import type { Command, CommandContext } from './types';
@@ -34,6 +34,8 @@ export interface PlaceCharacterCommand extends Command {
   flipX?: boolean;
   /** Plan-compilation handle for the actor this command creates. */
   actorRef?: string;
+  /** Stamped by `applyPlan` from the envelope's provenance (A§9.4, Phase 19). */
+  provenance?: Provenance;
 }
 
 defineCommand<PlaceCharacterCommand>('PlaceCharacter', (command, ctx: CommandContext) => {
@@ -63,7 +65,11 @@ defineCommand<PlaceCharacterCommand>('PlaceCharacter', (command, ctx: CommandCon
       ...(command.poseId !== undefined ? { poseId: command.poseId } : {}),
       ...(command.expressionId !== undefined ? { expressionId: command.expressionId } : {}),
     },
-    { id: ctx.allocate(ID_PREFIX.actor), clock: ctx.now },
+    {
+      id: ctx.allocate(ID_PREFIX.actor),
+      clock: ctx.now,
+      ...(command.provenance !== undefined ? { provenance: command.provenance } : {}),
+    },
   );
   let project = placed.project;
 

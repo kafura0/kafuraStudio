@@ -22,6 +22,7 @@ import type {
   KeyframeTarget,
   Project,
   ProjectSettings,
+  Provenance,
   RenderSettings,
   Scene,
   SceneActor,
@@ -223,7 +224,7 @@ export function createActor(
   poseId: string,
   expressionId: string,
   transformOverrides: Partial<SceneActor['transform']> = {},
-  options: { id?: Id } = {},
+  options: { id?: Id; provenance?: Provenance } = {},
 ): SceneActor {
   return {
     id: options.id ?? createId(ID_PREFIX.actor),
@@ -236,6 +237,7 @@ export function createActor(
     z: 0,
     visible: true,
     anchorId: null,
+    ...(options.provenance !== undefined ? { provenance: options.provenance } : {}),
   };
 }
 
@@ -306,11 +308,11 @@ export function createDialogueLine(
   speaker: string,
   text: string,
   actorId: string | null = null,
-  options: { id?: Id } = {},
+  options: { id?: Id; provenance?: Provenance } = {},
 ): DialogueLine {
   return {
     // Injection mirrors `createTrack`/`createScene`: ids come from the caller when a
-    // command fold is running, never from crypto (§8.3).
+    // command fold is running, never from crypto (A§8.3).
     id: options.id ?? createId(ID_PREFIX.dialogue),
     speaker,
     actorId,
@@ -318,5 +320,6 @@ export function createDialogueLine(
     emotion: 'neutral',
     voiceAudioId: null,
     subtitle: null,
+    ...(options.provenance !== undefined ? { provenance: options.provenance } : {}),
   };
 }

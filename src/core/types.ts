@@ -68,7 +68,14 @@ export interface PartDef {
   shape: ShapeDef;
   /** Palette slot name, or a literal CSS colour. */
   colorKey: string;
-  /** Normalised 0..1 rotation/scale pivot within the shape. */
+  /**
+   * Normalised 0..1 rotation/scale pivot within the shape.
+   *
+   * The point it nominates - `(0, 0)` is the shape's top-left corner, `(0.5, 0.5)`
+   * its centre, `(0.5, 1)` its bottom edge - is the point that lands on the part's
+   * transform origin. That is what makes `BOTTOM` mean "stand on this" and
+   * `CENTRE` mean "centre this on the origin".
+   */
   pivot: Vec2;
   /** Rest transform, relative to the parent part. */
   rest: Transform2D;
@@ -272,6 +279,11 @@ export interface SceneActor {
   visible: boolean;
   /** Bound StagingAnchor id, or null for free placement. */
   anchorId: Id | null;
+  /**
+   * Who or what first authored this record (A§9.4, Phase 19). Absent for a human edit and
+   * for every record that existed before the field. Never validated against a provider list.
+   */
+  provenance?: Provenance;
 }
 
 export interface SceneProp {
@@ -325,6 +337,8 @@ export interface DialogueLine {
   voiceAudioId: Id | null;
   /** null => the exporter falls back to `text`. */
   subtitle: string | null;
+  /** Who or what first authored this line (A§9.4, Phase 19). Absent for a human edit. */
+  provenance?: Provenance;
 }
 
 /* ------------------------------------------------------------------ */

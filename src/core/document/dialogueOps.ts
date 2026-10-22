@@ -6,7 +6,7 @@
  * line, and there is no second copy of the timing to fall out of sync.
  */
 
-import type { AudioDef, Clip, DialogueLine, Id, Project, Scene } from '../types';
+import type { AudioDef, Clip, DialogueLine, Id, Project, Provenance, Scene } from '../types';
 import { createClip, createDialogueLine } from './factories';
 import { mapScene } from './projectOps';
 import {
@@ -43,7 +43,7 @@ export function addDialogueLineWithCue(
     duration: number;
     trackName?: string;
   },
-  options: { lineId?: Id; clipId?: Id; trackId?: Id; clock?: () => string } = {},
+  options: { lineId?: Id; clipId?: Id; trackId?: Id; clock?: () => string; provenance?: Provenance } = {},
 ): { project: Project; lineId: Id; clipId: Id } {
   // Ids and the timestamp travel in from outside when a command fold is running
   // (§8.3): the injected allocator and clock, not crypto, decide the shape of the
@@ -53,7 +53,10 @@ export function addDialogueLineWithCue(
       input.speaker,
       input.text,
       input.actorId ?? null,
-      { ...(options.lineId !== undefined ? { id: options.lineId } : {}) },
+      {
+        ...(options.lineId !== undefined ? { id: options.lineId } : {}),
+        ...(options.provenance !== undefined ? { provenance: options.provenance } : {}),
+      },
     ),
     emotion: input.emotion ?? 'neutral',
     voiceAudioId: input.voiceAudioId ?? null,

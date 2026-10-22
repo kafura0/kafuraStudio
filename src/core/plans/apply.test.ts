@@ -185,3 +185,34 @@ describe('applyPlan — handles never leak into the document', () => {
     }
   });
 });
+
+describe('applyPlan — provenance on created records (Phase 19 step 6)', () => {
+  it('stamps the envelope provenance onto every actor and line it creates', () => {
+    const result = applied(applyPlan(seedPlanContext(), WORKED_EXAMPLE_PLAN, options()));
+    const scene = sceneByName(result.project, 'Overheard');
+
+    expect(scene.actors).toHaveLength(2);
+    for (const actor of scene.actors) {
+      expect(actor.provenance).toEqual(WORKED_EXAMPLE_PLAN.provenance);
+    }
+    expect(scene.dialogue).toHaveLength(2);
+    for (const line of scene.dialogue) {
+      expect(line.provenance).toEqual(WORKED_EXAMPLE_PLAN.provenance);
+    }
+  });
+
+  it('leaves provenance absent when the plan carries none (a human/fixture plan)', () => {
+    const result = applied(applyPlan(seedPlanContext(), MINIMAL_PLAN, options()));
+    const scene = sceneByName(result.project, 'Bare Stage');
+    expect(scene.actors.every((a) => a.provenance === undefined)).toBe(true);
+  });
+
+  it('survives a serialize/parse round-trip', () => {
+    const result = applied(applyPlan(seedPlanContext(), WORKED_EXAMPLE_PLAN, options()));
+    const scene = sceneByName(result.project, 'Overheard');
+    const reparsed = JSON.parse(JSON.stringify(result.project)) as Project;
+    const roundScene = sceneByName(reparsed, 'Overheard');
+    expect(roundScene.dialogue[0]?.provenance).toEqual(scene.dialogue[0]?.provenance);
+    expect(roundScene.actors[0]?.provenance).toEqual(scene.actors[0]?.provenance);
+  });
+});

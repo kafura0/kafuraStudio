@@ -8,7 +8,7 @@
  * exact same document (§8.3). The op still lets a direct caller omit the ids.
  */
 import { ID_PREFIX } from '../id';
-import type { Id } from '../types';
+import type { Id, Provenance } from '../types';
 import { addDialogueLineWithCue } from '../document/dialogueOps';
 import { MIN_CLIP_DURATION } from '../document/trackOps';
 import type { Command, CommandContext } from './types';
@@ -27,6 +27,8 @@ export interface AddDialogueLineCommand extends Command {
   voiceAudioId?: Id | null;
   start: number;
   duration: number;
+  /** Stamped by `applyPlan` from the envelope's provenance (A§9.4, Phase 19). */
+  provenance?: Provenance;
 }
 
 defineCommand<AddDialogueLineCommand>('AddDialogueLine', (command, ctx: CommandContext) => {
@@ -76,6 +78,7 @@ defineCommand<AddDialogueLineCommand>('AddDialogueLine', (command, ctx: CommandC
       clipId: ctx.allocate(ID_PREFIX.clip),
       trackId: ctx.allocate(ID_PREFIX.track),
       clock: ctx.now,
+      ...(command.provenance !== undefined ? { provenance: command.provenance } : {}),
     },
   );
   return { ok: true, project };
