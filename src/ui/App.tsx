@@ -9,6 +9,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useEditor, episodeExportTarget } from '../state/editorStore';
 import { bindFlushToPageLifecycle } from '../state/autosaveLifecycle.browser';
+import { setPlanRepository } from '../state/planStore';
+import { IndexedDbPlanRepository, isIndexedDbAvailable } from '../core/persistence/indexedDb.browser';
 import { ProjectBrowser } from './ProjectBrowser';
 import { Stage } from './Stage';
 import { SceneList } from './panels/SceneList';
@@ -20,6 +22,7 @@ import { Timeline } from './panels/Timeline';
 import { CameraPanel } from './panels/CameraPanel';
 import { DialoguePanel } from './panels/DialoguePanel';
 import { ExportPanel } from './panels/ExportPanel';
+import { PlanReviewPanel } from './panels/PlanReviewPanel';
 
 /**
  * True when a keystroke belongs to whatever the user is typing into.
@@ -84,6 +87,15 @@ const context = useEditor((s) => s.context);
   // the two events that fire on the way out is the fix.
   const flushAutosave = useEditor((s) => s.flushAutosave);
   useEffect(() => bindFlushToPageLifecycle(flushAutosave).unbind, [flushAutosave]);
+
+  // Point the plan review history at IndexedDB where it exists. The plan store defaults to
+  // an in-memory history so it stays usable (and importable) without a database; this is the
+  // one place that decides the workspace has one. Wired here rather than in the store because
+  // constructing a browser repository is a side effect, and a store that did it at import
+  // time would drag IndexedDB into every test that touches a plan.
+  useEffect(() => {
+    if (isIndexedDbAvailable()) setPlanRepository(new IndexedDbPlanRepository());
+  }, []);
 
   // Ctrl+Z / Ctrl+Shift+Z, the one shortcut an editor must never get wrong, plus
   // spacebar transport, which `docs/MVP.md` check 3 claims exists and did not.
@@ -284,6 +296,7 @@ const context = useEditor((s) => s.context);
             currentTime={exportTarget.episodeTime}
             subtitles={showSubtitles}
           />
+          <PlanReviewPanel />
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
