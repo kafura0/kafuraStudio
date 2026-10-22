@@ -364,3 +364,14 @@ failure.
 The line's cue has to be under the playhead, and the cue is what the timeline lane shows.
 Check the lane is not muted, and that the `Cue` start in the dialogue panel is where you
 think it is.
+
+## 11. AI (Phase 19)
+
+**With no provider configured, the editor is fully functional and no AI affordance is broken.** Credentials live in localStorage (zanza.ai.credentials.v1) only and are **never** exported in project/series JSON.
+
+1. **Add a provider** ??" Open the **AI** panel in the left column (below Export). Choose a provider id, paste an API key, and **Save**. The key is stored locally; **Clear** removes it for that provider.
+2. **Generate a plan** ??" Open **Plan Review** below AI. Write a brief and **Generate**. If no provider is configured the button is disabled with an honest reason.
+3. **Review and apply** ??" The three-still preview and diff are computed from the current scene. Edit the plan, validate, and **Apply** as one transaction. **Undo** reverts it as one step. AI-authored cast and lines are marked **AI** in the scene list.
+4. **Adding a real provider** ??" Add src/ai/provider/<vendor>.browser.ts implementing AIProvider, register it, and add models to settings. No change to src/core/** or the command layer is required (provider-agnostic by design).
+
+**Ceiling:** scenePlanner may only create/modify scene contents (no assets, no deletes). The ceiling is enforced at pplyPlan.
