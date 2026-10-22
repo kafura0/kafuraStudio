@@ -32,3 +32,5 @@ export type { StoredCredentials } from './credentials';
 export { clearCredentials, hasCredentials, setCredentials } from './credentials';
 export { clearCapabilities, getCapability, listCapabilities, registerCapability } from './capabilities/registry';
 export { createTestFixtureCapability } from './capabilities/testFixture';
+export { createScenePlannerCapability, SCENE_PLANNER_COMMAND_KINDS } from './capabilities/scenePlanner';
+export { PROMPT_VERSION as SCENE_PLANNER_PROMPT_VERSION, buildUserPrompt as buildScenePlannerPrompt, SYSTEM as SCENE_PLANNER_SYSTEM } from './prompts/scenePlanner.v1';
