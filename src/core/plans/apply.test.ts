@@ -215,4 +215,20 @@ describe('applyPlan — provenance on created records (Phase 19 step 6)', () => 
     expect(roundScene.dialogue[0]?.provenance).toEqual(scene.dialogue[0]?.provenance);
     expect(roundScene.actors[0]?.provenance).toEqual(scene.actors[0]?.provenance);
   });
+
+  it('AI plans cannot emit forbidden commands (capability ceiling)', async () => {
+    const ctx = seedPlanContext();
+    const aiPlan = {
+      ...WORKED_EXAMPLE_PLAN,
+      provenance: { actor: 'ai' as const, provider: 'fake', model: 'm', at: '2026-10-16T00:00:00.000Z' },
+    };
+    const result = applyPlan(ctx, aiPlan, options());
+    expect(result.ok).toBe(true);
+    const { compilePlan } = await import('./compile');
+    const compiled = compilePlan(ctx, WORKED_EXAMPLE_PLAN);
+    if (!compiled.ok) throw new Error('bad');
+    for (const c of compiled.commands) {
+      expect(['CreateScene','PlaceCharacter','AddDialogueLine','AddClip','AddKeyframe','ApplyCameraPreset','SetSceneCamera','ClearCameraMoves']).toContain(c.kind);
+    }
+  });
 });

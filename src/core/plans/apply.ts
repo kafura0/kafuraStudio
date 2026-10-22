@@ -50,6 +50,57 @@ export type PlanApplyResult =
     }
   | { ok: false; error: PlanApplyError };
 
+/**
+ * Commands that may never be produced by an AI capability. The ceiling is enforced at
+ * the application boundary (ARCHITECTURE_SPEC.md §19.5, Phase 19 step 7), not just by
+ * convention: even if a model hallucinates, `applyPlan` refuses the fold.
+ */
+const AI_FORBIDDEN_COMMAND_KINDS = new Set<string>([
+  'CreateCharacter',
+  'CreateEnvironment',
+  'CreateProp',
+  'CreateAsset',
+  'DeleteScene',
+  'DeleteCharacter',
+  'DeleteEnvironment',
+  'DeleteProp',
+  'DeleteAsset',
+  'DeleteTrack',
+  'DeleteClip',
+  'DeleteActor',
+  'DeleteDialogueLine',
+]);
+
+/** Scene-content commands allowed for `scenePlanner` (mirror of SCENE_PLANNER_COMMAND_KINDS). */
+const AI_ALLOWED_COMMAND_KINDS = new Set<string>([
+  'CreateScene',
+  'PlaceCharacter',
+  'AddDialogueLine',
+  'AddClip',
+  'AddKeyframe',
+  'ApplyCameraPreset',
+  'SetSceneCamera',
+  'ClearCameraMoves',
+]);
+
+function enforceAICeiling(envelope: PlanEnvelope, commands: Command[]): PlanDiagnostic[] | null {
+  if (envelope.provenance?.actor !== 'ai') return null;
+  const violations: PlanDiagnostic[] = [];
+  for (let i = 0; i < commands.length; i += 1) {
+    const kind = commands[i]!.kind;
+    if (AI_FORBIDDEN_COMMAND_KINDS.has(kind) || !AI_ALLOWED_COMMAND_KINDS.has(kind)) {
+      violations.push({
+        severity: 'error',
+        path: `commands[${i}]`,
+        code: 'unknown-field',
+        message: `AI capability cannot emit command "${kind}" (capability ceiling).`,
+      });
+    }
+  }
+  if (violations.length > 0) return violations;
+  return null;
+}
+
 export function applyPlan(
   ctx: PlanContext,
   envelope: PlanEnvelope,
@@ -58,6 +109,11 @@ export function applyPlan(
   const compiled = compilePlan(ctx, envelope);
   if (!compiled.ok) {
     return { ok: false, error: { kind: 'invalid-plan', diagnostics: compiled.diagnostics } };
+  }
+
+  const ceilingViolations = enforceAICeiling(envelope, compiled.commands);
+  if (ceilingViolations !== null) {
+    return { ok: false, error: { kind: 'invalid-plan', diagnostics: ceilingViolations } };
   }
 
   const bindings = new Map<string, Id>();
