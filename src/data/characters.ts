@@ -1,16 +1,23 @@
 /**
  * THE ZANZA CAST.
  *
- * Four recurring characters, each a data structure built from the shared rig
- * template. No character's name appears anywhere in `src/core/` or `src/ui/` —
- * the renderer and the editor only ever see ids (AGENTS.md RULE 3).
+ * Four recurring characters, each a data structure built from a rig builder. No
+ * character's name appears anywhere in `src/core/` or `src/ui/` — the renderer and
+ * the editor only ever see ids (AGENTS.md RULE 3).
  *
- * Proportions carry most of the character: Nia is slight, Kito is tall and
- * long-limbed and slightly awkward, Mama Nia is shorter and broader, and the
- * Landlord is heavy and unimpressed. Palettes do the rest.
+ * Three of them share the humanoid template in `rig.ts`, and differ only by
+ * proportions and palette: Kito is tall and long-limbed and slightly awkward,
+ * Mama Nia is shorter and broader, and the Landlord is heavy and unimpressed.
+ * Nia does not. She is the protagonist, she has a silhouette the template cannot
+ * express, and she gets her own rig in `nia.ts` — still the same `PartDef`
+ * contract, the same slot names, the same renderer.
+ *
+ * Which rig a character uses is a content decision. Nothing in the engine knows
+ * or cares who Nia is.
  */
 
 import type { CharacterDef } from '../core/types';
+import { buildNiaRig } from './nia';
 import { buildHumanRig, proportions } from './rig';
 
 export const NIA: CharacterDef = {
@@ -26,13 +33,16 @@ export const NIA: CharacterDef = {
     hair: '#241a16',
     brow: '#2b1d18',
     eye: '#1a1210',
+    eyeWhite: '#f4efe9',
     mouth: '#5c2a24',
     top: '#e8574a',
     bottom: '#2f3a4d',
+    bottomShade: '#26303f',
     shoe: '#1b1f27',
     accent: '#f2b33d',
+    accentPink: '#d4508c',
   },
-  rig: buildHumanRig(proportions(640, 'slim'), { hairStyle: 'locs' }),
+  rig: buildNiaRig(),
   defaultPoseId: 'pose.standing',
   mouthSlot: 'mouth',
   defaultExpressionId: 'expr.neutral',

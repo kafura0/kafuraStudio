@@ -101,14 +101,20 @@ describe('golden draw logs (MVP.md §1)', () => {
    * a per-actor loop turning into per-op work lands far above it, while legitimate
    * renderer work (R4's index is a pure refactor) does not move the count at all.
    * Raises need the same written reason a golden change does.
+   *
+   * RAISED when Nia got her own rig. The shared humanoid template draws 25 parts;
+   * hers draws 40 — the locs are four pieces, the cropped top is five, the cargo
+   * trousers carry pockets, and an eye is a white and an iris rather than one
+   * ellipse. That is the art being more detailed, not the renderer doing more work:
+   * the cost per part is unchanged, and the whole rise is the extra parts.
    */
   it('stays under the draw-op ceiling for every golden time', () => {
     const ceilings = new Map<number, number>([
-      [0, 1450],
-      [1.6, 1900],
-      [3, 1900],
-      [3.9, 1900],
-      [9.5, 1900],
+      [0, 1750],
+      [1.6, 2250],
+      [3, 2250],
+      [3.9, 2250],
+      [9.5, 2250],
     ]);
     for (const time of GOLDEN_TIMES) {
       const ops = renderToRecording(seedContext(), scene1, time).calls.length;

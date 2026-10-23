@@ -1,10 +1,15 @@
 /**
- * Human rig builder — the authoring tool for ZANZA characters.
+ * Human rig builder — the default rig for ZANZA characters.
  *
- * Every character is built from this one template, differing only by proportions
+ * Most characters are built from this one template, differing only by proportions
  * and palette. That is deliberate: it is what makes a single set of poses and
- * expressions reusable across the entire cast. A character-specific rig would
- * mean re-authoring every pose.
+ * expressions reusable across the entire cast.
+ *
+ * A character may still ship its own rig module when its silhouette or wardrobe
+ * the template cannot express (see `src/data/nia.ts`). What keeps poses and
+ * expressions reusable is not "everyone uses this builder" but "everyone uses the
+ * same slot names": a bespoke rig that keeps every slot listed below still plays
+ * every shared pose and expression, and adds slots of its own for its own layers.
  *
  * Rig layout (feet at y = 0, growing upward as y decreases):
  *
