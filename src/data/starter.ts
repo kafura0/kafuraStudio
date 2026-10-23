@@ -72,8 +72,8 @@ export const STARTER_ENVIRONMENT: EnvironmentDef = {
       z: 0,
       parallax: 1,
       parts: [
-        { shape: rect(STARTER_WIDTH, STARTER_HEIGHT), colorKey: '#2a2a31', pivot: { x: 0, y: 0 }, transform: transform({ x: STARTER_WIDTH / 2, y: STARTER_HEIGHT / 2 }) },
-        { shape: rect(STARTER_WIDTH, 260), colorKey: '#22222a', pivot: { x: 0, y: 0 }, transform: transform({ x: STARTER_WIDTH / 2, y: FLOOR_Y + 130 }) },
+        { shape: rect(STARTER_WIDTH, STARTER_HEIGHT), colorKey: '#2a2a31', pivot: { x: 0.5, y: 0.5 }, transform: transform({ x: STARTER_WIDTH / 2, y: STARTER_HEIGHT / 2 }) },
+        { shape: rect(STARTER_WIDTH, 260), colorKey: '#22222a', pivot: { x: 0.5, y: 0.5 }, transform: transform({ x: STARTER_WIDTH / 2, y: FLOOR_Y + 130 }) },
       ],
     },
   ],

@@ -402,9 +402,16 @@ export function drawParts(ctx: Canvas2DLike, parts: ResolvedPart[]): void {
 /**
  * Draw a shape with its declared pivot at the current origin.
  *
- * Shapes are authored centred on their own bounding box, so the offset to apply is
- * `-pivot * size`. That one rule is what lets a rig rotate a limb around its joint
- * without any per-shape special case.
+ * A shape is rasterised centred on its own bounding box, so the pivot point - the
+ * normalised spot inside the shape the author nominated - sits at
+ * `(pivot - 0.5) * size` from that centre. Putting it on the origin is therefore an
+ * offset of `(0.5 - pivot) * size`.
+ *
+ * The half-size term is not decoration: without it every shape lands half its own
+ * width and height up and to the left of where the author asked for it, and a rig
+ * whose torso is pivoted to its bottom edge floats a torso-height above the hips.
+ * With it, one rule covers every shape kind and every pivot, which is what lets a rig
+ * rotate a limb around its joint without a per-shape special case.
  */
 function drawShapeAtPivot(
   ctx: Canvas2DLike,
@@ -414,7 +421,7 @@ function drawShapeAtPivot(
 ): void {
   const bounds = shapeBounds(shape);
   ctx.save();
-  ctx.translate(-bounds.width * pivot.x, -bounds.height * pivot.y);
+  ctx.translate(bounds.width * (0.5 - pivot.x), bounds.height * (0.5 - pivot.y));
   buildShapePath(ctx, shape);
   ctx.fillStyle = color;
   ctx.fill();

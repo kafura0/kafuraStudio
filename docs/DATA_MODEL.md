@@ -74,6 +74,13 @@ interface PartDef {
 }
 ```
 
+**What `pivot` means.** The point it nominates *inside the shape* — `(0,0)` its top-left
+corner, `(0.5,0.5)` its centre, `(0.5,1)` its bottom edge — is the point that lands on the
+part's transform origin. A shape is rasterised centred on its own bounding box, so the
+renderer offsets by `(0.5 - pivot) * size` to put that point on the origin. That is what
+makes `BOTTOM` mean "this part stands on the origin", and what lets a rig rotate a
+forearm around its elbow rather than around its middle.
+
 **Why `slot` is a free-form string.** A pose names slots. If slots were a closed
 union, every new character design would be a type change. Free-form strings mean a
 pose addressing `armL` works for any character that happens to have an `armL` part,
