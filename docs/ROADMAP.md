@@ -772,6 +772,21 @@ was removed from `ShapeDef` in Phase 15 (R5) because nothing supplied it, and it
 returns here together with an image resolver. Add: asset import, sprite atlasing,
 per-part art variants, pose libraries authored in-app.
 
+The **character authoring workflow** that feeds this pipeline is written down in
+[`CHARACTER_WORKFLOW.md`](CHARACTER_WORKFLOW.md): how a character's face and hair move
+from reference photos to an approved design sheet, and from there into a vector
+`CharacterDef` in `src/data/`. It is a manual, human-gated process, not an application
+feature, and nothing in the app reads the folders it describes.
+
+The first vector rig authored through that workflow is **Nia** (`src/data/nia.ts`): a
+character-specific rig module — layered locs, a cropped top over a midriff, a belt with a
+buckle — beside the shared `buildHumanRig` template. It is content, so no `src/core/` or
+`src/ui/` code changed with it, and it keeps every shared slot the pose and expression
+libraries address. Authoring it required correcting the renderer's pivot contract
+first (`drawShapeAtPivot` now puts the shape's nominated pivot point on the transform
+origin, as `DATA_MODEL.md` §2 always described); the nine golden fixtures were
+regenerated against it.
+
 ### Animation depth
 Pose-to-pose keyframed animation with an eased graph editor, animation clips in the
 asset library (reusable across scenes — a direct extension of RULE 2), hold poses,
