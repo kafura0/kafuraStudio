@@ -64,6 +64,17 @@ function boxOf(parts: ReturnType<typeof resolve>, slot: string): Box {
   return drawnBox(part);
 }
 
+function unionBox(parts: ReturnType<typeof resolve>, slots: readonly string[]): Box {
+  const boxes = parts.filter((p) => slots.includes(p.slot)).map(drawnBox);
+  if (boxes.length === 0) throw new Error(`No parts on slots '${slots.join(', ')}'`);
+  return {
+    x0: Math.min(...boxes.map((b) => b.x0)),
+    y0: Math.min(...boxes.map((b) => b.y0)),
+    x1: Math.max(...boxes.map((b) => b.x1)),
+    y1: Math.max(...boxes.map((b) => b.y1)),
+  };
+}
+
 describe("Nia's rig", () => {
   it('resolves every colour against her own palette', () => {
     for (const part of NIA.rig) {
@@ -134,6 +145,38 @@ describe("Nia's rig", () => {
     }
   });
 
+  it('defaults to a broad smile that stays inside her face', () => {
+    const parts = resolve();
+    const head = boxOf(parts, 'head');
+    const mouth = boxOf(parts, 'mouth');
+
+    // A narrow mouth reads as a line at 640px. The default smile is the one
+    // feature that has to survive being seen small.
+    expect(mouth.x1 - mouth.x0).toBeGreaterThan(23);
+    expect(mouth.x0).toBeGreaterThan(head.x0);
+    expect(mouth.x1).toBeLessThan(head.x1);
+  });
+
+  it('gives the locs a silhouette wider than the head', () => {
+    const parts = resolve();
+    const head = boxOf(parts, 'head');
+    const hair = unionBox(parts, ['hairBack', 'hairFront']);
+
+    // The head outline is 96 wide. Hair that never leaves it is a cap, not locs.
+    expect(hair.x0).toBeLessThan(head.x0);
+    expect(hair.x1).toBeGreaterThan(head.x1);
+  });
+
+  it('stands both sneaker soles on the ground', () => {
+    const parts = resolve();
+    for (const id of ['p_soleR', 'p_soleL']) {
+      const part = parts.find((p) => p.id === id);
+      expect(part, `missing part '${id}'`).toBeDefined();
+      if (!part) continue;
+      expect(drawnBox(part).y1).toBeCloseTo(0, 5);
+    }
+  });
+
   it('draws a mouth-sized mouth when the shared mouth library swaps its shape in', () => {
     // The shared mouth shapes are authored for a head radius of one, so a rig that
     // does not carry the head radius as its mouth scale draws them at a fraction of
@@ -147,16 +190,45 @@ describe("Nia's rig", () => {
     expect(mouth.x1 - mouth.x0).toBeLessThan(40);
   });
 
-  it('blinks both the white and the iris of an eye together', () => {
-    // The eye is two parts on one slot; an expression that scales the slot must
-    // move both, or the iris stays open over a closed lid.
+  it('has a toothy smile aligned with the mouth', () => {
+    const parts = resolve();
+    const mouth = boxOf(parts, 'mouth');
+    const teeth = parts.find((p) => p.slot === 'teeth');
+    expect(teeth).toBeDefined();
+    if (!teeth) return;
+    expect(teeth.color).toBe(NIA.palette.eyeWhite);
+
+    const teethBox = drawnBox(teeth);
+    // Teeth sit above the lower lip and span most of the mouth width.
+    expect(teethBox.x0).toBeGreaterThan(mouth.x0);
+    expect(teethBox.x1).toBeLessThan(mouth.x1);
+    expect(teethBox.y1).toBeLessThan(mouth.y1);
+    expect(teethBox.y0).toBeGreaterThan(mouth.y0);
+  });
+
+  it('keeps teeth visible when the shared mouth library swaps shapes', () => {
+    const happy = EXPRESSIONS.find((e) => e.id === 'expr.happy');
+    expect(happy).toBeDefined();
+    if (!happy) return;
+
+    const parts = resolve(undefined, happy);
+    const teeth = parts.find((p) => p.slot === 'teeth');
+    expect(teeth).toBeDefined();
+    if (!teeth) return;
+    // Teeth remain on their own slot and are not replaced by mouth shape swaps.
+    expect(teeth.shape.kind).toBe('roundRect');
+  });
+
+  it('blinks every layer of an eye together', () => {
+    // The white, iris, pupil and catchlight share a slot; an expression that
+    // scales the slot must move all four, or the iris stays open over a closed lid.
     const laughing = EXPRESSIONS.find((e) => e.id === 'expr.laughing');
     expect(laughing).toBeDefined();
     if (!laughing) return;
 
     const parts = resolve(undefined, laughing);
     const eyes = parts.filter((p) => p.slot === 'eyeL');
-    expect(eyes.length).toBe(2);
+    expect(eyes.length).toBe(4);
     for (const eye of eyes) {
       expect(eye.scaleY).toBeLessThan(0.2);
     }

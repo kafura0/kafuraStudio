@@ -42,7 +42,7 @@ export function SettingsPanel(): React.JSX.Element {
     }
     try {
       const ai = await import('../ai');
-      ai.setCredentials({ providerId, apiKey: apiKey.trim() });
+      ai.setCredentials({ provider: providerId, key: apiKey.trim() });
       setApiKey('');
       setHasKey(true);
       setStatus({ kind: 'saved' });
@@ -55,7 +55,7 @@ export function SettingsPanel(): React.JSX.Element {
   const clear = async (): Promise<void> => {
     try {
       const ai = await import('../ai');
-      ai.clearCredentials(providerId);
+      ai.clearCredentials();
       setHasKey(false);
       setStatus({ kind: 'cleared' });
       setTimeout(() => setStatus({ kind: 'idle' }), 1500);

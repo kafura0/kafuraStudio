@@ -122,18 +122,23 @@ const FRINGE: Vec2[] = [
 ];
 
 /**
- * A smile, in head-radius units so it matches the mouth library's scale.
+ * A broad smile, in head-radius units so it matches the mouth library's scale.
  *
- * `y` grows downward, so the middle of a smile is the LARGEST y: the line dips
- * at the centre and the corners turn up. The expression library's `frown` is the
- * same curve the other way round.
+ * `y` grows downward, so the middle of a smile is the LARGEST y: the lower edge
+ * dips at the centre and the corners turn up. It is a closed crescent rather than
+ * a single line: an open path is filled, so a one-line smile collapses to a
+ * sliver no matter how wide it is. The inner edge is the lip line, the outer is
+ * the shadow under it: the gap between them is what reads as a smile at 640px.
  */
 const SMILE: Vec2[] = [
-  { x: -0.19, y: 0.02 },
-  { x: -0.1, y: 0.062 },
-  { x: 0, y: 0.078 },
-  { x: 0.1, y: 0.062 },
-  { x: 0.19, y: 0.02 },
+  { x: -0.26, y: 0 },
+  { x: -0.15, y: 0.07 },
+  { x: 0, y: 0.1 },
+  { x: 0.15, y: 0.07 },
+  { x: 0.26, y: 0 },
+  { x: 0.18, y: 0.02 },
+  { x: 0, y: 0.045 },
+  { x: -0.15, y: 0.02 },
 ];
 
 const NOSE: Vec2[] = [
@@ -181,11 +186,19 @@ export function buildNiaRig(): PartDef[] {
   /* --- locs, behind everything ---------------------------------------- */
   // The mass is big enough to cover the crown: hair that starts below the crown
   // leaves her looking shaved from the top.
+  // The silhouette is the point: a mass reads as a helmet, so the locs step out
+  // beyond the head in layers, longest at the outside, and the shade locs sit
+  // behind the mass to give the bundle depth.
   parts.push(
     part('p_locsMass', 'hairBack', 0, ellipse(58, 72), 'hair', CENTRE, { x: 0, y: -2 }, 'p_head'),
-    part('p_locsFall', 'hairBack', 1, roundRect(34, 76, 16), 'hair', CENTRE, { x: -4, y: 54 }, 'p_head'),
-    part('p_locsStrandL', 'hairBack', 2, roundRect(13, 92, 6), 'hair', CENTRE, { x: -40, y: 40 }, 'p_head'),
-    part('p_locsStrandR', 'hairBack', 2, roundRect(13, 92, 6), 'hair', CENTRE, { x: 40, y: 40 }, 'p_head'),
+    part('p_locsUnder', 'hairBack', 1, roundRect(52, 66, 18), 'hairShade', CENTRE, { x: 0, y: 34 }, 'p_head'),
+    part('p_locsFall', 'hairBack', 2, roundRect(34, 76, 16), 'hair', CENTRE, { x: -4, y: 54 }, 'p_head'),
+    part('p_locsInnerL', 'hairBack', 3, roundRect(12, 74, 6), 'hairShade', CENTRE, { x: -30, y: 70 }, 'p_head'),
+    part('p_locsInnerR', 'hairBack', 3, roundRect(12, 74, 6), 'hairShade', CENTRE, { x: 30, y: 70 }, 'p_head'),
+    part('p_locsStrandL', 'hairBack', 4, roundRect(13, 96, 6.5), 'hair', CENTRE, { x: -40, y: 40 }, 'p_head'),
+    part('p_locsStrandR', 'hairBack', 4, roundRect(13, 96, 6.5), 'hair', CENTRE, { x: 40, y: 40 }, 'p_head'),
+    part('p_locsOuterL', 'hairBack', 5, roundRect(11, 84, 5.5), 'hair', CENTRE, { x: -52, y: 26 }, 'p_head'),
+    part('p_locsOuterR', 'hairBack', 5, roundRect(11, 84, 5.5), 'hair', CENTRE, { x: 52, y: 26 }, 'p_head'),
   );
 
   /* --- legs ------------------------------------------------------------ */
@@ -239,6 +252,12 @@ export function buildNiaRig(): PartDef[] {
         `p_shin${side}`,
       ),
     );
+    // The sole and side stripe ride the foot, not the shin, so a pose that turns
+    // the foot turns the whole sneaker around the ankle instead of shearing it.
+    parts.push(
+      part(`p_sole${side}`, `foot${side}`, 7.5, roundRect(58, 9, 4), 'shoeSole', HINGE, { y: 17 }, `p_foot${side}`),
+      part(`p_shoeAccent${side}`, `foot${side}`, 8, roundRect(8, 10, 4), 'accent', CENTRE, { x: sign * 15, y: 9 }, `p_foot${side}`),
+    );
   }
 
   /* --- far arm (behind the torso) -------------------------------------- */
@@ -261,6 +280,9 @@ export function buildNiaRig(): PartDef[] {
   parts.push(
     part('p_midriff', 'midriff', 14, roundRect(74, 44, 10), 'skin', CENTRE, { x: 0, y: -30 }, 'p_torso'),
     part('p_top', 'top', 15, roundRect(116, 52, 22), 'top', CENTRE, { x: 0, y: -76 }, 'p_torso'),
+    // Purple appears only where it frames the black top: two straps and an earring.
+    part('p_topStrapL', 'topStrapL', 15, roundRect(7, 22, 3.5), 'accent', CENTRE, { x: -34, y: -94 }, 'p_torso'),
+    part('p_topStrapR', 'topStrapR', 15, roundRect(7, 22, 3.5), 'accent', CENTRE, { x: 34, y: -94 }, 'p_torso'),
     // The hem band is the one piece of magenta on her: restrained means one band.
     part('p_topBand', 'topBand', 16, roundRect(100, 12, 5), 'accentPink', CENTRE, { x: 0, y: -48 }, 'p_torso'),
     part('p_waistband', 'waistband', 17, roundRect(86, 26, 6), 'bottomShade', CENTRE, { x: 0, y: 2 }, 'p_torso'),
@@ -301,17 +323,23 @@ export function buildNiaRig(): PartDef[] {
       { x: 0, y: -43 },
       'p_head',
     ),
+    // Two locs fall in front of the ears and break the head's outline, which is
+    // what stops the style reading as a cap from a distance.
+    part('p_locFrameL', 'hairFront', 25, roundRect(9, 44, 4.5), 'hair', CENTRE, { x: -48, y: 10 }, 'p_head'),
+    part('p_locFrameR', 'hairFront', 25, roundRect(9, 44, 4.5), 'hair', CENTRE, { x: 48, y: 10 }, 'p_head'),
     part('p_browR', 'browR', 26, roundRect(26, 5, 2.5), 'brow', CENTRE, { x: 18, y: -28 }, 'p_head'),
     part('p_browL', 'browL', 26, roundRect(26, 5, 2.5), 'brow', CENTRE, { x: -18, y: -28 }, 'p_head'),
   );
 
-  // The eye is two parts on one slot: the white and the iris share a slot, so a
-  // blink or a widening from an expression moves both together.
+  // The eye is four parts on one slot: white, iris, pupil and catchlight share a
+  // slot, so a blink or a widening from an expression moves all four together.
   for (const side of ['R', 'L'] as const) {
     const sign = side === 'L' ? -1 : 1;
     parts.push(
       part(`p_eye${side}`, `eye${side}`, 27, ellipse(12, 8.5), 'eyeWhite', CENTRE, { x: sign * 18, y: -6 }, 'p_head'),
       part(`p_iris${side}`, `eye${side}`, 27, ellipse(7.5, 7), 'eye', CENTRE, { x: sign * 18, y: -6 }, 'p_head'),
+      part(`p_pupil${side}`, `eye${side}`, 27, circle(3.4), 'pupil', CENTRE, { x: sign * 18, y: -5.5 }, 'p_head'),
+      part(`p_glint${side}`, `eye${side}`, 27.5, circle(1.6), 'eyeGlint', CENTRE, { x: sign * 18 - 1.5, y: -8 }, 'p_head'),
     );
   }
 
@@ -327,6 +355,18 @@ export function buildNiaRig(): PartDef[] {
       'mouth',
       CENTRE,
       { x: 0, y: 26, scaleX: HEAD_SCALE, scaleY: HEAD_SCALE },
+      'p_head',
+    ),
+    // Subtle upper teeth set under the broad smile. Kept on its own slot so shared
+    // expression mouth-shape swaps do not replace the teeth geometry.
+    part(
+      'p_teeth',
+      'teeth',
+      29.5,
+      roundRect(0.34, 0.06, 0.01),
+      'eyeWhite',
+      CENTRE,
+      { x: 0, y: 26.6, scaleX: HEAD_SCALE, scaleY: HEAD_SCALE },
       'p_head',
     ),
   );
