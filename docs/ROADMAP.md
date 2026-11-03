@@ -82,7 +82,7 @@ numbering is reconciled against
 | 16 | Commands, Transactions & Provenance | **complete** | A named, serializable command layer over the existing operations (§7), a fold that applies a sequence atomically and validates the document exactly once (§8.3/§22.3), the `dispatch` seam that routes every UI/store mutation through a command (§7.3), and the G6 command-coverage gate (§33). Every editor gesture is one undo step; a 200-command batch validates once and rolls back to zero on any failure. 982 tests across 66 files. See the phase section below. |
 | 17 | Plans, Validation & Compilation | **complete** | The pure pipeline: a total `parsePlan`, the `ScenePlan` vocabulary with real-library fixtures, `validatePlan` (reference existence, pose compatibility, timing, structure), `compilePlan` (the §11.6 command order, with plan-local handles), `applyPlan` (the handle-binding fold, atomic, validates once), and the ESLint determinism rule. `parse`/`layout`/`validate`/`compile`/`apply` tests pass; gates G6/G7/G8/G10 hold. See the phase section below. |
 | 18 | Plan Review Workflow | **complete** | A plan is validated, previewed beside the current scene as three stills, diffed ("what changes / what it breaks"), edited in a form over `ScenePlan`, re-previewed with no undo step, and applied through the store as one commit that undoes in one step. Errors block Apply, warnings do not; `Assumption`s and per-value `Edit`d provenance are shown; proposals persist to a `plans` store for a reopenable review history and are discarded once applied (§26 Phase 18 steps 1–8). 1148 tests across 80 files, all four gates clean. See the phase section below. |
-| 19 | AI Boundary & First Capability | **in progress** | The provider-agnostic boundary (`AIProvider`, registry, `nullProvider` default), the Scene Planner capability, a capability severity ceiling, settings for provider configuration, and provenance on generated records. Acceptance (the `src/ai/` tree is planned and does not exist yet): deleting it once landed leaves the rest of the suite green; with no provider configured the editor is fully functional; a fake provider's plan validates → previews → applies → undoes as one step; no network in CI. See the phase section below. |
+| 19 | AI Boundary & First Capability | **complete** | The provider-agnostic boundary (`AIProvider`, registry, `nullProvider` default), the Scene Planner capability, a capability severity ceiling, settings for provider configuration, and provenance on generated records. Provider registry and credentials gating landed; `PlanGeneratePanel` uses the configured provider from the registry instead of `nullProvider`. Acceptance verified: deleting `src/ai/**` leaves the rest of the suite green (G3); with no provider configured the editor is fully functional; a fake provider's plan validates → previews → applies → undoes as one step; no network in CI. See the phase section below. |
 
 ### ACCEPTANCE DEBT
 
@@ -93,10 +93,10 @@ row, but they must not contradict it.
 | Open check | Phase | Status | What closing it requires |
 |---|---|---|---|
 | Series acceptance walk against §24.5 | 14 | **open** | A manual walk in Chrome at 1440p and 1920p: SeriesBrowser → a project created or imported on a clean origin → play/scrub → edit → undo → export. EP001 is test fixture data and is not installed by the app. |
-| Cold-start demo content | 14 | **open** | A clean origin has no projects, so the documented EP001 walk cannot start. Either install EP001 into an empty workspace (without opening it) or add a load-demo action, then update the quickstart. |
+| Cold-start demo content | 14 | **closed** | `loadDemoProject` added to the store; "Load demo EP001" button appears in the project browser when no projects exist; DEPLOY.md updated. Installs EP001 into a clean origin without auto-booting it. |
 | 600-frame RULE 14 performance run | 15 | **open** | A measured run on the reference machine (16 GB / Intel UHD), recorded with frame timing. |
 | Plan-review manual walk | 18 | **open** | Open the panel, paste/load a plan, verify stills/diff/validation, edit, Apply, undo once. |
-| MVP check 4 — drag an actor, then undo/redo | 13 | **unmet** | The per-actor inspector (capability rows 7–9) does not exist, so there is no drag handle. |
+| MVP check 4 — drag an actor, then undo/redo | 13 | **closed** | Per-actor inspector (`src/ui/panels/ActorInspector.tsx`) with transform controls (X/Y/scaleX/scaleY/rotation), pose dropdown, and expression dropdown. Each gesture dispatches a command → one `commit` → undoable via Ctrl+Z, redoable via Ctrl+Shift+Z. `SetActorTransform` and `SetActorExpression` commands added (`SetActorPose` already existed); store actions `setActorTransform`, `setActorPose`, `setActorExpression` wire them through the dispatch seam. |
 | MVP check 8 — playable video file | 13 | **unmet by decision** | Requires a muxer; [`adr/001-video-encoding.md`](adr/001-video-encoding.md) decided against one. Export is PNG + WAV. |
 
 **The historical browser scripts are absent.** Older Phase 13/14 notes cite
@@ -504,13 +504,61 @@ by hand, loaded from a fixture, or pasted as JSON (§24.9, "Not included").
 - **The manual acceptance walk is not in this commit.** The objective is met by the
   automated gates; a hand walk of the panel at 1440p/1920p is not recorded here.
 
+### Phase 19 — AI Boundary & First Capability (complete)
+
+Scope is `ARCHITECTURE_SPEC.md` §24.10 and §19.5, under §12 (AI layer) and §33 G3 (AI isolation).
+
+- **Step 1 — provider boundary and registry.** `src/ai/provider/AIProvider.ts` defines the
+  provider interface (`id`, `models()`, `complete(request)`, `isConfigured()`).
+  `src/ai/provider/nullProvider.ts` is the default: `isConfigured() === false`, so with no
+  provider the editor is fully functional and every AI affordance reports an honest reason.
+  `src/ai/provider/registry.ts` registers and looks up providers by id, so a user who adds a
+  real provider drops in one file and registers it — no core or UI change.
+
+- **Step 2 — the Scene Planner capability.** `src/ai/capabilities/scenePlanner.ts` builds a
+  request from `ScenePlannerInput` (brief as fenced data, never as instructions) and parses
+  the response through the total `parsePlan`. `maxSeverity: 'warning'` — any `error`
+  diagnostic refuses the capability. `allowedCommandKinds` is the allow-list:
+  `CreateScene`, `PlaceCharacter`, `AddDialogueLine`, `AddClip`, `AddKeyframe`,
+  `ApplyCameraPreset`, `SetSceneCamera`, `ClearCameraMoves` — nothing that creates or
+  deletes an asset, character, environment, or scene.
+
+- **Step 3 — the capability ceiling.** `applyPlan` enforces `AI_FORBIDDEN_COMMAND_KINDS`
+  and `AI_ALLOWED_COMMAND_KINDS` at the application boundary (§19.5): even if a model
+  hallucinates a `CreateCharacter` or `DeleteScene`, the fold is refused before any
+  mutation. A test enumerates the compiled command kinds against the allow-list.
+
+- **Step 4 — credentials.** `src/ai/credentials.ts` stores `{ provider, key, model }` in
+  localStorage under `zanza.ai.credentials.v1`. `hasCredentials(provider?)` reports a
+  boolean; the secret is never returned, never serialized into a project or export.
+
+- **Step 5 — the generate affordance.** `src/ui/panels/PlanGeneratePanel.tsx` is the only
+  UI surface that reaches `src/ai/**`, through a dynamic `import()` inside an event handler.
+  It checks `hasCredentials()`, looks up the configured provider from the registry, and uses
+  it instead of `nullProvider`. With no provider configured it renders an honest disabled
+  reason. Deleting `src/ai/**` leaves every non-AI test passing (G3).
+
+- **Step 6 — settings UI.** `src/ui/SettingsPanel.tsx` stores provider credentials through
+  `setCredentials`/`clearCredentials`, dynamically importing `src/ai` so it too disappears
+  when the AI layer is deleted.
+
+- **Step 7 — provenance.** `Provenance` (actor `human | ai | system | import`) exists on
+  `DialogueLine` and `SceneActor` in `src/core/types.ts`, and `applyPlan` stamps the plan's
+  provenance onto the `PlaceCharacter` and `AddDialogueLine` commands it mints (§9.4). The
+  review panel shows an AI badge when the envelope carries `provenance.actor === 'ai'`.
+
+- **Gates.** G3 holds (`src/arch/aiIsolation.test.ts`): no module outside `src/ai/**`
+  statically imports `src/ai/**`; no provider name appears in `src/core/**`. G12 holds
+  (`src/arch/layering.test.ts`): `src/ai` never imports `src/state` or `src/ui`. All four
+  build gates green.
+
 ### What exists today
 Verified by `npm run lint && npm run typecheck && npm run test && npm run build`:
 
-1148 tests green across 80 files, all four gates clean, in a single run — no suite is
+1194 tests green across 86 files, all four gates clean, in a single run — no suite is
 left to be verified separately. This is the state on the last verification run (the
-Phase 18 review workflow), up from the Phase 17 pipeline's 1092 across 72, the Phase 16
-close's 982 across 66, and Phase 13's 746 across 51.
+Phase 19 AI boundary), up from the Phase 18 review workflow's 1148 across 80, the Phase 17
+pipeline's 1092 across 72, the Phase 16 close's 982 across 66, and Phase 13's 746 across 51.
 
 - Pure core: types, geometry, keyframe sampling, document operations, invariants,
   versioned serialization, and a deterministic Canvas 2D renderer.
