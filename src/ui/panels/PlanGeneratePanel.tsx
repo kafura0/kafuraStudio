@@ -7,8 +7,9 @@
  * other test passing, because nothing statically depends on the module.
  *
  * The default provider is `nullProvider` (`isConfigured() === false`), so with no provider
- * the panel renders an honest, disabled reason rather than a broken button. Every path
- * that would call a provider short-circuits (`maybeComplete`).
+ * the panel renders an honest, disabled reason rather than a broken button. When credentials
+ * are stored, the panel looks up the configured provider from the registry and uses it.
+ * Every path that would call a provider short-circuits (`maybeComplete`).
  */
 import { useState } from 'react';
 
@@ -32,15 +33,30 @@ export function PlanGeneratePanel({ onGenerated }: PlanGeneratePanelProps): Reac
     try {
       // Dynamic import: the module is fetched only when the user asks for generation.
       const ai = await import('../../ai');
-      const capability = ai.createScenePlannerCapability();
-      const provider = ai.nullProvider;
-      if (!provider.isConfigured()) {
+
+      // No credentials stored anywhere → nothing can generate.
+      if (!ai.hasCredentials()) {
         setStatus({
           kind: 'unavailable',
           reason: 'No AI provider is configured. Add a provider in Settings to enable generation.',
         });
         return;
       }
+
+      // Find the provider that reports itself as configured.
+      const providers = ai.listProviders();
+      const provider = providers.find((p) => p.isConfigured());
+      if (!provider) {
+        setStatus({
+          kind: 'unavailable',
+          reason: 'No registered provider reports configured credentials. Register a provider in Settings.',
+        });
+        return;
+      }
+
+      const capability = ai.createScenePlannerCapability();
+      // Build a minimal request from the brief; the scene context is supplied by the caller
+      // through the plan review panel's envelope. The brief is the only free-text input.
       const request = capability.buildRequest({
         brief,
         sceneId: '',
