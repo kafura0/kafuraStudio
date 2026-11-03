@@ -1647,3 +1647,128 @@ describe('audio media commands (Phase 16 P8)', () => {
     expect(slot?.srcKind).toBeNull();
   });
 });
+
+describe('applyCommand — SetActorTransform (row 7: move and scale characters)', () => {
+  it('applies a partial transform and leaves the rest untouched', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const before = actorOf(project, actorId)!.transform;
+    const result = applyCommand(
+      { kind: 'SetActorTransform', sceneId, actorId, transform: { x: 300, scaleY: 1.5 } },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const next = actorOf(result.project, actorId)!.transform;
+    expect(next.x).toBe(300);
+    expect(next.scaleY).toBe(1.5);
+    // Fields not in the patch are preserved.
+    expect(next.y).toBe(before.y);
+    expect(next.scaleX).toBe(before.scaleX);
+    expect(next.rotation).toBe(before.rotation);
+    expect(next.alpha).toBe(before.alpha);
+  });
+
+  it('rejects an unknown scene', () => {
+    const { project, actorId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorTransform', sceneId: 'nope', actorId, transform: { x: 10 } },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+    expect(result.error.path).toBe('scenes[nope]');
+  });
+
+  it('rejects an unknown actor', () => {
+    const { project, sceneId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorTransform', sceneId, actorId: 'nope', transform: { x: 10 } },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+  });
+
+  it('returns the document unchanged when the command fails', () => {
+    const { project, sceneId } = makeProject();
+    const before = JSON.stringify(project);
+    applyCommand(
+      { kind: 'SetActorTransform', sceneId, actorId: 'nope', transform: { x: 10 } },
+      ctxFor(project),
+    );
+    expect(JSON.stringify(project)).toBe(before);
+  });
+});
+
+describe('applyCommand — SetActorExpression (row 9: change character expression)', () => {
+  it('applies a new expression and returns a new document', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorExpression', sceneId, actorId, expressionId: EXPR.id },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.project).not.toBe(project);
+    expect(actorOf(result.project, actorId)?.expressionId).toBe(EXPR.id);
+    expect(actorOf(project, actorId)?.expressionId).toBe(EXPR.id); // unchanged source
+  });
+
+  it('treats ctx.assets as the authority for expression existence', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const merged = { ...project.assets, expressions: [] };
+    const rejected = applyCommand(
+      { kind: 'SetActorExpression', sceneId, actorId, expressionId: EXPR.id },
+      ctxFor(project, { assets: merged }),
+    );
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) return;
+    expect(rejected.error.code).toBe('not-found');
+    expect(rejected.error.message).toContain('No such expression');
+
+    const accepted = applyCommand(
+      { kind: 'SetActorExpression', sceneId, actorId, expressionId: EXPR.id },
+      ctxFor(project, { assets: { ...merged, expressions: [EXPR] } }),
+    );
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) return;
+    expect(actorOf(accepted.project, actorId)?.expressionId).toBe(EXPR.id);
+  });
+
+  it('rejects an unknown scene', () => {
+    const { project, actorId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorExpression', sceneId: 'nope', actorId, expressionId: EXPR.id },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+    expect(result.error.path).toBe('scenes[nope]');
+  });
+
+  it('rejects an unknown actor', () => {
+    const { project, sceneId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorExpression', sceneId, actorId: 'nope', expressionId: EXPR.id },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+  });
+
+  it('rejects an expression that is in neither the project library nor ctx.assets', () => {
+    const { project, sceneId, actorId } = makeProject();
+    const result = applyCommand(
+      { kind: 'SetActorExpression', sceneId, actorId, expressionId: 'not-an-expression' },
+      ctxFor(project),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('not-found');
+    expect(result.error.message).toContain('No such expression');
+  });
+});

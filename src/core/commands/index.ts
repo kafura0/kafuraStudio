@@ -8,6 +8,8 @@
 import './createScene';
 import './placeCharacter';
 import './setActorPose';
+import './setActorTransform';
+import './setActorExpression';
 import './addDialogueLine';
 import './setDialogueLine';
 import './deleteDialogueLine';

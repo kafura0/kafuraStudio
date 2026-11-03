@@ -14,6 +14,7 @@ import { IndexedDbPlanRepository, isIndexedDbAvailable } from '../core/persisten
 import { ProjectBrowser } from './ProjectBrowser';
 import { Stage } from './Stage';
 import { SceneList } from './panels/SceneList';
+import { ActorInspector } from './panels/ActorInspector';
 import { AssetPanel } from './panels/AssetPanel';
 import { AudioSlotPanel } from './panels/AudioSlotPanel';
 import { TransportBar } from './panels/TransportBar';
@@ -279,6 +280,7 @@ const context = useEditor((s) => s.context);
             onAddToEpisode={addSceneToEpisode}
             onCreateEpisode={promptNewEpisode}
           />
+          <ActorInspector />
           <CameraPanel />
           <DialoguePanel />
           <AssetPanel assets={context.assets} />

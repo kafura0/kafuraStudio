@@ -20,7 +20,7 @@ import type { Command, CommandResult } from '../core/commands';
 import { applyPlan, type PlanApplyError, type PlanApplyResult } from '../core/plans/apply';
 import type { PlanEnvelope } from '../core/plans/types';
 import { clamp } from '../core/geometry';
-import type { Id, Project, Provenance, SceneContext, SeriesDef } from '../core/types';
+import type { Id, Project, Provenance, SceneContext, SeriesDef, Transform2D } from '../core/types';
 import {
   createProject as newProject,
   createSeries as newSeries,
@@ -43,7 +43,7 @@ import {
   type ExportOptions,
   type ExportResult,
 } from '../core/io/projectIo';
-import { ProjectParseError } from '../core/serialize';
+import { ProjectParseError, serializeProject } from '../core/serialize';
 import type { ProjectSummary, SeriesSummary } from '../core/persistence/repository';
 import {
   IndexedDbProjectRepository,
@@ -51,6 +51,7 @@ import {
   isIndexedDbAvailable,
 } from '../core/persistence/indexedDb.browser';
 import { adoptLegacyWorkspace } from '../core/persistence/adoptLegacyWorkspace.browser';
+import { SEED_PROJECT } from '../data/seed';
 import {
   buildEpisodeTimeline,
   safeEpisodeTime,
@@ -171,8 +172,11 @@ export interface EditorState {
   lastSavedAt: string | null;
 
   /* --- navigation --- */
-  setScene: (sceneId: Id) => void;
-  setPlayhead: (time: number) => void;
+    setScene: (sceneId: Id) => void;
+    setPlayhead: (time: number) => void;
+    setActorTransform: (sceneId: Id, actorId: Id, patch: Partial<Transform2D>) => void;
+    setActorPose: (sceneId: Id, actorId: Id, poseId: Id) => void;
+    setActorExpression: (sceneId: Id, actorId: Id, expressionId: Id) => void;
   play: () => void;
   pause: () => void;
   toggleSubtitles: () => void;
@@ -263,6 +267,8 @@ export interface EditorState {
   duplicateOpenProject: (name?: string) => Promise<void>;
   /** Import a serialized project and open it. Writes nothing if the file is unreadable. */
   importProjectText: (text: string, filename: string) => Promise<void>;
+  /** Install the EP001 demo project into a clean workspace and open it. */
+  loadDemoProject: () => Promise<void>;
   /**
    * Read a project without opening it.
    *
@@ -919,6 +925,57 @@ const { project, context } = get();
       set({ sceneId: created?.id ?? '', selection: { kind: null, id: null } });
     },
 
+    setActorTransform: (sceneId, actorId, patch) => {
+      const state = get();
+      if (state.project === null || state.context === null) return;
+      const result = state.dispatch({
+        kind: 'SetActorTransform',
+        label: 'move actor',
+        sceneId,
+        actorId,
+        transform: patch,
+      });
+      if (!result.ok) {
+        set({ status: 'error', statusMessage: `Could not move actor: ${result.error.message}` });
+        return;
+      }
+      set({ status: 'ready', statusMessage: null });
+    },
+
+    setActorPose: (sceneId, actorId, poseId) => {
+      const state = get();
+      if (state.project === null || state.context === null) return;
+      const result = state.dispatch({
+        kind: 'SetActorPose',
+        label: 'change pose',
+        sceneId,
+        actorId,
+        poseId,
+      });
+      if (!result.ok) {
+        set({ status: 'error', statusMessage: `Could not change pose: ${result.error.message}` });
+        return;
+      }
+      set({ status: 'ready', statusMessage: null });
+    },
+
+    setActorExpression: (sceneId, actorId, expressionId) => {
+      const state = get();
+      if (state.project === null || state.context === null) return;
+      const result = state.dispatch({
+        kind: 'SetActorExpression',
+        label: 'change expression',
+        sceneId,
+        actorId,
+        expressionId,
+      });
+      if (!result.ok) {
+        set({ status: 'error', statusMessage: `Could not change expression: ${result.error.message}` });
+        return;
+      }
+      set({ status: 'ready', statusMessage: null });
+    },
+
     createEpisode: (title) => {
       const state = get();
       if (state.project === null) return null;
@@ -1469,6 +1526,26 @@ const { project, context } = get();
         await get().refreshProjects();
       } catch (error) {
         set({ status: 'error', statusMessage: describe(error) });
+      }
+    },
+
+    /**
+     * Install the EP001 demo project into a clean workspace and open it.
+     *
+     * This is the cold-start escape hatch: a fresh database has no projects, so the
+     * documented EP001 walk cannot start. The button that calls this lives in the
+     * project browser and only appears when there is nothing to open. It does not
+     * auto-run on boot — the architecture deliberately avoids seeding a workspace the
+     * user did not ask for (ARCHITECTURE.md §7).
+     */
+    loadDemoProject: async () => {
+      if (!isIndexedDbAvailable()) return;
+      set({ status: 'loading', statusMessage: null });
+      try {
+        const text = serializeProject(SEED_PROJECT);
+        await get().importProjectText(text, 'EP001.zanza.json');
+      } catch (error) {
+        set({ status: 'error', statusMessage: `Could not load the demo: ${describe(error)}` });
       }
     },
 
