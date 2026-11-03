@@ -209,8 +209,10 @@ not a website — it is a local tool with no server-side copy of anything.**
 - **A fresh origin opens to an empty project browser** showing **"No projects yet"**.
   There is no in-memory EP001 seed written to the database; `SEED_PROJECT` and
   `SEED_SERIES` exist only as test fixtures in `src/data/seed.ts` and are never
-  installed by the running application. The user begins with **New project** (a neutral
-  starter library, `src/data/starter.ts`) or by importing a project file.
+  installed by the running application on boot. The user begins with **New project**
+  (a neutral starter library, `src/data/starter.ts`), by importing a project file, or
+  by choosing **Load demo EP001**, which installs the pilot project into the workspace
+  and opens it.
 - **Nothing the user creates ever reaches your server.** There is nowhere for it to
   go.
 - Consequently: **the user cannot recover their work by contacting you, and you

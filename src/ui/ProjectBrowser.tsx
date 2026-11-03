@@ -40,6 +40,7 @@ export function ProjectBrowser(): React.JSX.Element {
   const archiveProject = useEditor((s) => s.archiveProject);
   const addEpisodeToProject = useEditor((s) => s.addEpisodeToProject);
   const importProjectText = useEditor((s) => s.importProjectText);
+  const loadDemoProject = useEditor((s) => s.loadDemoProject);
   const exportProjectFile = useEditor((s) => s.exportProjectFile);
   const refreshProjects = useEditor((s) => s.refreshProjects);
   const refreshSeries = useEditor((s) => s.refreshSeries);
@@ -240,9 +241,16 @@ export function ProjectBrowser(): React.JSX.Element {
               </div>
             )}
             {projects.length === 0 ? (
-              <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
-                No projects yet. Name one above and choose “New project”.
-              </p>
+              <div className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400 space-y-3">
+                <p>No projects yet. Name one above and choose “New project”.</p>
+                <button
+                  type="button"
+                  onClick={() => void loadDemoProject()}
+                  className="rounded border border-zanza-500 bg-zanza-600 px-4 py-2 text-sm font-medium text-ink-950 hover:bg-zanza-500"
+                >
+                  Load demo EP001
+                </button>
+              </div>
             ) : visible.length === 0 ? (
               <p className="rounded border border-dashed border-ink-700 px-4 py-8 text-center text-sm text-ink-400">
                 {showArchived ? 'Nothing archived.' : 'Every project is archived.'}
